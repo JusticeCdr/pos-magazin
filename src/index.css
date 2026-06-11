@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode: add class="dark" to any ancestor */
+@custom-variant dark (&:where(.dark, .dark *));
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f3f4f6; /* Tailwind gray-100 */
+}
+
+@media print {
+  /* 1. Полностью скрываем главный контейнер React приложения и модалки */
+  #root, .sidebar, .navbar, .modal-overlay {
+    display: none !important;
+  }
+
+  /* 2. Сбрасываем высоту у всех базовых тегов */
+  html, body {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  /* 3. Чек должен быть в потоке (static), чтобы принтер видел, где заканчивается текст и отрезал бумагу! */
+  #printable-receipt {
+    display: block !important;
+    position: static !important; 
+    width: 78mm;
+    margin: 0 !important;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    padding-top: 0 !important; /* Убираем пустой отступ сверху */
+    visibility: visible !important;
+  }
+  
+  #printable-receipt, #printable-receipt * {
+    visibility: visible !important;
+    color: #000000 !important; /* СТРОГО 100% черный цвет */
+    font-weight: 700 !important; /* Делаем шрифт жирным (Bold) */
+    font-family: 'Courier New', Courier, monospace !important; /* Оптимальный шрифт для кассовых аппаратов */
+    text-rendering: crispEdges !important; /* Убираем мыльное сглаживание */
+    -webkit-font-smoothing: none !important; /* Отключаем антиалиасинг в Chrome/Electron */
+    letter-spacing: 0.5px !important; /* Чуть увеличиваем расстояние между буквами для читаемости */
+  }
+
+  /* Стили для телефона в шапке */
+  #printable-receipt .receipt-phone-container {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 6px !important;
+    font-size: 15px !important;
+    font-weight: bold !important;
+    margin-top: 4px !important;
+    margin-bottom: 2px !important;
+    text-align: center !important;
+    width: 100% !important;
+  }
+  #printable-receipt .receipt-phone-label, #printable-receipt .receipt-phone-val {
+    white-space: nowrap !important;
+  }
+
+  /* Стили для адреса */
+  #printable-receipt .receipt-location {
+    display: block !important;
+    font-size: 12px !important;
+    text-align: center !important;
+    color: #333 !important;
+    margin-bottom: 6px !important;
+  }
+
+  #printable-receipt .receipt-divider {
+    border: none !important;
+    border-top: 1px dashed #000 !important; /* Красивая пунктирная линия */
+    margin: 8px 0 !important;
+  }
+
+  .receipt-social-qr-container {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 20px !important; /* Отступ между QR кодами */
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+    width: 100% !important;
+  }
+
+  .receipt-social-qr-container .qr-box {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    width: 45mm !important; /* Фиксируем размер под ширину чека */
+  }
+
+  .receipt-social-qr-container .qr-box img {
+    width: 35mm !important; /* Делаем QR-коды аккуратными и читаемыми для телефонов клиентов */
+    height: 35mm !important;
+    object-fit: contain !important;
+  }
+
+  .receipt-social-qr-container .qr-box span {
+    font-size: 10px !important;
+    font-weight: bold !important;
+    margin-top: 2px !important;
+  }
+  
+  @page {
+    margin: 0 !important;
+  }
+}
+
+
