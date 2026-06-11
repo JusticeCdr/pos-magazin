@@ -4,11 +4,16 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const { app } = require('electron');
+const fs = require('fs');
 
 let db;
 
 function initDB() {
-  const dbPath = path.join(app.getPath('userData'), 'pos.db');
+  const dir = app.getPath('userData');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const dbPath = path.join(dir, 'pos.db');
   db = new DatabaseSync(dbPath);
 
   // Unicode case-insensitive custom lowercase function
@@ -167,20 +172,7 @@ function initDB() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_inv_logs_created ON inventory_logs(created_at);');
   db.exec('CREATE INDEX IF NOT EXISTS idx_inv_logs_action  ON inventory_logs(action_type);');
 
-  // ── Database Optimizations (Indexes) ───────────────────────────────────────
-  db.exec('CREATE INDEX IF NOT EXISTS idx_products_name     ON products(name);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_products_barcode  ON products(barcode);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_created_at  ON sales(created_at);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_is_closed   ON sales(is_closed);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_sale   ON sale_items(sale_id);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_prod   ON sale_items(product_id);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_cust_debt_created ON sales(customer_id, payment_method, created_at DESC);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_created_status ON sales(created_at, status);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_products_valuation ON products(stock, buy_price, sell_price);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_debt_payments_created ON debt_payments(created_at);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_created ON expenses(created_at);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_is_closed_created ON sales(is_closed, created_at);');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_is_closed_created ON expenses(is_closed, created_at);');
+
 
   // ── Settings & Auth ────────────────────────────────────────────────────────
   db.exec(`
@@ -281,6 +273,21 @@ function initDB() {
     `);
   } catch (err) {
   }
+
+  // ── Database Optimizations (Indexes) ───────────────────────────────────────
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_name     ON products(name);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_barcode  ON products(barcode);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_created_at  ON sales(created_at);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_is_closed   ON sales(is_closed);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_sale   ON sale_items(sale_id);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_prod   ON sale_items(product_id);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_cust_debt_created ON sales(customer_id, payment_method, created_at DESC);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_created_status ON sales(created_at, status);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_valuation ON products(stock, buy_price, sell_price);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_debt_payments_created ON debt_payments(created_at);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_created ON expenses(created_at);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_is_closed_created ON sales(is_closed, created_at);');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_is_closed_created ON expenses(is_closed, created_at);');
 
 }
 function closeDB() {

@@ -21,24 +21,48 @@ const {
   clearActivation
 } = require('./database');
 
+// ── Logging System ───────────────────────────────────────────────────────────
+function logError(message) {
+  try {
+    const dir = app.getPath('userData');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.appendFileSync(path.join(dir, 'error_log.txt'), `[${new Date().toISOString()}] ${message}\n`);
+  } catch (e) {}
+}
+
+process.on('uncaughtException', (error) => {
+  logError(`Uncaught Exception: ${error.stack || error}`);
+  app.quit();
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logError(`Unhandled Rejection: ${reason}`);
+});
+
 // ── Auto-Backup Helper ───────────────────────────────────────────────────────
 // Runs AFTER shift close: copies pos.db → backup folder, keeps last 3 files.
 const MAX_BACKUPS = 3;
 
 function getMachineId() {
   return new Promise((resolve) => {
-    exec('wmic csproduct get uuid', (error, stdout) => {
-      if (error) {
-        resolve('UNKNOWN_MACHINE_ID');
-        return;
-      }
-      const lines = stdout.split('\n').map(line => line.trim()).filter(line => line && line !== 'UUID');
-      if (lines.length > 0) {
-        resolve(lines[0]);
-      } else {
-        resolve('UNKNOWN_MACHINE_ID');
-      }
-    });
+    try {
+      exec('wmic csproduct get uuid', (error, stdout) => {
+        if (error) {
+          resolve('UNKNOWN_MACHINE_ID');
+          return;
+        }
+        const lines = stdout.split('\n').map(line => line.trim()).filter(line => line && line !== 'UUID');
+        if (lines.length > 0) {
+          resolve(lines[0]);
+        } else {
+          resolve('UNKNOWN_MACHINE_ID');
+        }
+      });
+    } catch (err) {
+      resolve('UNKNOWN_MACHINE_ID');
+    }
   });
 }
 
@@ -123,7 +147,9 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(() => {
-  initDB();
+    try {
+      logError("App is ready. Initializing...");
+      initDB();
 
   // ── Products ──────────────────────────────────────────────────────────────
   ipcMain.handle('get-products', () => getProducts());
@@ -439,6 +465,11 @@ if (!gotTheLock) {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+  
+  logError("App successfully loaded and window created.");
+  } catch (err) {
+    logError(`Critical error during app startup: ${err.stack || err}`);
+  }
 }); // End of app.whenReady
 } // End of else (!gotTheLock)
 
