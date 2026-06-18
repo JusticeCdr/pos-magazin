@@ -251,19 +251,17 @@ function initDB() {
 
   // ── Auto Cleanup Old Sales ──
   try {
-    // Delete items of old sales (excluding debt sales to preserve ledger)
+    // Delete items of old sales
     db.exec(`
       DELETE FROM sale_items WHERE sale_id IN (
         SELECT id FROM sales 
-        WHERE created_at < datetime('now', '-3 days') 
-        AND payment_method != 'debt'
+        WHERE created_at < datetime('now', '-30 days')
       );
     `);
     // Delete the old sales themselves
     db.exec(`
       DELETE FROM sales 
-      WHERE created_at < datetime('now', '-3 days') 
-      AND payment_method != 'debt';
+      WHERE created_at < datetime('now', '-30 days');
     `);
 
     // Delete inventory logs older than 3 months (90 days)
@@ -1158,16 +1156,9 @@ function getAllSalesHistory({
     const conditions = [];
     const params = [];
 
-    // Date filters: if both startDate and endDate are empty, default to today's date
+    // Date filters: if both startDate and endDate are empty, default to last 30 days
     if (!startDate && !endDate) {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const todayStr = `${year}-${month}-${day}`;
-      
-      conditions.push("date(created_at, 'localtime') = ?");
-      params.push(todayStr);
+      conditions.push("date(created_at, 'localtime') >= date('now', '-30 days', 'localtime')");
     } else {
       if (startDate) {
         conditions.push("date(created_at, 'localtime') >= ?");

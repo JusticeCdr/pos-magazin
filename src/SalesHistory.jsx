@@ -31,7 +31,9 @@ export default memo(function SalesHistory({ isActive }) {
 
   // Filters state
   const [cashiers, setCashiers] = useState([]);
-  const [selectedDay, setSelectedDay] = useState('bugun'); // 'bugun' | 'kecha' | 'kechadan_oldin' | 'barchasi'
+  const [selectedDay, setSelectedDay] = useState('barchasi'); // 'bugun' | 'kecha' | 'kechadan_oldin' | 'barchasi'
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [selectedCashier, setSelectedCashier] = useState('');
@@ -85,6 +87,9 @@ export default memo(function SalesHistory({ isActive }) {
     } else if (selectedDay === 'barchasi') {
       startD = '2000-01-01';
       endD = '';
+    } else {
+      startD = customStartDate;
+      endD = customEndDate;
     }
 
     try {
@@ -104,7 +109,15 @@ export default memo(function SalesHistory({ isActive }) {
       ]);
       
       if (salesData && salesData.success) {
-        setSales(salesData.data);
+        if (pageNum === 1) {
+          setSales(salesData.data);
+        } else {
+          setSales(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const newSales = salesData.data.filter(s => !existingIds.has(s.id));
+            return [...prev, ...newSales];
+          });
+        }
         setPagination(salesData.pagination || { total: 0, totalPages: 1 });
       }
       if (cashiersData && cashiersData.success) {
@@ -165,6 +178,8 @@ export default memo(function SalesHistory({ isActive }) {
   // When filters change, reset page to 1. If page was already 1, trigger fetch directly.
   const prevFiltersRef = useRef({
     selectedDay,
+    customStartDate,
+    customEndDate,
     startTime,
     endTime,
     selectedCashier,
@@ -178,6 +193,8 @@ export default memo(function SalesHistory({ isActive }) {
     const prev = prevFiltersRef.current;
     const filtersChanged = 
       prev.selectedDay !== selectedDay ||
+      prev.customStartDate !== customStartDate ||
+      prev.customEndDate !== customEndDate ||
       prev.startTime !== startTime ||
       prev.endTime !== endTime ||
       prev.selectedCashier !== selectedCashier ||
@@ -187,6 +204,8 @@ export default memo(function SalesHistory({ isActive }) {
     // Update ref
     prevFiltersRef.current = {
       selectedDay,
+      customStartDate,
+      customEndDate,
       startTime,
       endTime,
       selectedCashier,
@@ -253,7 +272,9 @@ export default memo(function SalesHistory({ isActive }) {
   const filteredSales = sales;
 
   const clearFilters = () => {
-    setSelectedDay('bugun');
+    setSelectedDay('barchasi');
+    setCustomStartDate('');
+    setCustomEndDate('');
     setStartTime('');
     setEndTime('');
     setSelectedCashier('');
@@ -266,7 +287,7 @@ export default memo(function SalesHistory({ isActive }) {
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Sotuv tarixi</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Oxirgi 3 kunlik sotuvlar tarixi (Faqat o'qish uchun)</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Oxirgi 30 kunlik sotuvlar tarixi</p>
       </div>
 
       {/* Filters Panel */}
@@ -285,7 +306,11 @@ export default memo(function SalesHistory({ isActive }) {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setSelectedDay(item.id)}
+                onClick={() => {
+                  setSelectedDay(item.id);
+                  setCustomStartDate('');
+                  setCustomEndDate('');
+                }}
                 className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${
                   selectedDay === item.id
                     ? 'bg-blue-600 text-white shadow-sm'
@@ -296,6 +321,36 @@ export default memo(function SalesHistory({ isActive }) {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+            Sana (Dan)
+          </label>
+          <input 
+            type="date" 
+            value={customStartDate}
+            onChange={(e) => {
+              setCustomStartDate(e.target.value);
+              setSelectedDay('');
+            }}
+            className="px-3 py-2 w-36 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+            Sana (Gacha)
+          </label>
+          <input 
+            type="date" 
+            value={customEndDate}
+            onChange={(e) => {
+              setCustomEndDate(e.target.value);
+              setSelectedDay('');
+            }}
+            className="px-3 py-2 w-36 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+          />
         </div>
 
         <div>
@@ -581,59 +636,27 @@ export default memo(function SalesHistory({ isActive }) {
       </div>
 
       {/* ── Pagination Controls ── */}
-      {!loading && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 shadow-sm">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            Jami: <span className="font-bold text-gray-800 dark:text-white">{pagination.total}</span> ta chek &nbsp;|&nbsp;
-            Sahifa <span className="font-bold text-gray-800 dark:text-white">{page}</span> / {pagination.totalPages}
-          </span>
+      {/* ── Load More / Pagination Controls ── */}
+      {!loading && pagination.totalPages > page && (
+        <div className="flex justify-center py-6">
+          <button
+            onClick={() => setPage(p => p + 1)}
+            className="flex items-center gap-2.5 px-6 py-3.5 bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700/80 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm font-black text-gray-700 dark:text-gray-200 shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
+          >
+            <span>{lang === 'ru' ? 'Загрузить еще' : 'Yana yuklash'}</span>
+            <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full font-bold">
+              {pagination.total - sales.length} ta qoldi
+            </span>
+          </button>
+        </div>
+      )}
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={16} /> Oldingi
-            </button>
-
-            {/* Page number pills */}
-            <div className="flex gap-1">
-              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
-                .filter(p => p === 1 || p === pagination.totalPages || Math.abs(p - page) <= 2)
-                .reduce((acc, p, idx, arr) => {
-                  if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...');
-                  acc.push(p);
-                  return acc;
-                }, [])
-                .map((item, idx) =>
-                  item === '...' ? (
-                    <span key={'ellipsis-' + idx} className="px-2 py-1.5 text-sm text-gray-400">…</span>
-                  ) : (
-                    <button
-                      key={item}
-                      onClick={() => setPage(item)}
-                      className={`w-9 h-8 rounded-lg text-sm font-bold transition-colors ${
-                        page === item
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                          : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  )
-                )
-              }
-            </div>
-
-            <button
-              onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-              disabled={page === pagination.totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Keyingi <ChevronRight size={16} />
-            </button>
-          </div>
+      {/* Total loaded info */}
+      {!loading && sales.length > 0 && (
+        <div className="text-center pb-6 text-xs font-semibold text-gray-400 dark:text-gray-500">
+          {lang === 'ru' 
+            ? `Показано ${sales.length} из ${pagination.total} чеков` 
+            : `Ko'rsatilmoqda: ${sales.length} / ${pagination.total} chek`}
         </div>
       )}
 

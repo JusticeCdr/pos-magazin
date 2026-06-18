@@ -5,7 +5,21 @@ const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
   // ── Cart (persists across tab switches) ─────────────────────────────────────
-  const [cart, setCart] = useState([]);
+  const [carts, setCarts] = useState({ 1: [], 2: [], 3: [] });
+  const [activeCartId, setActiveCartId] = useState(1);
+
+  const cart = carts[activeCartId] || [];
+
+  const setCart = (updater) => {
+    setCarts(prev => {
+      const currentCart = prev[activeCartId] || [];
+      const nextCart = typeof updater === 'function' ? updater(currentCart) : updater;
+      return {
+        ...prev,
+        [activeCartId]: nextCart
+      };
+    });
+  };
 
   // ── Global Products Cache ──────────────────────────────────────────────────
   const [globalProducts, setGlobalProducts] = useState([]);
@@ -93,7 +107,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{ 
-      cart, setCart, theme, toggleTheme, lang, toggleLang, t,
+      cart, setCart, carts, setCarts, activeCartId, setActiveCartId, theme, toggleTheme, lang, toggleLang, t,
       currentUser, setCurrentUser, storeName, setStoreName,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded

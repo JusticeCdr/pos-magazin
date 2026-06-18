@@ -45,7 +45,7 @@ function formatPhoneNumber(value) {
 
 export default memo(function Cashier({ isActive }) {
   const { 
-    cart, setCart, t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts,
+    cart, setCart, carts, activeCartId, setActiveCartId, t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts,
     globalCustomers: customers, fetchGlobalCustomers
   } = useApp();
   const [debtForm, setDebtForm] = useState({ id: '', name: '', phone: '' });
@@ -53,6 +53,7 @@ export default memo(function Cashier({ isActive }) {
   const [query, setQuery]             = useState('');
   const [toast, setToast]             = useState(null);
   const [printData, setPrintData]     = useState(null);
+  const [isPrintEnabled, setIsPrintEnabled] = useState(() => localStorage.getItem('isPrintEnabled') !== 'false');
   const receiptPrintRef               = useRef(null);
 
   const handlePrint = useReactToPrint({
@@ -384,19 +385,21 @@ export default memo(function Cashier({ isActive }) {
         const discountAmount = Math.round((total * discountPercent) / 100);
         const finalTotal = total - discountAmount;
 
-        // Trigger Receipt Printing via react-to-print state trigger
-        setPrintData({
-          cartItems: [...cart],
-          total: finalTotal,
-          originalTotal: total,
-          discountPercent,
-          discountAmount,
-          paymentMethod: method,
-          saleId: result.saleId,
-          dailyReceiptNumber: result.dailyReceiptNumber,
-          shiftReceiptNumber: result.shiftReceiptNumber,
-          date: new Date().toISOString()
-        });
+        if (isPrintEnabled) {
+          // Trigger Receipt Printing via react-to-print state trigger
+          setPrintData({
+            cartItems: [...cart],
+            total: finalTotal,
+            originalTotal: total,
+            discountPercent,
+            discountAmount,
+            paymentMethod: method,
+            saleId: result.saleId,
+            dailyReceiptNumber: result.dailyReceiptNumber,
+            shiftReceiptNumber: result.shiftReceiptNumber,
+            date: new Date().toISOString()
+          });
+        }
 
         finalizeSale(result, method, discountPercent);
 
@@ -792,6 +795,34 @@ export default memo(function Cashier({ isActive }) {
           )}
         </div>
 
+        {/* Cart Switcher Tabs */}
+        <div className="flex border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/10 p-1.5 gap-1 shrink-0">
+          {[1, 2, 3].map(id => {
+            const isTabActive = activeCartId === id;
+            const itemCount = carts[id] ? carts[id].reduce((sum, item) => sum + Number(item.qty), 0) : 0;
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveCartId(id)}
+                className={`flex-1 py-2 px-1 rounded-xl text-xs font-black transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                  isTabActive
+                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/10'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-white'
+                }`}
+              >
+                <span>{lang === 'ru' ? `Покупатель ${id}` : `Mijoz ${id}`}</span>
+                {itemCount > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                    isTabActive ? 'bg-white text-blue-600' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}>
+                    {itemCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="flex-1 overflow-auto px-3 py-3 space-y-2 custom-scrollbar">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600">
@@ -880,6 +911,32 @@ export default memo(function Cashier({ isActive }) {
             <span className="text-sm font-bold text-gray-500 dark:text-gray-400">{t('total')}</span>
             <span className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">
               {formatCurrency(total, lang)}
+            </span>
+          </div>
+
+          {/* Print receipt toggle */}
+          <div className="flex items-center justify-between mb-4 bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700/60 shadow-sm transition-colors">
+            <div className="flex items-center gap-2.5">
+              <input
+                id="print-receipt-checkbox"
+                type="checkbox"
+                checked={isPrintEnabled}
+                onChange={(e) => {
+                  setIsPrintEnabled(e.target.checked);
+                  localStorage.setItem('isPrintEnabled', String(e.target.checked));
+                }}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="print-receipt-checkbox" className="text-xs font-black text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+                {lang === 'ru' ? 'Печатать чек' : 'Chek chiqarish'}
+              </label>
+            </div>
+            <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase tracking-wider ${
+              isPrintEnabled 
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
+                : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+            }`}>
+              {isPrintEnabled ? (lang === 'ru' ? 'С чеком' : 'Chekli') : (lang === 'ru' ? 'Bez chek' : 'Cheksiz')}
             </span>
           </div>
 
