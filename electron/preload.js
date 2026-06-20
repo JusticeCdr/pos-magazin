@@ -47,5 +47,26 @@ contextBridge.exposeInMainWorld('api', {
   getMachineId:  ()        => ipcRenderer.invoke('get-machine-id'),
   getActivation: ()        => ipcRenderer.invoke('get-activation'),
   saveActivation:(fingerprint) => ipcRenderer.invoke('save-activation', fingerprint),
-  clearActivation:()       => ipcRenderer.invoke('clear-activation')
+  clearActivation:()       => ipcRenderer.invoke('clear-activation'),
+  onMobileSalePrinted: (callback) => {
+    ipcRenderer.removeAllListeners('mobile-sale-printed');
+    ipcRenderer.on('mobile-sale-printed', (_, data) => callback(data));
+  },
+  getNgrokUrl: () => ipcRenderer.invoke('get-ngrok-url'),
+  getExpressPort: () => ipcRenderer.invoke('get-express-port'),
+  saveNgrokSettings: (data) => ipcRenderer.invoke('save-ngrok-settings', data),
+  exportSaleExcel: (saleDetails) => ipcRenderer.invoke('export-sale-excel', saleDetails),
+  printA4Invoice: (saleDetails) => ipcRenderer.invoke('print-a4-invoice', saleDetails),
+  onNgrokUrlUpdated: (callback) => {
+    ipcRenderer.removeAllListeners('ngrok-url-updated');
+    ipcRenderer.on('ngrok-url-updated', (_, url) => callback(url));
+  },
+  onNgrokUrlSuccess: (callback) => {
+    ipcRenderer.removeAllListeners('ngrok-url-success');
+    ipcRenderer.on('ngrok-url-success', (_, url) => callback(url));
+  },
+  onNgrokUrlError: (callback) => {
+    ipcRenderer.removeAllListeners('ngrok-url-error');
+    ipcRenderer.on('ngrok-url-error', (_, err) => callback(err));
+  }
 });

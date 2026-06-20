@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, memo, useRef } from 'react';
-import { History, Receipt, Calendar, User, Search, FilterX, Printer, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, X, CheckCircle } from 'lucide-react';
+import { History, Receipt, Calendar, User, Search, FilterX, Printer, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, X, CheckCircle, FileSpreadsheet, FileText } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, parseSQLiteDate } from './utils';
 import { generateReceiptHTML } from './ReceiptTemplate';
@@ -268,6 +268,74 @@ export default memo(function SalesHistory({ isActive }) {
     }
   };
 
+  const handleExportExcel = async (sale) => {
+    if (!window.api) return;
+    try {
+      const saleData = {
+        id: sale.id,
+        shiftReceiptNumber: sale.shift_receipt_number || sale.id,
+        cartItems: sale.items.map(i => ({
+          ...i,
+          qty: i.qty,
+          price: i.price,
+          unit: i.unit || 'dona'
+        })),
+        total: sale.total_amount,
+        originalTotal: sale.original_total,
+        discountPercent: sale.discount_percent,
+        discountAmount: sale.discount_amount,
+        paymentMethod: sale.payment_method,
+        date: sale.created_at,
+        customer_id: sale.customer_id,
+        customerName: sale.customer_name || '',
+        customerPhone: sale.customer_phone || '',
+        customerTotalDebt: sale.customer_total_debt
+      };
+      const res = await window.api.exportSaleExcel(saleData);
+      if (res && res.success) {
+        setSuccessMsg("Excel fayli muvaffaqiyatli saqlandi!");
+      } else if (res && res.error && res.error !== 'File save cancelled') {
+        setErrorMsg("Excelni saqlashda xatolik yuz berdi: " + res.error);
+      }
+    } catch (err) {
+      setErrorMsg("Xatolik yuz berdi: " + err.message);
+    }
+  };
+
+  const handlePrintA4 = async (sale) => {
+    if (!window.api) return;
+    try {
+      const saleData = {
+        id: sale.id,
+        shiftReceiptNumber: sale.shift_receipt_number || sale.id,
+        cartItems: sale.items.map(i => ({
+          ...i,
+          qty: i.qty,
+          price: i.price,
+          unit: i.unit || 'dona'
+        })),
+        total: sale.total_amount,
+        originalTotal: sale.original_total,
+        discountPercent: sale.discount_percent,
+        discountAmount: sale.discount_amount,
+        paymentMethod: sale.payment_method,
+        date: sale.created_at,
+        customer_id: sale.customer_id,
+        customerName: sale.customer_name || '',
+        customerPhone: sale.customer_phone || '',
+        customerTotalDebt: sale.customer_total_debt
+      };
+      const res = await window.api.printA4Invoice(saleData);
+      if (res && res.success) {
+        // print dialog completed
+      } else if (res && res.error) {
+        alert("A4 chop etishda xatolik: " + res.error);
+      }
+    } catch (err) {
+      alert("Xatolik yuz berdi: " + err.message);
+    }
+  };
+
   // Filtered sales is now directly from database sales list since the database computes the filter
   const filteredSales = sales;
 
@@ -473,6 +541,9 @@ export default memo(function SalesHistory({ isActive }) {
                       <span className={`font-bold ${sale.status === 'refunded' || sale.total_amount === 0 ? 'text-red-500 line-through decoration-2' : 'text-gray-800 dark:text-gray-200'}`}>
                         Chek #{sale.shift_receipt_number || sale.id}
                       </span>
+                      {sale.device === 'mobile' && (
+                        <span className="text-[10px] uppercase font-black bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full ml-1" title="Mobil telefondan sotilgan">📱 Mobil</span>
+                      )}
                       {(sale.status === 'refunded' || sale.total_amount === 0) && (
                         <span className="text-[10px] uppercase font-black bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full ml-1">Qaytarilgan</span>
                       )}
@@ -579,6 +650,15 @@ export default memo(function SalesHistory({ isActive }) {
                       >
                         <Printer size={16} />
                         <span className="hidden sm:inline">Qayta chiqarish</span>
+                      </button>
+
+                      <button 
+                        onClick={() => handleExportExcel(sale)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-green-600 dark:hover:text-green-400 transition-colors shadow-sm active:scale-95"
+                        title="Excel nakladnoy yuklash"
+                      >
+                        <FileSpreadsheet size={16} />
+                        <span className="hidden sm:inline">Excel</span>
                       </button>
 
                       {(() => {

@@ -80,6 +80,17 @@ export default memo(function Cashier({ isActive }) {
       return () => clearTimeout(timer);
     }
   }, [printData]);
+
+  useEffect(() => {
+    if (window.api && window.api.onMobileSalePrinted) {
+      window.api.onMobileSalePrinted((saleData) => {
+        setPrintData(saleData);
+        if (fetchGlobalProducts) fetchGlobalProducts();
+        if (fetchGlobalCustomers) fetchGlobalCustomers();
+      });
+    }
+  }, [fetchGlobalProducts, fetchGlobalCustomers]);
+
   const [visibleCount, setVisibleCount] = useState(50);
   const [receipt, setReceipt]         = useState(null);
   
@@ -178,6 +189,18 @@ export default memo(function Cashier({ isActive }) {
   useEffect(() => {
     fetchGlobalCustomers();
     searchInputRef.current?.focus();
+
+    const handleUpdate = () => {
+      fetchGlobalCustomers();
+    };
+
+    window.addEventListener('sales-updated', handleUpdate);
+    window.addEventListener('debts-updated', handleUpdate);
+
+    return () => {
+      window.removeEventListener('sales-updated', handleUpdate);
+      window.removeEventListener('debts-updated', handleUpdate);
+    };
   }, []);
 
   useEffect(() => {

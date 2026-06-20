@@ -85,42 +85,68 @@ export default memo(function Reports({ isActive }) {
     };
   };
 
-  const lastReportFilterRef = useRef({ filter: '', customStart: '', customEnd: '' });
+  // ── Data fetching ──────────────────────────────────────────────────────────
+  // hasLoadedRef: was data ever loaded? Prevents re-fetch on tab-switch.
+  const hasLoadedRef = useRef(false);
+  // prevFilterKey: detects when the filter/date actually changed.
+  const prevFilterKeyRef = useRef('');
+  const filterKey = `${filter}|${customStart}|${customEnd}`;
+
+  const fetchLowStock = () => {
+    if (!window.api) return;
+    window.api.getLowStock(3)
+      .then(res => { if (res && res.success) setLowStock(res.data); })
+      .catch(() => {});
+  };
 
   const fetchReports = async (showLoader = false) => {
     if (!window.api) return;
-    if (filter === 'custom' && (!customStart || !customEnd)) {
-      return;
-    }
-    if (showLoader || isInitialLoad) {
-      setLoading(true);
-    }
+    if (filter === 'custom' && (!customStart || !customEnd)) return;
+    if (showLoader || isInitialLoad) setLoading(true);
     try {
       const dates = getDates(filter);
       const result = await window.api.getReports(dates);
-      if (result && result.success) {
-        setData(result.data);
-      }
-    } catch (err) {
+      if (result && result.success) setData(result.data);
+    } catch (_err) {
+      // silent
     } finally {
       setIsInitialLoad(false);
       setLoading(false);
+      hasLoadedRef.current = true;
     }
   };
 
+  // Effect 1 — Fetch on MOUNT once, then only when filter/dates change.
+  // isActive is intentionally NOT in the dependency array:
+  // switching tabs must never trigger a new database round-trip.
   useEffect(() => {
-    if (isActive) {
-      lastReportFilterRef.current = { filter, customStart, customEnd };
-
-      fetchReports(false);
-      // Fetch low stock once on mount (independent of date filter)
-      if (window.api) {
-        window.api.getLowStock(3).then(res => {
-          if (res && res.success) setLowStock(res.data);
-        }).catch(() => {});
-      }
+    if (filter === 'custom' && (!customStart || !customEnd)) return;
+    const filterChanged = prevFilterKeyRef.current !== filterKey;
+    prevFilterKeyRef.current = filterKey;
+    if (!hasLoadedRef.current || filterChanged) {
+      fetchReports(!hasLoadedRef.current); // spinner only on first-ever load
+      fetchLowStock();
     }
-  }, [isActive, filter, customStart, customEnd]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
+
+  // Effect 2 — Real-time refresh from Socket.io events.
+  // isActive gates the refresh so background tabs don't do extra work.
+  useEffect(() => {
+    const handleUpdate = () => {
+      if (isActive) {
+        fetchReports(false);
+        fetchLowStock();
+      }
+    };
+    window.addEventListener('sales-updated', handleUpdate);
+    window.addEventListener('debts-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('sales-updated', handleUpdate);
+      window.removeEventListener('debts-updated', handleUpdate);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, filterKey]);
 
 
 

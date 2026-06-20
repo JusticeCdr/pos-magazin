@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { TRANSLATIONS } from '../translations';
+import { io } from 'socket.io-client';
 
 const AppContext = createContext(null);
 
@@ -103,6 +104,43 @@ export function AppProvider({ children }) {
       }).catch(() => {});
       fetchGlobalCustomers();
     }
+  }, []);
+
+  useEffect(() => {
+    let socket;
+    if (window.api) {
+      window.api.getExpressPort().then(port => {
+        socket = io(`http://localhost:${port}`);
+        
+        socket.on('connect', () => {
+          console.log('🔌 Connected to local WebSocket server');
+        });
+        
+        socket.on('sales-updated', (data) => {
+          console.log('🔄 WebSocket: Sales updated, reloading products and stats...', data);
+          fetchGlobalProducts();
+          fetchGlobalCustomers();
+          window.dispatchEvent(new CustomEvent('sales-updated', { detail: data }));
+        });
+        
+        socket.on('products-updated', (data) => {
+          console.log('🔄 WebSocket: Products updated, reloading products...', data);
+          fetchGlobalProducts();
+          window.dispatchEvent(new CustomEvent('products-updated', { detail: data }));
+        });
+        
+        socket.on('debts-updated', (data) => {
+          console.log('🔄 WebSocket: Debts updated, reloading customers...', data);
+          fetchGlobalCustomers();
+          window.dispatchEvent(new CustomEvent('debts-updated', { detail: data }));
+        });
+      }).catch(err => {
+        console.error('Failed to get Express port:', err);
+      });
+    }
+    return () => {
+      if (socket) socket.disconnect();
+    };
   }, []);
 
   return (

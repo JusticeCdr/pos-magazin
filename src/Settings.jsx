@@ -20,10 +20,14 @@ export default memo(function Settings() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64Str = event.target.result;
       stateSetter(base64Str);
       localStorage.setItem(storageKey, base64Str);
+      if (window.api) {
+        const dbKey = storageKey === 'telegramQrCode' ? 'telegram_qr' : 'instagram_qr';
+        await window.api.updateSetting({ key: dbKey, value: base64Str });
+      }
       setToastMsg('QR-kod muvaffaqiyatli yuklandi!');
     };
     reader.readAsDataURL(file);
@@ -69,6 +73,14 @@ export default memo(function Settings() {
   const [baseLoading, setBaseLoading] = useState(false);
   const [showBaseConfirm, setShowBaseConfirm] = useState(null); // 'grocery' | 'hardware' | null
 
+  // Ngrok states
+  const [ngrokToken, setNgrokToken] = useState('');
+  const [ngrokDomain, setNgrokDomain] = useState('');
+  const [ngrokUrl, setNgrokUrl] = useState('');
+  const [ngrokError, setNgrokError] = useState('');
+  const [ngrokLoading, setNgrokLoading] = useState(false); // true while tunnel is starting
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+
   const loadCashiers = async () => {
     if (!window.api) return;
     const res = await window.api.getCashiers();
@@ -81,6 +93,40 @@ export default memo(function Settings() {
     loadCashiers();
     loadPrinters();
     checkBase();
+
+    if (window.api) {
+      if (window.api.onNgrokUrlUpdated) {
+        window.api.onNgrokUrlUpdated((url) => {
+          setNgrokUrl(url);
+        });
+      }
+      if (window.api.onNgrokUrlSuccess) {
+        window.api.onNgrokUrlSuccess((url) => {
+          setNgrokUrl(url);
+          setNgrokError('');
+          setNgrokLoading(false);
+        });
+      }
+      if (window.api.onNgrokUrlError) {
+        window.api.onNgrokUrlError((err) => {
+          setNgrokUrl('');
+          setNgrokError(err);
+          setNgrokLoading(false);
+        });
+      }
+      if (window.api.onNgrokUrlUpdated) {
+        window.api.onNgrokUrlUpdated((url) => {
+          setNgrokUrl(url);
+          setNgrokLoading(false);
+        });
+      }
+      // Restore any already-running tunnel URL immediately
+      if (window.api.getNgrokUrl) {
+        window.api.getNgrokUrl().then(url => {
+          if (url) setNgrokUrl(url);
+        });
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -135,26 +181,75 @@ export default memo(function Settings() {
         if (res.data.phone_1) setPhone1(res.data.phone_1);
         if (res.data.phone_2) setPhone2(res.data.phone_2);
         if (res.data.phone_3) setPhone3(res.data.phone_3);
+        if (res.data.ngrok_token) setNgrokToken(res.data.ngrok_token);
+        if (res.data.ngrok_domain) setNgrokDomain(res.data.ngrok_domain);
+        if (res.data.gemini_api_key) setGeminiApiKey(res.data.gemini_api_key);
+        
+        // Sync SQLite settings to state & localStorage
+        if (res.data.receipt_printer_name) {
+          setSelectedPrinter(res.data.receipt_printer_name);
+          localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
+        }
+        if (res.data.label_printer_name) {
+          setSelectedLabelPrinter(res.data.label_printer_name);
+          localStorage.setItem('labelPrinterName', res.data.label_printer_name);
+        }
+        if (res.data.printer_width) {
+          setPrinterWidth(res.data.printer_width);
+          localStorage.setItem('printer_width', res.data.printer_width);
+        }
+        if (res.data.label_width) {
+          setLabelWidth(res.data.label_width);
+          localStorage.setItem('label_width', res.data.label_width);
+        }
+        if (res.data.label_height) {
+          setLabelHeight(res.data.label_height);
+          localStorage.setItem('label_height', res.data.label_height);
+        }
+        if (res.data.shop_location) {
+          setShopLocation(res.data.shop_location);
+          localStorage.setItem('shopLocation', res.data.shop_location);
+        }
+        if (res.data.telegram_qr) {
+          setTelegramQr(res.data.telegram_qr);
+          localStorage.setItem('telegramQrCode', res.data.telegram_qr);
+        }
+        if (res.data.instagram_qr) {
+          setInstagramQr(res.data.instagram_qr);
+          localStorage.setItem('instagramQrCode', res.data.instagram_qr);
+        }
       }
     } catch (err) {
     }
   };
 
-  const handleSavePrinter = (printerName) => {
+  const handleSavePrinter = async (printerName) => {
     setSelectedPrinter(printerName);
     localStorage.setItem('receiptPrinterName', printerName);
+    if (window.api) {
+      await window.api.updateSetting({ key: 'receipt_printer_name', value: printerName });
+    }
   };
 
-  const handleSaveLabelPrinter = (printerName) => {
+  const handleSaveLabelPrinter = async (printerName) => {
     setSelectedLabelPrinter(printerName);
     localStorage.setItem('labelPrinterName', printerName);
+    if (window.api) {
+      await window.api.updateSetting({ key: 'label_printer_name', value: printerName });
+    }
   };
 
-  const handleSavePrintersConfig = () => {
+  const handleSavePrintersConfig = async () => {
     localStorage.setItem('receiptPrinterName', selectedPrinter);
     localStorage.setItem('labelPrinterName', selectedLabelPrinter);
     localStorage.setItem('label_width', labelWidth);
     localStorage.setItem('label_height', labelHeight);
+    if (window.api) {
+      await window.api.updateSetting({ key: 'receipt_printer_name', value: selectedPrinter });
+      await window.api.updateSetting({ key: 'label_printer_name', value: selectedLabelPrinter });
+      await window.api.updateSetting({ key: 'label_width', value: labelWidth });
+      await window.api.updateSetting({ key: 'label_height', value: labelHeight });
+    }
     setToastMsg(t('printersSaved'));
   };
 
@@ -184,6 +279,49 @@ export default memo(function Settings() {
       setToastMsg('Xatolik yuz berdi: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveNgrok = async () => {
+    if (!window.api) return;
+    const token  = ngrokToken.trim();
+    const domain = ngrokDomain.trim();
+    if (!token || !domain) {
+      setNgrokError('Token va domain kiritish majburiy!');
+      return;
+    }
+    setLoading(true);
+    setNgrokError('');
+    try {
+      // 1. Save to DB (also done inside start-ngrok handler, but do it here too for safety)
+      await window.api.updateSetting({ key: 'ngrok_token',  value: token });
+      await window.api.updateSetting({ key: 'ngrok_domain', value: domain });
+
+      // 2. Launch / restart the tunnel via main process
+      setNgrokLoading(true);
+      setNgrokUrl('');  // clear old URL while reconnecting
+      const res = await window.api.saveNgrokSettings({ token, domain });
+      if (res && res.success) {
+        setToastMsg('Ngrok sozlamalari saqlandi! Ulagich ishga tushmoqda...');
+      } else {
+        setNgrokError(res?.error || 'Ngrok ishga tushirishda xatolik');
+        setNgrokLoading(false);
+      }
+    } catch (err) {
+      setNgrokError('Xatolik yuz berdi: ' + err.message);
+      setNgrokLoading(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveGeminiKey = async () => {
+    if (!window.api) return;
+    try {
+      await window.api.updateSetting({ key: 'gemini_api_key', value: geminiApiKey.trim() });
+      setToastMsg('Gemini API kaliti saqlandi!');
+    } catch (err) {
+      setToastMsg('Kalitni saqlashda xatolik: ' + err.message);
     }
   };
 
@@ -513,10 +651,13 @@ export default memo(function Settings() {
                 </label>
                 <select
                   value={printerWidth}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const val = e.target.value;
                     setPrinterWidth(val);
                     localStorage.setItem('printer_width', val);
+                    if (window.api) {
+                      await window.api.updateSetting({ key: 'printer_width', value: val });
+                    }
                   }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
                 >
@@ -641,6 +782,125 @@ export default memo(function Settings() {
                   </button>
                 </div>
               </div>
+
+              {/* Masofaviy boshqaruv (Telefon uchun) */}
+              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                  <span className="text-blue-500">📱</span>
+                  Masofaviy boshqaruv (Telefon uchun)
+                </h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Telefon orqali sotuv va skladni boshqarish uchun Ngrok sozlamalarini kiriting.
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ngrok Token</label>
+                    <input 
+                      type="text" 
+                      value={ngrokToken}
+                      onChange={e => setNgrokToken(e.target.value)}
+                      placeholder="Authtoken kiriting..."
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ngrok Havolasi (Static Domain)</label>
+                    <input 
+                      type="text" 
+                      value={ngrokDomain}
+                      onChange={e => setNgrokDomain(e.target.value)}
+                      placeholder="Masalan: pasty-overcook-reckless.ngrok-free.dev"
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <button 
+                    onClick={handleSaveNgrok}
+                    disabled={loading || ngrokLoading}
+                    className={`w-full mt-2 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      ngrokLoading
+                        ? 'bg-blue-400 text-white cursor-not-allowed'
+                        : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    {ngrokLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        <span>Ulanmoqda...</span>
+                      </>
+                    ) : (
+                      <span>Saqlash va Ulashtirish</span>
+                    )}
+                  </button>
+
+                  {ngrokLoading && (
+                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl">
+                      <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 font-medium">
+                        <div className="w-3 h-3 border-2 border-blue-400/40 border-t-blue-500 rounded-full animate-spin shrink-0" />
+                        Ngrok tunneli ishga tushmoqda, iltimos kuting...
+                      </p>
+                    </div>
+                  )}
+
+                  {ngrokUrl && !ngrokLoading && (
+                    <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900/30 rounded-xl">
+                      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2 mb-1">
+                        <span>✅</span>
+                        Tunnel faol! Telefon orqali kirish havolasi:
+                      </p>
+                      <a 
+                        href={ngrokUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300 break-all underline block hover:text-emerald-500"
+                      >
+                        {ngrokUrl}
+                      </a>
+                    </div>
+                  )}
+
+                  {ngrokError && !ngrokLoading && (
+                    <div className="mt-4 p-3 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl">
+                      <p className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                        <span>⚠️</span>
+                        Ngrok xatoligi:
+                      </p>
+                      <p className="text-xs font-mono font-bold text-red-700 dark:text-red-300 break-all mt-1">
+                        {ngrokError}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sun'iy Intellekt Sozlamalari (Gemini) */}
+              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                  <span className="text-purple-500">✨</span>
+                  Sun'iy Intellekt (Google Gemini API)
+                </h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Telefon kamerasidan chek va yuk xatlarini (nakladnoy) avtomatik o'qish hamda internetdan tovar shtrix-kodlarini qidirish uchun Google Gemini API kalitini kiriting.
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Google Gemini API Key</label>
+                    <input 
+                      type="password" 
+                      value={geminiApiKey}
+                      onChange={e => setGeminiApiKey(e.target.value)}
+                      placeholder="API kalitini kiriting (AIzaSy...)"
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <button 
+                    onClick={handleSaveGeminiKey}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Gemini API Kalitini Saqlash</span>
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -660,9 +920,12 @@ export default memo(function Settings() {
                 </label>
                 <textarea 
                   value={shopLocation}
-                  onChange={e => {
+                  onChange={async (e) => {
                     setShopLocation(e.target.value);
                     localStorage.setItem('shopLocation', e.target.value);
+                    if (window.api) {
+                      await window.api.updateSetting({ key: 'shop_location', value: e.target.value });
+                    }
                   }}
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
                   placeholder="Toshkent sh., Yunusobod t."
@@ -685,7 +948,13 @@ export default memo(function Settings() {
                     <img src={telegramQr} className="w-16 h-16 object-contain border rounded p-1 bg-white" />
                     <button 
                       type="button" 
-                      onClick={() => { setTelegramQr(''); localStorage.removeItem('telegramQrCode'); }}
+                      onClick={async () => {
+                        setTelegramQr(''); 
+                        localStorage.removeItem('telegramQrCode'); 
+                        if (window.api) {
+                          await window.api.updateSetting({ key: 'telegram_qr', value: '' });
+                        }
+                      }}
                       className="text-xs text-red-500 hover:underline cursor-pointer"
                     >
                       O'chirish (Удалить)
@@ -709,7 +978,13 @@ export default memo(function Settings() {
                     <img src={instagramQr} className="w-16 h-16 object-contain border rounded p-1 bg-white" />
                     <button 
                       type="button" 
-                      onClick={() => { setInstagramQr(''); localStorage.removeItem('instagramQrCode'); }}
+                      onClick={async () => {
+                        setInstagramQr(''); 
+                        localStorage.removeItem('instagramQrCode'); 
+                        if (window.api) {
+                          await window.api.updateSetting({ key: 'instagram_qr', value: '' });
+                        }
+                      }}
                       className="text-xs text-red-500 hover:underline cursor-pointer"
                     >
                       O'chirish (Удалить)

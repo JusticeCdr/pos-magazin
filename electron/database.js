@@ -49,6 +49,7 @@ function initDB() {
   try { db.exec("ALTER TABLE sales ADD COLUMN is_closed INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN status TEXT DEFAULT 'completed';"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN shift_receipt_number INTEGER DEFAULT 0;"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN device TEXT DEFAULT 'desktop';"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN opened_by TEXT;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN closed_by TEXT;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN total_expenses REAL DEFAULT 0;"); } catch (_) {}
@@ -110,7 +111,8 @@ function initDB() {
       shift_receipt_number INTEGER DEFAULT 0,
       original_total REAL    DEFAULT 0,
       discount_percent REAL  DEFAULT 0,
-      discount_amount REAL   DEFAULT 0
+      discount_amount REAL   DEFAULT 0,
+      device         TEXT    DEFAULT 'desktop'
     );
   `);
 
@@ -186,6 +188,16 @@ function initDB() {
   const storeNameExists = db.prepare("SELECT value FROM settings WHERE key = 'store_name'").get();
   if (!storeNameExists) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('store_name', 'Mening Do''konim')").run();
+  }
+  
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'ngrok_token'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('ngrok_token', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'ngrok_domain'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('ngrok_domain', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('gemini_api_key', '')").run();
   }
 
   // ── Customers ──────────────────────────────────────────────────────────────
@@ -428,7 +440,17 @@ function getProducts() {
   return db.prepare('SELECT * FROM products ORDER BY id DESC').all();
 }
 
-function getCustomers() {
+function getCustomers(searchQuery = '') {
+  if (searchQuery && searchQuery.trim() !== '') {
+    const q = `%${searchQuery.trim().toLowerCase()}%`;
+    return db.prepare(`
+      SELECT c.*, 
+             (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
+      FROM customers c 
+      WHERE my_lower(c.name) LIKE ? OR c.phone LIKE ?
+      ORDER BY c.total_debt DESC
+    `).all(q, q);
+  }
   return db.prepare(`
     SELECT c.*, 
            (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
@@ -525,6 +547,25 @@ function addProduct(product) {
 
     return { success: true, id: newId };
   } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function batchAddProducts(products) {
+  try {
+    db.exec('BEGIN TRANSACTION');
+    const results = [];
+    for (const p of products) {
+      const res = addProduct(p);
+      if (!res.success) {
+        throw new Error(res.error || `Mahsulotni qo'shib bo'lmadi: ${p.name}`);
+      }
+      results.push(res);
+    }
+    db.exec('COMMIT');
+    return { success: true, results };
+  } catch (err) {
+    db.exec('ROLLBACK');
     return { success: false, error: err.message };
   }
 }
@@ -689,7 +730,7 @@ function searchProduct(query) {
   }
 }
 
-function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kassir', discountPercent = 0) {
+function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kassir', discountPercent = 0, device = 'desktop') {
   try {
     db.exec('BEGIN TRANSACTION');
 
@@ -739,8 +780,8 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
 
     // 3. Insert Sale record
-    const saleInfo = db.prepare('INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, shift_receipt_number, original_total, discount_percent, discount_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(finalTotal, paymentMethod, customerId, cashierName, shiftReceiptNumber, originalTotal, pct, discountAmount);
+    const saleInfo = db.prepare('INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, shift_receipt_number, original_total, discount_percent, discount_amount, device) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(finalTotal, paymentMethod, customerId, cashierName, shiftReceiptNumber, originalTotal, pct, discountAmount, device);
     const saleId = saleInfo.lastInsertRowid;
 
     // 4. Insert Sale Items, Deduct Stock, and Log
@@ -755,6 +796,13 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     const saleNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}${discountLabel})`;
 
     for (const item of cartItems) {
+      // Concurrency protection: verify stock level inside transaction
+      const row = db.prepare('SELECT name, stock FROM products WHERE id = ?').get(item.id);
+      const currentStock = row ? row.stock : 0;
+      if (currentStock < item.qty) {
+        throw new Error(`stock_error:${row ? row.name : item.name}:${item.qty}:${currentStock}`);
+      }
+
       const itemPct = parseFloat(item.discount) || 0;
       const itemTotal = item.sell_price * item.qty;
       const itemDiscAmount = Math.round(itemTotal * (itemPct / 100));
@@ -784,6 +832,17 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     return { success: true, saleId, shiftReceiptNumber };
   } catch (err) {
     db.exec('ROLLBACK');
+    if (err.message && err.message.startsWith('stock_error:')) {
+      const parts = err.message.split(':');
+      const name = parts[1];
+      const reqQty = parts[2];
+      const availStock = parts[3];
+      return {
+        success: false,
+        error: 'insufficient_stock',
+        message: `"${name}" omborda yetarli emas! Kiritilgan: ${reqQty}, mavjud: ${availStock}`
+      };
+    }
     return { success: false, error: err.message };
   }
 }
@@ -820,7 +879,7 @@ function getRecentSales() {
   try {
     // Get sales from the last 3 days, join with customers to get name
     const sales = db.prepare(`
-      SELECT s.*, c.name as customer_name 
+      SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.total_debt as customer_total_debt
       FROM sales s
       LEFT JOIN customers c ON s.customer_id = c.id
       WHERE s.created_at >= datetime('now', '-3 days', 'localtime')
@@ -1073,7 +1132,8 @@ function getReports(startDateISO, endDateISO) {
         salesByType,
         topProducts,
         warehouseBuyValue,
-        warehouseSellValue
+        warehouseSellValue,
+        totalDebtPayments
       }
     };
   } catch (err) {
@@ -1158,42 +1218,42 @@ function getAllSalesHistory({
 
     // Date filters: if both startDate and endDate are empty, default to last 30 days
     if (!startDate && !endDate) {
-      conditions.push("date(created_at, 'localtime') >= date('now', '-30 days', 'localtime')");
+      conditions.push("date(s.created_at, 'localtime') >= date('now', '-30 days', 'localtime')");
     } else {
       if (startDate) {
-        conditions.push("date(created_at, 'localtime') >= ?");
+        conditions.push("date(s.created_at, 'localtime') >= ?");
         params.push(startDate);
       }
       if (endDate) {
-        conditions.push("date(created_at, 'localtime') <= ?");
+        conditions.push("date(s.created_at, 'localtime') <= ?");
         params.push(endDate);
       }
     }
 
     // Time filters
     if (startTime) {
-      conditions.push("time(created_at, 'localtime') >= ?");
+      conditions.push("time(s.created_at, 'localtime') >= ?");
       params.push(startTime + ':00');
     }
     if (endTime) {
-      conditions.push("time(created_at, 'localtime') <= ?");
+      conditions.push("time(s.created_at, 'localtime') <= ?");
       params.push(endTime + ':00');
     }
 
     // Cashier filter
     if (selectedCashier) {
-      conditions.push("cashier_name = ?");
+      conditions.push("s.cashier_name = ?");
       params.push(selectedCashier);
     }
 
     // Status filter
     if (statusFilter) {
       if (statusFilter === 'refunded') {
-        conditions.push("status = 'refunded'");
+        conditions.push("s.status = 'refunded'");
       } else if (statusFilter === 'completed') {
-        conditions.push("status != 'refunded'");
+        conditions.push("s.status != 'refunded'");
       } else if (statusFilter === 'discounted') {
-        conditions.push("discount_percent > 0");
+        conditions.push("s.discount_percent > 0");
       }
     }
 
@@ -1205,7 +1265,7 @@ function getAllSalesHistory({
         const numStr = trimmedQuery.substring(1).trim();
         const num = parseInt(numStr, 10);
         if (!isNaN(num)) {
-          conditions.push("(id = ? OR shift_receipt_number = ?)");
+          conditions.push("(s.id = ? OR s.shift_receipt_number = ?)");
           params.push(num);
           params.push(num);
         } else {
@@ -1216,9 +1276,9 @@ function getAllSalesHistory({
         const num = parseInt(trimmedQuery, 10);
         if (!isNaN(num) && String(num) === trimmedQuery) {
           conditions.push(`(
-            id = ? 
-            OR shift_receipt_number = ? 
-            OR id IN (
+            s.id = ? 
+            OR s.shift_receipt_number = ? 
+            OR s.id IN (
               SELECT DISTINCT si.sale_id 
               FROM sale_items si
               LEFT JOIN products p ON si.product_id = p.id
@@ -1230,7 +1290,7 @@ function getAllSalesHistory({
           params.push(`%${trimmedQuery}%`);
         } else {
           conditions.push(`(
-            id IN (
+            s.id IN (
               SELECT DISTINCT si.sale_id 
               FROM sale_items si
               LEFT JOIN products p ON si.product_id = p.id
@@ -1245,14 +1305,16 @@ function getAllSalesHistory({
     const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
     // Get total count for pagination meta
-    const countQuery = `SELECT COUNT(*) as total FROM sales ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) as total FROM sales s ${whereClause}`;
     const { total } = db.prepare(countQuery).get(...params);
 
-    // Paginated sales, newest first
+    // Paginated sales, newest first, joining customers table
     const salesQuery = `
-      SELECT * FROM sales 
+      SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.total_debt as customer_total_debt
+      FROM sales s
+      LEFT JOIN customers c ON s.customer_id = c.id
       ${whereClause} 
-      ORDER BY created_at DESC 
+      ORDER BY s.created_at DESC 
       LIMIT ? OFFSET ?
     `;
     const queryParams = [...params, pageSize, offset];
@@ -1659,9 +1721,202 @@ function clearActivation() {
   }
 }
 
+function getTodayStats() {
+  try {
+    const salesRow = db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) as total_sales, COUNT(id) as receipts_count
+      FROM sales
+      WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status != 'refunded'
+    `).get();
+
+    const profitRow = db.prepare(`
+      SELECT COALESCE(SUM((si.price - IFNULL(p.buy_price, 0)) * si.qty), 0) as gross_profit
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE date(s.created_at, 'localtime') = date('now', 'localtime') AND s.status != 'refunded'
+    `).get();
+
+    const discountsRow = db.prepare(`
+      SELECT COALESCE(SUM(discount_amount), 0) as total_discounts
+      FROM sales
+      WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status != 'refunded'
+    `).get();
+
+    const expensesRow = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total_expenses
+      FROM expenses
+      WHERE date(created_at, 'localtime') = date('now', 'localtime')
+    `).get();
+
+    const total_sales = salesRow.total_sales;
+    const receipts_count = salesRow.receipts_count;
+    const net_profit = profitRow.gross_profit - discountsRow.total_discounts - expensesRow.total_expenses;
+
+    const lastSaleRow = db.prepare(`
+      SELECT id, shift_receipt_number FROM sales ORDER BY id DESC LIMIT 1
+    `).get();
+    const last_sale_id = lastSaleRow ? lastSaleRow.id : null;
+    const last_shift_receipt_number = lastSaleRow ? lastSaleRow.shift_receipt_number : null;
+
+    return {
+      success: true,
+      total_sales,
+      net_profit,
+      receipts_count,
+      last_sale_id,
+      last_shift_receipt_number
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getProductsPaginated(page = 1, searchQuery = '') {
+  try {
+    const limit = 50;
+    const offset = (page - 1) * limit;
+    let products;
+    let totalCount;
+
+    if (searchQuery && searchQuery.trim() !== '') {
+      const queryStr = `%${searchQuery.trim().toLowerCase()}%`;
+      products = db.prepare(`
+        SELECT * FROM products 
+        WHERE my_lower(name) LIKE ? OR my_lower(barcode) LIKE ? 
+        ORDER BY id DESC LIMIT ? OFFSET ?
+      `).all(queryStr, queryStr, limit, offset);
+
+      totalCount = db.prepare(`
+        SELECT COUNT(*) as count FROM products 
+        WHERE my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?
+      `).get(queryStr, queryStr).count;
+    } else {
+      products = db.prepare(`
+        SELECT * FROM products 
+        ORDER BY id DESC LIMIT ? OFFSET ?
+      `).all(limit, offset);
+
+      totalCount = db.prepare(`
+        SELECT COUNT(*) as count FROM products
+      `).get().count;
+    }
+
+    return {
+      success: true,
+      products,
+      totalCount,
+      page: parseInt(page),
+      totalPages: Math.ceil(totalCount / limit)
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getCustomersWithDebts(searchQuery = '') {
+  try {
+    let rows;
+    if (searchQuery && searchQuery.trim() !== '') {
+      const q = `%${searchQuery.trim().toLowerCase()}%`;
+      rows = db.prepare(`
+        SELECT c.*, 
+               (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
+        FROM customers c 
+        WHERE my_lower(c.name) LIKE ? OR c.phone LIKE ?
+        ORDER BY c.total_debt DESC
+      `).all(q, q);
+    } else {
+      rows = db.prepare(`
+        SELECT c.*, 
+               (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
+        FROM customers c 
+        ORDER BY c.total_debt DESC
+      `).all();
+    }
+    return { success: true, data: rows };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function generateEAN13(numberStr) {
+  const prefix = '200';
+  let dataPart = prefix + String(numberStr).padStart(9, '0');
+  if (dataPart.length > 12) {
+    dataPart = dataPart.substring(0, 12);
+  }
+  
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const digit = parseInt(dataPart[i], 10);
+    if (i % 2 === 0) {
+      sum += digit;
+    } else {
+      sum += digit * 3;
+    }
+  }
+  const checksum = (10 - (sum % 10)) % 10;
+  return dataPart + checksum;
+}
+
+function generateUniqueLocalBarcode() {
+  try {
+    const rows = db.prepare("SELECT barcode FROM products WHERE barcode LIKE '200%' AND length(barcode) = 13").all();
+    let maxNum = 0;
+    for (const r of rows) {
+      const code = r.barcode;
+      const dataPart = code.substring(3, 12);
+      const num = parseInt(dataPart, 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+    const nextNum = maxNum + 1;
+    return generateEAN13(nextNum);
+  } catch (err) {
+    const rand = Math.floor(100000000 + Math.random() * 900000000);
+    return generateEAN13(rand);
+  }
+}
+
+function findLocalBarcodeByName(name) {
+  try {
+    if (!name || name.trim() === "") return null;
+    const row = db.prepare("SELECT barcode FROM products WHERE my_lower(name) LIKE my_lower(?) AND barcode IS NOT NULL AND barcode != '' LIMIT 1")
+      .get(`%${name.trim()}%`);
+    if (row && row.barcode) {
+      return row.barcode;
+    }
+    return null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function getCustomer(customerId) {
+  try {
+    const row = db.prepare("SELECT * FROM customers WHERE id = ?").get(customerId);
+    return { success: true, data: row };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getSaleForReprint(saleId) {
+  try {
+    const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
+    if (!sale) return { success: false, error: 'Sale not found' };
+    const items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(saleId);
+    return { success: true, sale, items };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = { 
-  initDB, closeDB, getProducts, getCustomers, addProduct, updateProduct, addStockToProduct, deleteProduct, searchProduct,
-  processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports,
+  initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, updateProduct, addStockToProduct, deleteProduct, searchProduct,
+  processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
   getLowStockProducts, clearTestData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
   verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase,
   getCashiers, addCashier, deleteCashier, updateCashierPin,
@@ -1675,5 +1930,11 @@ module.exports = {
   maybeOpenShift,
   getActivation,
   saveActivation,
-  clearActivation
+  clearActivation,
+  getTodayStats,
+  getProductsPaginated,
+  getCustomersWithDebts,
+  findLocalBarcodeByName,
+  generateUniqueLocalBarcode,
+  batchAddProducts
 };

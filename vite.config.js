@@ -17,7 +17,7 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              external: ['node:sqlite'],
+              external: ['node:sqlite', 'ngrok'],
             },
           },
         },
@@ -32,7 +32,7 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              external: ['node:sqlite'],
+              external: ['node:sqlite', 'ngrok'],
             },
           },
         },
@@ -42,7 +42,7 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      external: ['node:sqlite'],
+      external: ['node:sqlite', 'ngrok'],
     },
   },
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, memo, useRef } from 'react';
 import { Search, Users, Phone, DollarSign, Wallet, X, Trash2 } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands } from './utils';
@@ -56,6 +56,42 @@ export default memo(function Debts({ isActive }) {
       fetchCustomers();
     }
   }, [isActive]);
+
+  const reloadDebtDetails = async (customerId) => {
+    if (!customerId) return;
+    setLoadingDetails(true);
+    try {
+      const res = await window.api.getCustomerDebtDetails(customerId);
+      if (res && res.success) {
+        setDebtDetails(res.data);
+      }
+    } catch (err) {
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const selectedCustomerRef = useRef(selectedCustomer);
+  useEffect(() => {
+    selectedCustomerRef.current = selectedCustomer;
+  }, [selectedCustomer]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      fetchCustomers();
+      if (detailsModal && selectedCustomerRef.current) {
+        reloadDebtDetails(selectedCustomerRef.current.id);
+      }
+    };
+
+    window.addEventListener('sales-updated', handleUpdate);
+    window.addEventListener('debts-updated', handleUpdate);
+
+    return () => {
+      window.removeEventListener('sales-updated', handleUpdate);
+      window.removeEventListener('debts-updated', handleUpdate);
+    };
+  }, [detailsModal]);
 
   // Derived state
   const totalDebtsSum = customers.reduce((sum, c) => sum + (c.total_debt || 0), 0);
@@ -226,17 +262,8 @@ export default memo(function Debts({ isActive }) {
   const openDetailsModal = async (customer) => {
     setSelectedCustomer(customer);
     setDetailsModal(true);
-    setLoadingDetails(true);
     setDetailsTab('active');
-    try {
-      const res = await window.api.getCustomerDebtDetails(customer.id);
-      if (res && res.success) {
-        setDebtDetails(res.data);
-      }
-    } catch (err) {
-    } finally {
-      setLoadingDetails(false);
-    }
+    reloadDebtDetails(customer.id);
   };
 
   const clearFilters = () => {
