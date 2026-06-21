@@ -9,13 +9,14 @@ import Login from './Login';
 import Settings from './Settings';
 import SalesHistory from './SalesHistory';
 import InventoryHistory from './InventoryHistory';
+import AiBashoratchi from './AiBashoratchi';
 import ShiftModal from './components/ShiftModal';
-import { Settings as SettingsIcon, History, Lock, ClipboardList } from 'lucide-react';
-import logo from './assets/logo.png';
+import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles } from 'lucide-react';
+import { logoBase64 } from './logoBase64';
 
 // ── Boot Loader ──────────────────────────────────────────────────────────────
 // Shown ONLY during the initial license check. Prevents any flash.
-function BootLoader({ theme }) {
+function BootLoader({ theme, shopLogo }) {
   return (
     <div
       className={`flex flex-col items-center justify-center h-screen w-screen font-sans select-none transition-colors duration-300 ${
@@ -32,7 +33,7 @@ function BootLoader({ theme }) {
                 : 'bg-white border-gray-100'
             }`}
           >
-            <img src={logo} alt="xxMpos" className="w-12 h-12 object-contain drop-shadow-md" />
+            <img src={shopLogo || logoBase64} alt="xxMpos" className="w-12 h-12 object-contain drop-shadow-md" />
           </div>
           {/* Spinning ring */}
           <div className="absolute -inset-2 rounded-[2rem] border-4 border-transparent border-t-blue-500 border-r-blue-400 animate-spin opacity-70" />
@@ -161,7 +162,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('cashier');
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [successToast, setSuccessToast] = useState('');
-  const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName } = useApp();
+  const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName, shopLogo } = useApp();
 
   // ── Boot sequence: one-time license check, no flicker ───────────────────
   // 'booting'    → showing spinner (initial, before check completes)
@@ -242,7 +243,7 @@ function App() {
 
   // ── Render: Boot spinner (prevents ANY flash) ────────────────────────────
   if (bootState === 'booting') {
-    return <BootLoader theme={theme} />;
+    return <BootLoader theme={theme} shopLogo={shopLogo} />;
   }
 
   // ── Render: License activation screen ───────────────────────────────────
@@ -262,15 +263,18 @@ function App() {
   }
 
   // ── Tab definitions ──────────────────────────────────────────────────────
-  const tabs = [
+  const allTabs = [
     { id: 'cashier',   icon: ShoppingCart, label: t('cashier') },
     { id: 'warehouse', icon: PackageSearch, label: t('warehouse') },
     { id: 'debts',     icon: Users,         label: t('debts') },
     { id: 'history',   icon: History,       label: 'Sotuv tarixi' },
     { id: 'invlog',    icon: ClipboardList, label: 'Harakatlar jurnali' },
     { id: 'reports',   icon: BarChart3,     label: t('reports') },
+    { id: 'bashoratchi', icon: Sparkles,    label: 'AI Maslahatchi' },
     { id: 'settings',  icon: SettingsIcon,  label: t('settings') },
   ];
+
+  const tabs = allTabs;
 
   // ── Render: Main application ─────────────────────────────────────────────
   return (
@@ -281,26 +285,25 @@ function App() {
     >
       {/* ── Sidebar ── */}
       <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col transition-colors duration-300 shrink-0">
-        <div className="p-6">
-          <div className="flex items-center gap-3">
-            <img
-              src={logo}
-              alt="Logo"
-              className="w-10 h-10 object-contain shrink-0 drop-shadow-md"
-            />
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white line-clamp-1">xxMpos</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                Kassir: {currentUser.name}
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              title="Заблокировать кассу"
-              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-            >
-              <LogOut size={20} />
-            </button>
+        <div className="relative overflow-hidden shrink-0" style={{ height: '140px' }}>
+          <button
+            onClick={handleLogout}
+            title="Kassa qulflansin"
+            className="absolute top-2 right-2 z-20 p-2 bg-black/30 hover:bg-red-500 text-white rounded-xl transition-all duration-200 shadow-lg"
+          >
+            <Lock size={22} />
+          </button>
+          <img
+            src="/icon.png"
+            alt="Logo"
+            className="w-full h-full object-cover"
+            style={{ objectPosition: 'center top', marginTop: '-2rem' }}
+          />
+          <div className="absolute left-0 right-0 flex flex-col items-center" style={{ top: '5rem' }}>
+            <h1 className="text-xl font-black text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] leading-tight">xxMpos</h1>
+            <p className="text-xs font-semibold text-white/80 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] mt-0.5">
+              Kassir: {currentUser.name}
+            </p>
           </div>
         </div>
 
@@ -406,6 +409,9 @@ function App() {
           </div>
           <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }} className="h-full">
             <Settings isActive={activeTab === 'settings'} />
+          </div>
+          <div style={{ display: activeTab === 'bashoratchi' ? 'block' : 'none' }} className="h-full rounded-2xl overflow-hidden bg-slate-900 text-white">
+            <AiBashoratchi isActive={activeTab === 'bashoratchi'} />
           </div>
         </div>
       </div>

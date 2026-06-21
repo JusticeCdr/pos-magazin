@@ -220,6 +220,18 @@ export default memo(function SalesHistory({ isActive }) {
     }
   }, [isActive, page, selectedDay, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
 
+  useEffect(() => {
+    const handleSalesUpdated = () => {
+      if (isActive) {
+        fetchSalesAndCashiers(page, false);
+      }
+    };
+    window.addEventListener('sales-updated', handleSalesUpdated);
+    return () => {
+      window.removeEventListener('sales-updated', handleSalesUpdated);
+    };
+  }, [isActive, page, selectedDay, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
+
   const handleReprint = async (sale) => {
     if (!window.api) return;
     try {

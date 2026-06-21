@@ -1,7 +1,9 @@
 import { forwardRef, useState, useEffect } from 'react';
 import { logoBase64 } from '../logoBase64';
+import { useApp } from '../context/AppContext';
 
 export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, isReprint = false }, ref) => {
+  const { shopLogo } = useApp();
   const [phones, setPhones] = useState({ phone_1: '', phone_2: '', phone_3: '' });
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
       id="printable-receipt"
     >
       <div style={{ textAlign: 'center', marginBottom: '5px', marginTop: '0', paddingTop: '0' }}>
-        <img src={logoBase64} alt="Logo" style={{ width: '200px', height: 'auto', display: 'block', margin: '0 auto 3px auto' }} />
+        <img src={shopLogo || logoBase64} alt="Logo" style={{ width: '200px', height: 'auto', display: 'block', margin: '0 auto 3px auto' }} />
         {(() => {
           const phoneList = [phones.phone_1, phones.phone_2, phones.phone_3].filter(p => p && p.trim() !== '');
           if (phoneList.length === 0) return null;

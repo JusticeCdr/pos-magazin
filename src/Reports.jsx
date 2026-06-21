@@ -29,7 +29,8 @@ export default memo(function Reports({ isActive }) {
     salesByType: { cash: 0, card: 0, debt: 0 },
     topProducts: [],
     warehouseBuyValue: 0,
-    warehouseSellValue: 0
+    warehouseSellValue: 0,
+    agingProducts: []
   });
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -39,6 +40,7 @@ export default memo(function Reports({ isActive }) {
   // Expense State
   const [expenseModal, setExpenseModal] = useState({ isOpen: false, reason: '', amount: '' });
   const [expenseToDelete, setExpenseToDelete] = useState(null);
+  const [unsoldDaysLimit, setUnsoldDaysLimit] = useState(10);
 
   useEffect(() => {
     if (filter === 'custom' && customStart && customEnd && customStart.length === 10 && customEnd.length === 10) {
@@ -487,6 +489,109 @@ export default memo(function Reports({ isActive }) {
             )}
           </div>
         </div>
+
+        {/* Sotilmayotgan tovarlar Card (Dynamic days) */}
+        {(() => {
+          const filteredAgingProducts = (data.agingProducts || []).filter(product => {
+            const daysUnsold = product.last_sold_at 
+              ? Math.floor((Date.now() - new Date(product.last_sold_at + 'Z').getTime()) / (24 * 60 * 60 * 1000))
+              : product.added_at 
+              ? Math.floor((Date.now() - new Date(product.added_at + 'Z').getTime()) / (24 * 60 * 60 * 1000))
+              : 30;
+            return daysUnsold >= unsoldDaysLimit;
+          });
+          return (
+            <div className={`rounded-2xl shadow-sm p-6 flex flex-col transition-colors lg:col-span-3 ${
+              filteredAgingProducts.length > 0
+                ? 'bg-white dark:bg-gray-800 border border-orange-200 dark:border-orange-800'
+                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Clock size={20} className={filteredAgingProducts.length > 0 ? 'text-orange-500 animate-pulse' : 'text-gray-400'} />
+                  <h3 className={`text-lg font-bold ${filteredAgingProducts.length > 0 ? 'text-orange-700 dark:text-orange-400' : 'text-gray-800 dark:text-white'}`}>
+                    Sotilmayotgan tovarlar
+                  </h3>
+                  {filteredAgingProducts.length > 0 && (
+                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">
+                      {filteredAgingProducts.length} ta
+                    </span>
+                  )}
+                </div>
+                <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl shrink-0 self-start sm:self-auto gap-0.5">
+                  {[10, 20, 30].map(d => (
+                    <button key={d} type="button" onClick={() => setUnsoldDaysLimit(d)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        unsoldDaysLimit === d
+                          ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                          : 'text-gray-500 dark:bg-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                      }`}>
+                      {d}+ kun
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {filteredAgingProducts.length > 0 && (
+                <div className="mb-4 text-xs font-medium text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900/50 p-3.5 rounded-xl flex items-start gap-2.5">
+                  <AlertCircle size={18} className="shrink-0 text-orange-500 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Diqqat ogohlantirish!</p>
+                    <p className="mt-0.5 opacity-90">Ushbu mahsulotlar {unsoldDaysLimit} kundan ortiq vaqt davomida sotilmadi. Savdoni jadallashtirish yoki narxini to'g'rilab skidka berish tavsiya etiladi.</p>
+                  </div>
+                </div>
+              )}
+              <div className="overflow-x-auto max-h-[300px] custom-scrollbar">
+                {filteredAgingProducts.length === 0 ? (
+                  <div className="py-8 flex flex-col items-center justify-center gap-2 text-gray-400 dark:text-gray-500">
+                    <Package size={32} className="opacity-30" />
+                    <p className="text-sm">Barcha tovarlar aylanmoqda (faol)</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+                    <thead className="sticky top-0 bg-gray-50 dark:bg-gray-700 text-xs uppercase font-bold text-gray-700 dark:text-gray-300 z-10">
+                      <tr>
+                        <th className="px-4 py-2.5 rounded-l-lg">Tovar nomi</th>
+                        <th className="px-4 py-2.5">Shtrix-kod</th>
+                        <th className="px-4 py-2.5">Qoldiq</th>
+                        <th className="px-4 py-2.5">Sotish narxi</th>
+                        <th className="px-4 py-2.5 rounded-r-lg">Oxirgi savdo sanasi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {filteredAgingProducts.map(product => {
+                        const daysUnsold = product.last_sold_at 
+                          ? Math.floor((Date.now() - new Date(product.last_sold_at + 'Z').getTime()) / (24 * 60 * 60 * 1000))
+                          : product.added_at 
+                          ? Math.floor((Date.now() - new Date(product.added_at + 'Z').getTime()) / (24 * 60 * 60 * 1000))
+                          : 30;
+                        return (
+                          <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                            <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{product.name}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{product.barcode || '-'}</td>
+                            <td className="px-4 py-3 font-bold text-gray-800 dark:text-gray-300">
+                              {product.stock} {t('units')?.[product.unit] || product.unit || 'dona'}
+                            </td>
+                            <td className="px-4 py-3 font-black text-gray-900 dark:text-white">
+                              {formatCurrency(product.sell_price, lang)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-xs text-orange-600 dark:text-orange-400 font-bold">
+                              {product.last_sold_at 
+                                ? `${new Date(product.last_sold_at + 'Z').toLocaleDateString('ru-RU')} (${daysUnsold} kun oldin)`
+                                : product.added_at
+                                ? `Sotilmagan, kiritilgan: ${new Date(product.added_at + 'Z').toLocaleDateString('ru-RU')} (${daysUnsold} kun oldin)`
+                                : `Muddati noma'lum (${unsoldDaysLimit}+ kun)`
+                              }
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
 

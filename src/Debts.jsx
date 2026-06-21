@@ -101,7 +101,10 @@ export default memo(function Debts({ isActive }) {
 
   if (search) {
     const term = search.toLowerCase();
-    debtors = debtors.filter(c => c.name.toLowerCase().includes(term) || (c.phone && c.phone.includes(term)));
+    debtors = debtors.filter(c => 
+      c.name.toLowerCase().includes(term) || 
+      (c.phone && c.phone.replace(/\D/g, '').includes(term.replace(/\D/g, '')))
+    );
   }
 
   if (minAmount) {

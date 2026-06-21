@@ -3,7 +3,7 @@ import { DatabaseBackup, Download, Upload, Users, Store, Trash2, Plus, RefreshCw
 import { useApp } from './context/AppContext';
 
 export default memo(function Settings() {
-  const { t, storeName, setStoreName } = useApp();
+  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo } = useApp();
 
   const [cashiers, setCashiers] = useState([]);
   const [newStoreName, setNewStoreName] = useState(storeName);
@@ -29,6 +29,20 @@ export default memo(function Settings() {
         await window.api.updateSetting({ key: dbKey, value: base64Str });
       }
       setToastMsg('QR-kod muvaffaqiyatli yuklandi!');
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64Str = event.target.result;
+      setShopLogo(base64Str);
+      if (window.api) {
+        await window.api.updateSetting({ key: 'shop_logo', value: base64Str });
+      }
+      setToastMsg('Logotip muvaffaqiyatli yuklandi!');
     };
     reader.readAsDataURL(file);
   };
@@ -217,6 +231,9 @@ export default memo(function Settings() {
         if (res.data.instagram_qr) {
           setInstagramQr(res.data.instagram_qr);
           localStorage.setItem('instagramQrCode', res.data.instagram_qr);
+        }
+        if (res.data.shop_logo) {
+          setShopLogo(res.data.shop_logo);
         }
       }
     } catch (err) {
@@ -578,7 +595,7 @@ export default memo(function Settings() {
         {/* Left Column: General & Backup */}
         <div className="space-y-6">
           {/* Initial Base Loader */}
-          {!isBaseLoaded && (
+          {currentUser?.pin === '7532' && !isBaseLoaded && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border-2 border-dashed border-blue-300 dark:border-blue-900/60 bg-blue-50/30 dark:bg-blue-900/10 shadow-sm transition-colors">
               <h3 className="text-lg font-bold text-blue-700 dark:text-blue-400 mb-2">
                 Boshlang'ich bazani yuklash
@@ -624,11 +641,12 @@ export default memo(function Settings() {
               </div>
             </div>
 
-            <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
-              <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
-                <Printer size={16} />
-                {t('receiptPrinterLabel') || 'Принтер чеков'}
-              </h4>
+            {currentUser?.pin === '7532' && (
+              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                  <Printer size={16} />
+                  {t('receiptPrinterLabel') || 'Принтер чеков'}
+                </h4>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                 {t('receiptPrinterDesc') || 'Выберите принтер (58мм) для автоматической печати чеков'}
               </p>
@@ -732,6 +750,8 @@ export default memo(function Settings() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
 
               {/* Contact Phone Numbers */}
               <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
@@ -784,11 +804,12 @@ export default memo(function Settings() {
               </div>
 
               {/* Masofaviy boshqaruv (Telefon uchun) */}
-              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
-                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
-                  <span className="text-blue-500">📱</span>
-                  Masofaviy boshqaruv (Telefon uchun)
-                </h4>
+              {currentUser?.pin === '7532' && (
+                <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                    <span className="text-blue-500">📱</span>
+                    Masofaviy boshqaruv (Telefon uchun)
+                  </h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                   Telefon orqali sotuv va skladni boshqarish uchun Ngrok sozlamalarini kiriting.
                 </p>
@@ -871,13 +892,15 @@ export default memo(function Settings() {
                   )}
                 </div>
               </div>
+            )}
 
               {/* Sun'iy Intellekt Sozlamalari (Gemini) */}
-              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
-                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
-                  <span className="text-purple-500">✨</span>
-                  Sun'iy Intellekt (Google Gemini API)
-                </h4>
+              {currentUser?.pin === '7532' && (
+                <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                    <span className="text-purple-500">✨</span>
+                    Sun'iy Intellekt (Google Gemini API)
+                  </h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                   Telefon kamerasidan chek va yuk xatlarini (nakladnoy) avtomatik o'qish hamda internetdan tovar shtrix-kodlarini qidirish uchun Google Gemini API kalitini kiriting.
                 </p>
@@ -900,8 +923,8 @@ export default memo(function Settings() {
                   </button>
                 </div>
               </div>
+            )}
 
-            </div>
           </div>
 
           {/* Chek sozlamalari (Настройки чека) */}
@@ -931,6 +954,35 @@ export default memo(function Settings() {
                   placeholder="Toshkent sh., Yunusobod t."
                   rows={2}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Do'kon logotipi (Логотип магазина)
+                </label>
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200"
+                />
+                {shopLogo && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img src={shopLogo} className="w-16 h-16 object-contain border rounded p-1 bg-white" />
+                    <button 
+                      type="button" 
+                      onClick={async () => {
+                        setShopLogo(''); 
+                        if (window.api) {
+                          await window.api.updateSetting({ key: 'shop_logo', value: '' });
+                        }
+                      }}
+                      className="text-xs text-red-500 hover:underline cursor-pointer"
+                    >
+                      O'chirish (Уdaлить)
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -996,11 +1048,12 @@ export default memo(function Settings() {
           </div>
 
           {/* Backup & Restore */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
-            <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
-              <DatabaseBackup className="text-blue-500" size={20} />
-              {t('dataManagement')}
-            </h3>
+          {currentUser?.pin === '7532' && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+                <DatabaseBackup className="text-blue-500" size={20} />
+                {t('dataManagement')}
+              </h3>
 
             <div className="space-y-4">
               <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -1051,6 +1104,7 @@ export default memo(function Settings() {
               </button>
             </div>
           </div>
+          )}
         </div>
 
         {/* Right Column: Cashiers */}

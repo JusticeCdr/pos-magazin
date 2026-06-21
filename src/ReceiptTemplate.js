@@ -83,12 +83,17 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
     `;
   }).join('');
 
+  let shopLogo = logoBase64;
   let printerWidth = '58';
   let shopPhone = '';
   let shopLocation = '';
   let telegramQr = '';
   let instagramQr = '';
   try {
+    const customLogo = localStorage.getItem('shopLogoBase64');
+    if (customLogo) {
+      shopLogo = customLogo;
+    }
     printerWidth = localStorage.getItem('printer_width') || '58';
     shopPhone = localStorage.getItem('shopPhone') || '';
     shopLocation = localStorage.getItem('shopLocation') || '';
@@ -349,7 +354,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
     <body>
       <div class="receipt" id="printable-receipt">
         <div class="header">
-          <img src="${logoBase64}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 0 auto 3px auto;" />
+          <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 0 auto 3px auto;" />
           ${headerPhonesHTML}
           ${shopLocation ? `<span class="receipt-location">Manzil: ${shopLocation}</span>` : ''}
           <hr class="receipt-divider" />
@@ -423,8 +428,13 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
     return Number(num).toLocaleString('ru-RU');
   };
 
+  let shopLogo = logoBase64;
   let printerWidth = '58';
   try {
+    const customLogo = localStorage.getItem('shopLogoBase64');
+    if (customLogo) {
+      shopLogo = customLogo;
+    }
     printerWidth = localStorage.getItem('printer_width') || '58';
   } catch(e) {}
 
@@ -526,7 +536,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
     <body>
       <div class="receipt" id="printable-receipt">
         <div class="header">
-          <img src="${logoBase64}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 10px auto 10px auto;" />
+          <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 10px auto 10px auto;" />
           <h2>${storeName || "Do'kon"}</h2>
           <p style="font-weight: bold; font-size: 14px; margin-top: 5px;">Z-HISOBOT</p>
           <p>Smena yopilishi</p>

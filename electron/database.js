@@ -5,6 +5,7 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const { app } = require('electron');
 const fs = require('fs');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 let db;
 
@@ -18,6 +19,9 @@ function initDB() {
 
   // Unicode case-insensitive custom lowercase function
   db.function('my_lower', (str) => typeof str === 'string' ? str.toLowerCase() : str);
+
+  // Clean phone number (leave only digits)
+  db.function('clean_phone', (str) => typeof str === 'string' ? str.replace(/\D/g, '') : '');
 
   // WAL mode for better concurrency and performance
   db.exec('PRAGMA journal_mode = WAL;');
@@ -443,13 +447,14 @@ function getProducts() {
 function getCustomers(searchQuery = '') {
   if (searchQuery && searchQuery.trim() !== '') {
     const q = `%${searchQuery.trim().toLowerCase()}%`;
+    const cleanQ = `%${searchQuery.replace(/\D/g, '')}%`;
     return db.prepare(`
       SELECT c.*, 
              (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
       FROM customers c 
-      WHERE my_lower(c.name) LIKE ? OR c.phone LIKE ?
+      WHERE my_lower(c.name) LIKE ? OR clean_phone(c.phone) LIKE ?
       ORDER BY c.total_debt DESC
-    `).all(q, q);
+    `).all(q, cleanQ);
   }
   return db.prepare(`
     SELECT c.*, 
@@ -793,7 +798,7 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     if (paymentMethod === 'debt') payTypeLabel = 'Qarzga';
 
     const discountLabel = pct > 0 ? `, Skidka: ${pct}%` : '';
-    const saleNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}${discountLabel})`;
+    const saleNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}${discountLabel})${device === 'mobile' ? ' (Mobil)' : ''}`;
 
     for (const item of cartItems) {
       // Concurrency protection: verify stock level inside transaction
@@ -815,7 +820,7 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
       let itemNote = saleNote;
       if (itemPct > 0) {
         const formattedPrice = Math.round(priceAfterDiscount).toLocaleString('ru-RU').replace(/,/g, ' ');
-        itemNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}, -${itemPct}%, ${formattedPrice} so'm)`;
+        itemNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}, -${itemPct}%, ${formattedPrice} so'm)${device === 'mobile' ? ' (Mobil)' : ''}`;
       }
 
       logInventory({
@@ -823,7 +828,7 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
         productName: item.name,
         actionType: paymentMethod === 'debt' ? 'sotuv_qarz' : 'sotuv',
         quantityChanged: -item.qty,
-        userName: cashierName,
+        userName: cashierName + (device === 'mobile' ? ' (Mobil)' : ''),
         note: itemNote
       });
     }
@@ -1121,6 +1126,28 @@ function getReports(startDateISO, endDateISO) {
     const warehouseBuyValue = valuation?.total_buy || 0;
     const warehouseSellValue = valuation?.total_sell || 0;
 
+    // 5. Aging products (unsold for 10+ days to allow frontend dynamic 10/20/30 day filters)
+    const agingProducts = db.prepare(`
+      SELECT * FROM (
+        SELECT p.id, p.name, p.barcode, p.buy_price, p.sell_price, p.stock, p.unit,
+               (SELECT MAX(s.created_at)
+                FROM sale_items si
+                JOIN sales s ON si.sale_id = s.id
+                WHERE si.product_id = p.id AND s.status != 'refunded'
+               ) as last_sold_at,
+               (SELECT MIN(il.created_at)
+                FROM inventory_logs il
+                WHERE il.product_id = p.id
+               ) as added_at
+        FROM products p
+        WHERE p.stock > 0
+      ) WHERE 
+        (last_sold_at IS NOT NULL AND last_sold_at < datetime('now', '-10 days', 'localtime'))
+        OR (last_sold_at IS NULL AND (added_at IS NULL OR added_at < datetime('now', '-10 days', 'localtime')))
+      ORDER BY COALESCE(last_sold_at, added_at) ASC
+      LIMIT 150
+    `).all();
+
     return {
       success: true,
       data: {
@@ -1133,7 +1160,8 @@ function getReports(startDateISO, endDateISO) {
         topProducts,
         warehouseBuyValue,
         warehouseSellValue,
-        totalDebtPayments
+        totalDebtPayments,
+        agingProducts
       }
     };
   } catch (err) {
@@ -1819,13 +1847,14 @@ function getCustomersWithDebts(searchQuery = '') {
     let rows;
     if (searchQuery && searchQuery.trim() !== '') {
       const q = `%${searchQuery.trim().toLowerCase()}%`;
+      const cleanQ = `%${searchQuery.replace(/\D/g, '')}%`;
       rows = db.prepare(`
         SELECT c.*, 
                (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
         FROM customers c 
-        WHERE my_lower(c.name) LIKE ? OR c.phone LIKE ?
+        WHERE my_lower(c.name) LIKE ? OR clean_phone(c.phone) LIKE ?
         ORDER BY c.total_debt DESC
-      `).all(q, q);
+      `).all(q, cleanQ);
     } else {
       rows = db.prepare(`
         SELECT c.*, 
@@ -1914,6 +1943,212 @@ function getSaleForReprint(saleId) {
   }
 }
 
+// ── AI Bashoratchi ───────────────────────────────────────────────────────────
+async function getAiInsights() {
+  try {
+    const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
+    if (!settingsRow || !settingsRow.value) {
+      return { success: false, error: "Gemini API kaliti topilmadi. Sozlamalar menyusiga kirib, AI API kalitini kiriting." };
+    }
+    const apiKey = settingsRow.value;
+
+    const query = `
+      SELECT 
+        p.name, 
+        SUM(si.qty - si.refunded_qty) as total_sold, 
+        SUM((si.qty - si.refunded_qty) * si.price - (p.buy_price * (si.qty - si.refunded_qty))) as total_profit,
+        p.stock
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      JOIN products p ON si.product_id = p.id
+      WHERE s.status != 'refunded' AND s.created_at >= date('now', '-30 days')
+      GROUP BY p.id
+      ORDER BY total_sold DESC
+      LIMIT 100
+    `;
+    const salesData = db.prepare(query).all();
+    if (!salesData || salesData.length === 0) {
+      return { success: false, error: "Tahlil qilish uchun oxirgi 30 kun ichida yetarli savdo ma'lumoti topilmadi." };
+    }
+
+    // Totals summary
+    const totals = db.prepare(`
+      SELECT 
+        COUNT(*) as total_sales_count,
+        SUM(total_amount) as total_revenue
+      FROM sales
+      WHERE created_at >= date('now', '-30 days') AND status != 'refunded'
+    `).get();
+
+    const profitRow = db.prepare(`
+      SELECT SUM((si.price - IFNULL(p.buy_price, 0)) * (si.qty - si.refunded_qty)) as total_profit
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE s.created_at >= date('now', '-30 days') AND s.status != 'refunded'
+    `).get();
+    
+    // Deduct discounts if any
+    const discountRow = db.prepare(`
+      SELECT SUM(discount_amount) as total_discounts
+      FROM sales
+      WHERE created_at >= date('now', '-30 days') AND status != 'refunded'
+    `).get();
+    const totalDiscounts = discountRow?.total_discounts || 0;
+    const totalProfit = (profitRow?.total_profit || 0) - totalDiscounts;
+
+    // Best weekday
+    const weekdaySales = db.prepare(`
+      SELECT 
+        strftime('%w', created_at) as weekday, 
+        SUM(total_amount) as total_revenue
+      FROM sales
+      WHERE created_at >= date('now', '-30 days') AND status != 'refunded'
+      GROUP BY weekday
+      ORDER BY total_revenue DESC
+      LIMIT 1
+    `).get();
+    
+    const weekdayMap = {
+      '0': 'Yakshanba',
+      '1': 'Dushanba',
+      '2': 'Seshanba',
+      '3': 'Chorshanba',
+      '4': 'Payshanba',
+      '5': 'Juma',
+      '6': 'Shanba'
+    };
+    const bestDay = weekdaySales ? weekdayMap[weekdaySales.weekday] : 'Noma\'lum';
+
+    // Aging products (unsold for 30+ days)
+    const agingProducts = db.prepare(`
+      SELECT * FROM (
+        SELECT p.id, p.name, p.barcode, p.buy_price, p.sell_price, p.stock, p.unit,
+               (SELECT MAX(s.created_at)
+                FROM sale_items si
+                JOIN sales s ON si.sale_id = s.id
+                WHERE si.product_id = p.id AND s.status != 'refunded'
+               ) as last_sold_at,
+               (SELECT MIN(il.created_at)
+                FROM inventory_logs il
+                WHERE il.product_id = p.id
+               ) as added_at
+        FROM products p
+        WHERE p.stock > 0
+      ) WHERE 
+        (last_sold_at IS NOT NULL AND last_sold_at < datetime('now', '-30 days', 'localtime'))
+        OR (last_sold_at IS NULL AND (added_at IS NULL OR added_at < datetime('now', '-30 days', 'localtime')))
+      ORDER BY COALESCE(last_sold_at, added_at) ASC
+      LIMIT 30
+    `).all();
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
+    const prompt = `Ты — опытный, резкий и успешный бизнес-консультант и профессиональный аналитик розничных продаж. Изучи показатели продаж магазина за последние 30 дней и список залежавшихся товаров (unsold).
+Сделай детальный бизнес-анализ и выдай результат СТРОГО в формате JSON на узбекском языке.
+
+Формат ответа строго чистый JSON без markdown-разметки (без \`\`\`json):
+{
+  "monthly_summary": {
+    "sales_count_last_30_days": ${totals?.total_sales_count || 0},
+    "net_profit_last_30_days": ${Math.round(totalProfit)},
+    "revenue_last_30_days": ${Math.round(totals?.total_revenue || 0)},
+    "best_day_of_week": "${bestDay}"
+  },
+  "top_product": "🔥 [Name]... Ushbu tovar eng xaridorgir. Oxirgi 1 oyda jami shuncha dona sotildi va shuncha so'm sof foyda keltirdi.",
+  "price_up": "💰 [Name]... Xaridorgir tovar. Narxini ko'taring, savdo pasaymaydi, foyda ortadi.",
+  "dead_stock": "📉 [Name]... Omborda qoldiq bor, ancha vaqtdan beri sotilmadi. Savdoni jadallashtirish uchun narxini arzonlashtiring yoki skidka bering.",
+  "forecast": "🔮 Kelgusi oyda siz taxminan faloncha UZS lik savdo qilasiz, eng ko'p sotiladigan kun falon kun bo'ladi.",
+  "detailed_insights": [
+    "Sotuvlar tahlili: Oxirgi oyda jami faloncha so'm savdo qilib, faloncha so'm sof foyda oldingiz. Savdolar asosan falon kuni eng yuqori bo'lmoqda.",
+    "Aylanmayotgan tovarlar bo'yicha raqamli hisob-kitob: [Name1] va [Name2] tovarlari ancha paytdan beri turibdi. Agar ularni narxini faloncha so'mga tushirsangiz, keyingi 1 oyda faloncha dona sota olasiz, bu sizga faloncha so'm muzlagan aylanma mablag'ni qaytaradi.",
+    "Batafsil tavsiya: Tovar qoldiqlarini boshqarish va keyingi oyda qancha sotishingiz taxminiy hisob-kitobi..."
+  ]
+}
+
+Boshqa hech qanday izoh yoki qo'shimcha matn yozmang, faqat JSON formatda javob bering.
+
+Ma'lumotlar:
+- Savdolar soni (cheklar soni): ${totals?.total_sales_count || 0}
+- Jami savdo aylanmasi (Revenue): ${Math.round(totals?.total_revenue || 0)} so'm
+- Jami sof foyda (Net Profit): ${Math.round(totalProfit)} so'm
+- Eng yaxshi savdo kuni: ${bestDay}
+
+Top sotilgan tovarlar (oxirgi 30 kun):
+${JSON.stringify(salesData, null, 2)}
+
+Sotilmayotgan tovarlar (30+ kundan beri omborda turibdi, sotilmagan):
+${JSON.stringify(agingProducts, null, 2)}
+`;
+
+    const modelsToTry = [
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-flash-latest",
+      "gemini-pro-latest",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro"
+    ];
+
+    let result = null;
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        result = await model.generateContent(prompt);
+        break; // Muvaffaqiyatli ishlasa loopdan chiqib ketadi
+      } catch (apiErr) {
+        lastError = apiErr;
+        console.error(`AI model ${modelName} failed:`, apiErr);
+        // Har qanday xatolik (masalan 404, 503, 429) bo'lsa, keyingi modelni sinab ko'radi
+        continue;
+      }
+    }
+
+    if (!result) {
+      throw lastError || new Error("Barcha AI modellari tekshirildi, biroq sizning API kalitingiz uchun mos model topilmadi.");
+    }
+
+    let text = result.response.text();
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(text);
+
+    return { success: true, data: parsed };
+  } catch (err) {
+    console.error("AI Error:", err);
+    return { success: false, error: "AI bilan bog'lanishda xatolik: " + err.message };
+  }
+}
+
+function getProduct(id) {
+  try {
+    return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  } catch (err) {
+    return null;
+  }
+}
+
+function getNextBarcode() {
+  try {
+    const rows = db.prepare("SELECT barcode FROM products WHERE barcode LIKE '75%' AND length(barcode) = 8").all();
+    let maxNum = 0;
+    for (const r of rows) {
+      if (r.barcode) {
+        const numPart = parseInt(r.barcode.substring(2));
+        if (!isNaN(numPart) && numPart > maxNum) {
+          maxNum = numPart;
+        }
+      }
+    }
+    const nextNum = maxNum + 1;
+    const paddedNum = String(nextNum).padStart(6, '0');
+    return { success: true, barcode: '75' + paddedNum };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = { 
   initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, updateProduct, addStockToProduct, deleteProduct, searchProduct,
   processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
@@ -1936,5 +2171,8 @@ module.exports = {
   getCustomersWithDebts,
   findLocalBarcodeByName,
   generateUniqueLocalBarcode,
-  batchAddProducts
+  batchAddProducts,
+  getAiInsights,
+  getProduct,
+  getNextBarcode
 };

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, memo } from 'react';
-import { Calendar, Search, Filter, ArrowUpCircle, ArrowDownCircle, RefreshCw, Minus, ChevronLeft, ChevronRight, Plus, Lock, Unlock } from 'lucide-react';
+import { Calendar, Search, Filter, ArrowUpCircle, ArrowDownCircle, RefreshCw, Minus, ChevronLeft, ChevronRight, Plus, Lock, Unlock, Smartphone, Monitor, Sparkles } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { formatCurrency } from './utils';
 import { AlertModal } from './components/Modals';
@@ -93,6 +93,20 @@ export default memo(function InventoryHistory({ isActive }) {
       lastFiltersRef.current = { startDate, endDate, actionType, productSearch };
       fetchLogs(1, false, false);
     }
+  }, [isActive, startDate, endDate, actionType, productSearch]);
+
+  useEffect(() => {
+    const handleRefreshLogs = () => {
+      if (isActive) {
+        fetchLogs(1, false, false);
+      }
+    };
+    window.addEventListener('products-updated', handleRefreshLogs);
+    window.addEventListener('sales-updated', handleRefreshLogs);
+    return () => {
+      window.removeEventListener('products-updated', handleRefreshLogs);
+      window.removeEventListener('sales-updated', handleRefreshLogs);
+    };
   }, [isActive, startDate, endDate, actionType, productSearch]);
 
   // ── Logs are fetched server-side including search keyword ──────────────────
@@ -312,7 +326,33 @@ export default memo(function InventoryHistory({ isActive }) {
                     </td>
                     {/* Cashier */}
                     <td className="py-2.5 px-4 text-xs text-gray-500 dark:text-gray-400">
-                      {row.user_name || '—'}
+                      {(() => {
+                        const name = row.user_name || '—';
+                        if (name.includes('(Mobil)')) {
+                          const cleanName = name.replace('(Mobil)', '').trim();
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2.5 py-0.5 rounded-full font-semibold">
+                              <Smartphone size={11} className="shrink-0" />
+                              {cleanName} (Mobil)
+                            </span>
+                          );
+                        } else if (name.includes('(AI)')) {
+                          const cleanName = name.replace('(AI)', '').trim();
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2.5 py-0.5 rounded-full font-semibold">
+                              <Sparkles size={11} className="shrink-0" />
+                              {cleanName} (AI dan kirim)
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="inline-flex items-center gap-1 bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 px-2.5 py-0.5 rounded-full">
+                              <Monitor size={11} className="shrink-0 opacity-70" />
+                              {name}
+                            </span>
+                          );
+                        }
+                      })()}
                     </td>
                     {/* Note */}
                     <td className="py-2.5 px-4 text-xs text-gray-600 dark:text-gray-400 max-w-[320px] whitespace-normal break-words font-normal" title={row.note || '—'}>

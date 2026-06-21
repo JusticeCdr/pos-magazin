@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('api', {
   saveNgrokSettings: (data) => ipcRenderer.invoke('save-ngrok-settings', data),
   exportSaleExcel: (saleDetails) => ipcRenderer.invoke('export-sale-excel', saleDetails),
   printA4Invoice: (saleDetails) => ipcRenderer.invoke('print-a4-invoice', saleDetails),
+  getAiInsights: () => ipcRenderer.invoke('get-ai-insights'),
   onNgrokUrlUpdated: (callback) => {
     ipcRenderer.removeAllListeners('ngrok-url-updated');
     ipcRenderer.on('ngrok-url-updated', (_, url) => callback(url));

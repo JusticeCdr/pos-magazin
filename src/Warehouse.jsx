@@ -27,7 +27,7 @@ const EMPTY_FORM = {
 
 export default memo(function Warehouse({ isActive }) {
   const { 
-    t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName,
+    t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName, shopLogo,
   } = useApp();
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -326,7 +326,7 @@ export default memo(function Warehouse({ isActive }) {
         <body>
           <div id="printable-label">
             <div class="header-row">
-              <img class="logo-img" src="${logoBase64}" />
+              <img class="logo-img" src="${shopLogo || logoBase64}" />
               <div class="shop-name">${(storeName || '750 AVTOTUNING').toUpperCase()}</div>
             </div>
             <div class="product-name">${printLabelTarget.name}</div>
@@ -732,7 +732,7 @@ export default memo(function Warehouse({ isActive }) {
                     className="w-[240px] h-[120px] bg-white text-black py-[4px] px-[10px] border border-gray-200 shadow-sm flex flex-col justify-start items-center rounded overflow-hidden select-none font-sans"
                   >
                     <div className="w-full h-[30px] flex items-center mb-[2px] box-border shrink-0">
-                      <img src={logoBase64} className="w-[30px] h-[30px] object-contain ml-[4px] shrink-0" />
+                      <img src={shopLogo || logoBase64} className="w-[30px] h-[30px] object-contain ml-[4px] shrink-0" />
                       <div className="text-[14px] font-extrabold uppercase text-left ml-[10px] truncate flex-1 text-black leading-[30px] shrink-0">
                         {(storeName || '750 AVTOTUNING').toUpperCase()}
                       </div>

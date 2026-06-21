@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { exec, execSync } = require('child_process');
@@ -181,7 +181,10 @@ const {
   getCustomersWithDebts,
   findLocalBarcodeByName,
   generateUniqueLocalBarcode,
-  batchAddProducts
+  batchAddProducts,
+  getAiInsights,
+  getProduct,
+  getNextBarcode
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
@@ -308,16 +311,15 @@ function startExpressServer() {
       
       const trimmedPin = pin.trim();
       
-      // Master PIN override
-      if (trimmedPin === '7532') {
-        req.cashier = { id: 0, name: 'Asosiy Admin', pin: '7532' };
-        return next();
-      }
-      
       const pinRes = verifyPin(trimmedPin);
       if (pinRes && pinRes.success && pinRes.valid) {
         req.cashier = pinRes.cashier;
         return next();
+      }
+      
+      // Master PIN override (only if no cashier matches) - BLOCKED for mobile/Express
+      if (trimmedPin === '7532') {
+        return res.status(403).json({ success: false, error: 'Admin access is not allowed from mobile devices' });
       }
       
       return res.status(401).json({ success: false, error: 'Invalid PIN' });
@@ -331,15 +333,13 @@ function startExpressServer() {
       }
       
       const trimmedPin = String(pin).trim();
-      if (trimmedPin === '7532') {
-        maybeOpenShift('Asosiy Admin');
-        return res.json({ success: true, cashier: { id: 0, name: 'Asosiy Admin' } });
-      }
       
       const result = verifyPin(trimmedPin);
       if (result && result.success && result.valid) {
         maybeOpenShift(result.cashier.name);
         return res.json({ success: true, cashier: result.cashier });
+      } else if (trimmedPin === '7532') {
+        return res.status(403).json({ success: false, error: 'Admin access is not allowed from mobile devices' });
       } else {
         return res.status(401).json({ success: false, error: 'Invalid PIN' });
       }
@@ -382,11 +382,14 @@ function startExpressServer() {
         stock: parseFloat(stock) || 0,
         unit: unit || 'dona',
         discount: parseFloat(discount) || 0,
-        userName: req.cashier.name
+        userName: req.cashier.name + ' (Mobil)'
       };
       
       const result = addProduct(productData);
       if (result.success) {
+        if (io) {
+          io.emit('products-updated');
+        }
         return res.json(result);
       } else {
         return res.status(500).json(result);
@@ -395,7 +398,7 @@ function startExpressServer() {
 
     // API: Batch Add/Update products
     expressApp.post('/api/products/batch-add', authMiddleware, (req, res) => {
-      const { products } = req.body;
+      const { products, source } = req.body;
       if (!products || !Array.isArray(products)) {
         return res.status(400).json({ success: false, error: 'Products array is required' });
       }
@@ -408,7 +411,7 @@ function startExpressServer() {
         stock: parseFloat(p.stock) || 0,
         unit: p.unit || 'dona',
         discount: parseFloat(p.discount) || 0,
-        userName: req.cashier.name
+        userName: req.cashier.name + (source === 'ai' ? ' (AI)' : ' (Mobil)')
       }));
       
       const result = batchAddProducts(preparedProducts);
@@ -424,7 +427,7 @@ function startExpressServer() {
     
     // API: Create Sale and Auto-Print
     expressApp.post('/api/sales/create', authMiddleware, (req, res) => {
-      const { cartItems, paymentMethod, customerInfo, discountPercent } = req.body;
+      const { cartItems, paymentMethod, customerInfo, discountPercent, printReceipt } = req.body;
       if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
         return res.status(400).json({ success: false, error: 'Cart items are required' });
       }
@@ -457,10 +460,11 @@ function startExpressServer() {
           saleId: result.saleId,
           shiftReceiptNumber: result.shiftReceiptNumber,
           date: new Date().toISOString(),
-          cashierName
+          cashierName: cashierName + ' (Mobil)'
         };
         
-        if (mainWindow) {
+        const printReceiptVal = printReceipt !== false;
+        if (mainWindow && printReceiptVal) {
           mainWindow.webContents.send('mobile-sale-printed', printData);
         }
         
@@ -511,7 +515,7 @@ function startExpressServer() {
           saleId: sale.id,
           shiftReceiptNumber: sale.shift_receipt_number,
           date: sale.created_at,
-          cashierName: sale.cashier_name || 'Kassir'
+          cashierName: (sale.cashier_name || 'Kassir') + (sale.device === 'mobile' ? ' (Mobil)' : '')
         };
         
         if (mainWindow) {
@@ -586,35 +590,48 @@ function startExpressServer() {
         }
       };
 
+      const modelsToTry = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-flash-latest",
+        "gemini-1.5-flash"
+      ];
+
+      async function tryGenerateContent(models, body) {
+        let lastError = null;
+        for (const model of models) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            const resData = await response.json();
+            if (resData.candidates && resData.candidates[0] && resData.candidates[0].content && resData.candidates[0].content.parts[0]) {
+              return resData.candidates[0].content.parts[0].text;
+            } else {
+              throw new Error(resData.error?.message || JSON.stringify(resData));
+            }
+          } catch (err) {
+            lastError = err;
+            if (err.message && (err.message.includes('404') || err.message.includes('not found') || err.message.includes('not supported'))) {
+              continue;
+            }
+            break;
+          }
+        }
+        throw lastError || new Error("No model succeeded");
+      }
+
       let responseText = '';
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
-
-        const resData = await response.json();
-        if (resData.candidates && resData.candidates[0] && resData.candidates[0].content && resData.candidates[0].content.parts[0]) {
-          responseText = resData.candidates[0].content.parts[0].text;
-        } else {
-          throw new Error(resData.error?.message || JSON.stringify(resData));
-        }
+        responseText = await tryGenerateContent(modelsToTry, requestBody);
       } catch (err) {
         logError(`[AI Parse] Gemini with Search failed, retrying without Search: ${err.message}`);
         delete requestBody.tools;
         try {
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-          });
-          const resData = await response.json();
-          if (resData.candidates && resData.candidates[0] && resData.candidates[0].content && resData.candidates[0].content.parts[0]) {
-            responseText = resData.candidates[0].content.parts[0].text;
-          } else {
-            throw new Error(resData.error?.message || JSON.stringify(resData));
-          }
+          responseText = await tryGenerateContent(modelsToTry, requestBody);
         } catch (retryErr) {
           logError(`[AI Parse] Gemini fallback also failed: ${retryErr.message}`);
           return res.status(500).json({ success: false, error: `Gemini API xatosi: ${retryErr.message}` });
@@ -760,6 +777,26 @@ function startExpressServer() {
       }
     });
 
+    // API: Return partial/individual item
+    expressApp.post('/api/sales/return-item', authMiddleware, (req, res) => {
+      const { saleItemId, returnQty } = req.body;
+      if (!saleItemId || returnQty === undefined) {
+        return res.status(400).json({ success: false, error: 'Sale Item ID and Return Qty are required' });
+      }
+      const result = processReturn(parseInt(saleItemId), parseFloat(returnQty));
+      if (result.success) {
+        if (mainWindow) {
+          mainWindow.webContents.send('mobile-sale-returned');
+        }
+        if (io) {
+          io.emit('sales-updated', result);
+        }
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
     // API: Edit product
     expressApp.post('/api/products/edit', authMiddleware, (req, res) => {
       const { id, name, barcode, buy_price, sell_price, stock, unit, discount } = req.body;
@@ -784,7 +821,7 @@ function startExpressServer() {
         stock: parseFloat(stock) || 0, // This is addedQty in updateProduct
         unit: unit || 'dona',
         discount: parseFloat(discount) || 0,
-        userName: req.cashier.name
+        userName: req.cashier.name + ' (Mobil)'
       };
 
       const result = updateProduct(id, productData);
@@ -804,7 +841,7 @@ function startExpressServer() {
       if (!id) {
         return res.status(400).json({ success: false, error: 'Product ID is required' });
       }
-      const result = deleteProduct(id, req.cashier.name);
+      const result = deleteProduct(id, req.cashier.name + ' (Mobil)');
       if (result.success) {
         if (io) {
           io.emit('products-updated');
@@ -814,7 +851,243 @@ function startExpressServer() {
         return res.status(500).json(result);
       }
     });
+
+    // API: Next barcode
+    expressApp.get('/api/products/next-barcode', authMiddleware, (req, res) => {
+      const result = getNextBarcode();
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Print product barcode sticker
+    expressApp.post('/api/products/print-barcode', authMiddleware, async (req, res) => {
+      const { productId, qty } = req.body;
+      if (!productId) {
+        return res.status(400).json({ success: false, error: 'Product ID is required' });
+      }
+
+      try {
+        const product = getProduct(productId);
+        if (!product) {
+          return res.status(404).json({ success: false, error: 'Product not found' });
+        }
+
+        const settingsResult = getSettings();
+        if (!settingsResult.success) {
+          return res.status(500).json({ success: false, error: 'Failed to read settings' });
+        }
+
+        const settings = settingsResult.data;
+        const printerName = settings.labelPrinterName;
+        if (!printerName || printerName === 'none') {
+          return res.status(400).json({ success: false, error: 'Stiker printeri kompyuter sozlamalarida tanlanmagan!' });
+        }
+
+        const labelW = settings.label_width || '60';
+        const labelH = settings.label_height || '30';
+        const storeName = settings.storeName || '750 AVTOTUNING';
+        const shopLogo = settings.shopLogo || '';
+
+        // Read jsbarcode source file
+        const jsbarcodePath = require.resolve('jsbarcode');
+        const jsbarcodeSource = fs.readFileSync(jsbarcodePath, 'utf8');
+
+        // Compile HTML for Electron BrowserWindow
+        const labelHTML = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              @page {
+                size: ${labelW}mm ${labelH}mm;
+                margin: 0;
+              }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: ${labelW}mm;
+                height: ${labelH}mm;
+                overflow: hidden;
+                background-color: white;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+              }
+              #printable-label {
+                width: ${labelW}mm !important;
+                height: ${labelH}mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                padding: 1.0mm 2.5mm 1.5mm 2.5mm !important;
+                box-sizing: border-box !important;
+                background-color: white;
+                color: black;
+              }
+              .header-row {
+                display: flex !important;
+                align-items: center !important;
+                width: 100% !important;
+                height: 7.5mm !important;
+                margin-bottom: 0.5mm !important;
+                box-sizing: border-box !important;
+                flex-shrink: 0 !important;
+              }
+              .logo-img {
+                width: 7.5mm !important;
+                height: 7.5mm !important;
+                object-fit: contain !important;
+                margin-left: 4px !important;
+                flex-shrink: 0 !important;
+              }
+              #printable-label .shop-name {
+                font-size: 14px !important;
+                font-weight: 800 !important;
+                text-transform: uppercase !important;
+                text-align: left !important;
+                margin: 0 0 0 2.0mm !important;
+                line-height: 7.5mm !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                flex: 1 !important;
+                flex-shrink: 0 !important;
+              }
+              #printable-label .product-name {
+                font-size: 11px !important;
+                font-weight: 700 !important;
+                line-height: 1.1 !important;
+                margin: 0 0 0.5mm 0 !important;
+                max-height: 6mm !important;
+                overflow: hidden !important;
+                text-align: center !important;
+                width: 100% !important;
+                word-wrap: break-word !important;
+                display: -webkit-box !important;
+                -webkit-line-clamp: 2 !important;
+                -webkit-box-orient: vertical !important;
+                flex-shrink: 0 !important;
+              }
+              #printable-label .product-price {
+                font-size: 16px !important;
+                font-weight: 900 !important;
+                margin: 0 0 0.5mm 0 !important;
+                text-align: center !important;
+                width: 100% !important;
+                line-height: 1.0 !important;
+                flex-shrink: 0 !important;
+              }
+              .barcode-container {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 100% !important;
+                margin-top: 0.8mm !important;
+                flex-shrink: 0 !important;
+              }
+              #printable-label svg {
+                display: block !important;
+                width: auto !important;
+                height: 7.5mm !important;
+                margin: 0 auto !important;
+                flex-shrink: 0 !important;
+                overflow: visible !important;
+              }
+            </style>
+            <script>${jsbarcodeSource}<\/script>
+          </head>
+          <body>
+            <div id="printable-label">
+              <div class="header-row">
+                ${shopLogo ? `<img class="logo-img" src="${shopLogo}" />` : ''}
+                <div class="shop-name">${storeName.toUpperCase()}</div>
+              </div>
+              <div class="product-name">${product.name}</div>
+              <div class="product-price">${Math.round(product.sell_price).toLocaleString('ru-RU')} UZS</div>
+              <div class="barcode-container">
+                <svg id="barcode-svg"></svg>
+              </div>
+            </div>
+            <script>
+              JsBarcode("#barcode-svg", "${product.barcode || ''}", {
+                format: "CODE128",
+                width: 1.5,
+                height: 15,
+                displayValue: true,
+                fontSize: 14,
+                margin: 2,
+                background: "transparent"
+              });
+            <\/script>
+          </body>
+          </html>
+        `;
+
+        // Verification of printer
+        const printers = await mainWindow.webContents.getPrintersAsync();
+        const printerExists = printers.some(p => p.name === printerName);
+        if (!printerExists) {
+          return res.status(400).json({ success: false, error: `Printer "${printerName}" not found on desktop system` });
+        }
+
+        // Print using BrowserWindow
+        let printWindow = new BrowserWindow({ 
+          show: false,
+          webPreferences: { nodeIntegration: false }
+        });
+
+        printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(labelHTML));
+
+        printWindow.webContents.on('did-finish-load', () => {
+          const lW = parseInt(labelW) * 1000 || 60000;
+          const lH = parseInt(labelH) * 1000 || 30000;
+
+          printWindow.webContents.print({
+            silent: true,
+            deviceName: printerName,
+            printBackground: true,
+            copies: parseInt(qty) || 1,
+            margins: { marginType: 'none' },
+            pageSize: { width: lW, height: lH }
+          }, (success, errorType) => {
+            printWindow.close();
+            printWindow = null;
+            if (success) {
+              return res.json({ success: true });
+            } else {
+              return res.status(500).json({ success: false, error: 'Printing failed: ' + errorType });
+            }
+          });
+        });
+
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
     
+    // ── AI Bashoratchi (Mobile API) ──────────────────────────────────────────
+    const aiRateLimits = {};
+    expressApp.get('/api/ai/business-insights', authMiddleware, async (req, res) => {
+      const ip = req.ip || req.connection.remoteAddress;
+      if (aiRateLimits[ip] && Date.now() - aiRateLimits[ip] < 10000) {
+        return res.status(429).json({ success: false, error: "Juda ko'p so'rov yuborildi. Iltimos 10 soniya kuting." });
+      }
+      aiRateLimits[ip] = Date.now();
+  
+      const result = await getAiInsights();
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    });
+
     // Serve index.html for any other route to handle SPA page refreshes nicely
     expressApp.get(/.*/, (req, res) => {
       res.sendFile(path.join(staticPath, 'index.html'));
@@ -865,6 +1138,14 @@ function createWindow() {
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     // mainWindow.webContents.openDevTools(); // uncomment to debug renderer
@@ -893,11 +1174,47 @@ if (!gotTheLock) {
       startExpressServer();
 
   // ── Products ──────────────────────────────────────────────────────────────
+  ipcMain.handle('generate-unique-local-barcode', () => generateUniqueLocalBarcode());
+  ipcMain.handle('batch-add-products', (_, payload) => {
+    const res = batchAddProducts(payload);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
+
+  // AI 
+  ipcMain.handle('get-ai-insights', () => getAiInsights());
+
   ipcMain.handle('get-products', () => getProducts());
-  ipcMain.handle('add-product', (_, product) => addProduct(product));
-  ipcMain.handle('update-product', (_, { id, data }) => updateProduct(id, data));
-  ipcMain.handle('add-stock-to-product', (_, { id, data }) => addStockToProduct(id, data));
-  ipcMain.handle('delete-product', (_, id, userName) => deleteProduct(id, userName));
+  ipcMain.handle('add-product', (_, product) => {
+    const res = addProduct(product);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('update-product', (_, { id, data }) => {
+    const res = updateProduct(id, data);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('add-stock-to-product', (_, { id, data }) => {
+    const res = addStockToProduct(id, data);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('delete-product', (_, id, userName) => {
+    const res = deleteProduct(id, userName);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
   ipcMain.handle('search-product', (_, query) => searchProduct(query));
   ipcMain.handle('write-off-product', (_, data) => writeOffProduct(data));
   ipcMain.handle('get-write-offs',     () => getWriteOffs());

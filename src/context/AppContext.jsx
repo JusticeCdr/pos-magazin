@@ -77,6 +77,18 @@ export function AppProvider({ children }) {
   // ── Auth & Settings ──────────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState(null);
   const [storeName, setStoreName] = useState("Mening Do'konim");
+  const [shopLogo, setShopLogoState] = useState(() => {
+    return localStorage.getItem('shopLogoBase64') || '';
+  });
+
+  const setShopLogo = (val) => {
+    setShopLogoState(val);
+    if (val) {
+      localStorage.setItem('shopLogoBase64', val);
+    } else {
+      localStorage.removeItem('shopLogoBase64');
+    }
+  };
 
 
 
@@ -98,8 +110,23 @@ export function AppProvider({ children }) {
     // Fetch initial settings and customers
     if (window.api) {
       window.api.getSettings().then(res => {
-        if (res && res.success && res.data?.store_name) {
-          setStoreName(res.data.store_name);
+        if (res && res.success) {
+          if (res.data.store_name) setStoreName(res.data.store_name);
+          if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
+          if (res.data.label_printer_name) localStorage.setItem('labelPrinterName', res.data.label_printer_name);
+          if (res.data.printer_width) localStorage.setItem('printer_width', res.data.printer_width);
+          if (res.data.label_width) localStorage.setItem('label_width', res.data.label_width);
+          if (res.data.label_height) localStorage.setItem('label_height', res.data.label_height);
+          if (res.data.shop_location) localStorage.setItem('shopLocation', res.data.shop_location);
+          if (res.data.telegram_qr) localStorage.setItem('telegramQrCode', res.data.telegram_qr);
+          if (res.data.instagram_qr) localStorage.setItem('instagramQrCode', res.data.instagram_qr);
+          if (res.data.shop_logo) {
+            setShopLogoState(res.data.shop_logo);
+            localStorage.setItem('shopLogoBase64', res.data.shop_logo);
+          } else {
+            setShopLogoState('');
+            localStorage.removeItem('shopLogoBase64');
+          }
         }
       }).catch(() => {});
       fetchGlobalCustomers();
@@ -146,7 +173,7 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{ 
       cart, setCart, carts, setCarts, activeCartId, setActiveCartId, theme, toggleTheme, lang, toggleLang, t,
-      currentUser, setCurrentUser, storeName, setStoreName,
+      currentUser, setCurrentUser, storeName, setStoreName, shopLogo, setShopLogo,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded
     }}>
