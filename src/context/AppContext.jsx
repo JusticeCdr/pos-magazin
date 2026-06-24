@@ -30,7 +30,7 @@ export function AppProvider({ children }) {
     if (!window.api) return;
     try {
       const data = await window.api.getProducts();
-      setGlobalProducts(data);
+      setGlobalProducts(data || []);
       setProductsLoaded(true);
     } catch (err) {
     }
@@ -77,6 +77,8 @@ export function AppProvider({ children }) {
   // ── Auth & Settings ──────────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState(null);
   const [storeName, setStoreName] = useState("Mening Do'konim");
+  const [businessType, setBusinessType] = useState('retail');
+  const [terminalMode, setTerminalMode] = useState(false);
   const [shopLogo, setShopLogoState] = useState(() => {
     return localStorage.getItem('shopLogoBase64') || '';
   });
@@ -90,6 +92,13 @@ export function AppProvider({ children }) {
     }
   };
 
+  const updateTerminalMode = async (val) => {
+    setTerminalMode(val);
+    if (window.api) {
+      await window.api.updateSetting({ key: 'terminal_mode', value: val ? 'true' : 'false' });
+    }
+  };
+
 
 
   // ── Global Customers Cache ─────────────────────────────────────────────────
@@ -100,7 +109,7 @@ export function AppProvider({ children }) {
     if (!window.api) return;
     try {
       const data = await window.api.getCustomers();
-      setGlobalCustomers(data);
+      setGlobalCustomers(data || []);
       setCustomersLoaded(true);
     } catch (err) {
     }
@@ -112,6 +121,8 @@ export function AppProvider({ children }) {
       window.api.getSettings().then(res => {
         if (res && res.success) {
           if (res.data.store_name) setStoreName(res.data.store_name);
+          if (res.data.business_type) setBusinessType(res.data.business_type);
+          if (res.data.terminal_mode) setTerminalMode(res.data.terminal_mode === 'true');
           if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
           if (res.data.label_printer_name) localStorage.setItem('labelPrinterName', res.data.label_printer_name);
           if (res.data.printer_width) localStorage.setItem('printer_width', res.data.printer_width);
@@ -173,7 +184,8 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{ 
       cart, setCart, carts, setCarts, activeCartId, setActiveCartId, theme, toggleTheme, lang, toggleLang, t,
-      currentUser, setCurrentUser, storeName, setStoreName, shopLogo, setShopLogo,
+      currentUser, setCurrentUser, storeName, setStoreName, businessType, setBusinessType, shopLogo, setShopLogo,
+      terminalMode, updateTerminalMode,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded
     }}>

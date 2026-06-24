@@ -3,8 +3,18 @@ import { Lock, ArrowRight, Store, Send, Camera, Phone, Settings } from 'lucide-r
 import { useApp } from './context/AppContext';
 import { logoBase64 } from './logoBase64';
 
+export function LogoIcon({ className = "w-5 h-5 text-orange-500" }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <path d="M16 10a4 4 0 0 1-8 0"></path>
+    </svg>
+  );
+}
+
 export default function Login() {
-  const { t, setCurrentUser, shopLogo } = useApp();
+  const { t, setCurrentUser, shopLogo, terminalMode } = useApp();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,9 +47,26 @@ export default function Login() {
     setError(false);
     
     try {
+      if (pin === '7532') {
+        const adminUser = { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' };
+        if (window.api) {
+          const openRes = await window.api.maybeOpenShift(adminUser.name);
+          if (openRes && openRes.success && openRes.shiftOpened) {
+            localStorage.setItem('showShiftOpenedToast', 'true');
+          }
+        }
+        setFailCount(0);
+        setCurrentUser(adminUser);
+        setPin('');
+        return;
+      }
 
       const result = await window.api.verifyPin(pin);
       if (result && result.success && result.valid) {
+        if (terminalMode && result.cashier.role !== 'waiter') {
+          handleFailedAttempt();
+          return;
+        }
         const openRes = await window.api.maybeOpenShift(result.cashier.name);
         if (openRes && openRes.success && openRes.shiftOpened) {
           localStorage.setItem('showShiftOpenedToast', 'true');
@@ -65,13 +92,14 @@ export default function Login() {
     }
     
     // Correct Admin PIN
-    const adminUser = { id: 0, name: 'Asosiy Admin', pin: '7532' };
+    const adminUser = { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' };
     if (window.api) {
       const openRes = await window.api.maybeOpenShift(adminUser.name);
       if (openRes && openRes.success && openRes.shiftOpened) {
         localStorage.setItem('showShiftOpenedToast', 'true');
       }
     }
+    localStorage.setItem('adminSettingsAccess', 'true');
     setCurrentUser(adminUser);
   };
 
@@ -186,8 +214,9 @@ export default function Login() {
           
           {/* Group 1: Title & Description */}
           <div className="flex flex-col items-center w-full">
-            <h1 className="text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight tracking-tight">
-              xxMpos<br/>Savdo Tizimi
+            <h1 className="text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight tracking-tight flex items-center justify-center gap-3">
+              <LogoIcon className="w-10 h-10 text-orange-500 shrink-0" />
+              <span>xxMpos<br/><span className="text-3xl font-semibold">Savdo Tizimi</span></span>
             </h1>
             <p className="text-slate-400 text-sm lg:text-base leading-relaxed px-4">
               Do'kon, kafe, restoran va savdo jarayonlarini avtomatlashtirish, ombor hisobini yuritish uchun zamonaviy va qulay yechim.

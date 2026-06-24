@@ -18,9 +18,11 @@ contextBridge.exposeInMainWorld('api', {
   printLabel:    (data)    => ipcRenderer.invoke('print-label', data),
   payDebt:       (data)    => ipcRenderer.invoke('pay-debt', data),
   getReports:    (dates)   => ipcRenderer.invoke('get-reports', dates),
+  getWaitersReport: (opts) => ipcRenderer.invoke('get-waiters-report', opts),
   getSalesForExcel: (dates)=> ipcRenderer.invoke('get-sales-for-excel', dates),
   getLowStock:   (limit)   => ipcRenderer.invoke('get-low-stock', limit),
   clearTestData: ()        => ipcRenderer.invoke('clear-test-data'),
+  resetFactoryData: ()     => ipcRenderer.invoke('reset-factory-data'),
   getCurrentShiftStats: () => ipcRenderer.invoke('get-current-shift-stats'),
   closeShift: (stats)      => ipcRenderer.invoke('close-shift', stats),
   getCustomerDebtDetails: (id) => ipcRenderer.invoke('get-customer-debt-details', id),
@@ -30,8 +32,30 @@ contextBridge.exposeInMainWorld('api', {
   updateSetting: (data)    => ipcRenderer.invoke('update-setting', data),
   checkBaseLoaded: ()      => ipcRenderer.invoke('check-base-loaded'),
   loadInitialBase: (type)  => ipcRenderer.invoke('load-initial-base', type),
+  getRestaurantTables: ()  => ipcRenderer.invoke('get-restaurant-tables'),
+  getActiveOrderForTable: (tableId) => ipcRenderer.invoke('get-active-order-for-table', tableId),
+  saveRestaurantOrder: (tableId, waiterId, items) => ipcRenderer.invoke('save-restaurant-order', tableId, waiterId, items),
+  closeRestaurantOrder: (data) => ipcRenderer.invoke('close-restaurant-order', data),
+  closeRestaurantOrderOnly: (tableId) => ipcRenderer.invoke('close-restaurant-order-only', tableId),
+  getWaiters:   ()        => ipcRenderer.invoke('get-waiters'),
+  addWaiter:    (data)    => ipcRenderer.invoke('add-waiter', data),
+  deleteWaiter: (id)      => ipcRenderer.invoke('delete-waiter', id),
+  transferRestaurantTable: (data) => ipcRenderer.invoke('transfer-restaurant-table', data),
+  transferRestaurantOrderWaiter: (data) => ipcRenderer.invoke('transfer-restaurant-order-waiter', data),
+  cancelRestaurantOrder: (data) => ipcRenderer.invoke('cancel-restaurant-order', data),
+  addDeliveryOrder: (data) => ipcRenderer.invoke('add-delivery-order', data),
+  addRestaurantTable: (data) => ipcRenderer.invoke('add-restaurant-table', data),
+  deleteRestaurantTable: (tableId) => ipcRenderer.invoke('delete-restaurant-table', tableId),
+  saveProductRecipe: (productId, ingredients) => ipcRenderer.invoke('save-product-recipe', productId, ingredients),
+  getProductRecipe: (productId) => ipcRenderer.invoke('get-product-recipe', productId),
+  lockTable: (tableId, userName) => ipcRenderer.invoke('lock-table', tableId, userName),
+  unlockTable: (tableId, userName) => ipcRenderer.invoke('unlock-table', tableId, userName),
+  setTablePrePrinted: (tableId, isPrinted) => ipcRenderer.invoke('set-table-pre-printed', tableId, isPrinted),
   getCashiers:   ()        => ipcRenderer.invoke('get-cashiers'),
-  addCashier:    (data)    => ipcRenderer.invoke('add-cashier', data),
+  addCashier:    (data)    => {
+    // support role and salary arguments
+    return ipcRenderer.invoke('add-cashier', data);
+  },
   deleteCashier: (id)      => ipcRenderer.invoke('delete-cashier', id),
   updateCashierPin: (data) => ipcRenderer.invoke('update-cashier-pin', data),
   exportDB:      (name)    => ipcRenderer.invoke('export-db', name),
@@ -58,6 +82,9 @@ contextBridge.exposeInMainWorld('api', {
   exportSaleExcel: (saleDetails) => ipcRenderer.invoke('export-sale-excel', saleDetails),
   printA4Invoice: (saleDetails) => ipcRenderer.invoke('print-a4-invoice', saleDetails),
   getAiInsights: () => ipcRenderer.invoke('get-ai-insights'),
+  saveNetworkSettings: (data) => ipcRenderer.invoke('save-network-settings', data),
+  getNetworkSettings: () => ipcRenderer.invoke('get-network-settings'),
+  getLocalIPs: () => ipcRenderer.invoke('get-local-ips'),
   onNgrokUrlUpdated: (callback) => {
     ipcRenderer.removeAllListeners('ngrok-url-updated');
     ipcRenderer.on('ngrok-url-updated', (_, url) => callback(url));
@@ -69,5 +96,11 @@ contextBridge.exposeInMainWorld('api', {
   onNgrokUrlError: (callback) => {
     ipcRenderer.removeAllListeners('ngrok-url-error');
     ipcRenderer.on('ngrok-url-error', (_, err) => callback(err));
-  }
+  },
+  getProductGroups: () => ipcRenderer.invoke('get-product-groups'),
+  addProductGroup: (name) => ipcRenderer.invoke('add-product-group', name),
+  getAttendance: (date) => ipcRenderer.invoke('get-attendance', date),
+  saveAttendance: (data) => ipcRenderer.invoke('save-attendance', data),
+  updateCashier: (data) => ipcRenderer.invoke('update-cashier', data),
+  updateWaiter: (data) => ipcRenderer.invoke('update-waiter', data)
 });

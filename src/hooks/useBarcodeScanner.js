@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 
 export function useBarcodeScanner(onScan, active = true) {
-  // Keep onScan in a ref so the effect only registers ONCE (no listener thrash on every render)
   const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
+  useEffect(() => {
+    onScanRef.current = onScan;
+  });
 
   useEffect(() => {
     if (!active) return;

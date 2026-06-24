@@ -3,7 +3,7 @@ import { parseSQLiteDate } from './utils';
 
 export function generateReceiptHTML({ saleData, storeName, cashierName, isReprint = false, contactPhones }) {
   // Extract data from saleData
-  const { cartItems, total, paymentMethod, saleId, date } = saleData;
+  const { cartItems, total, paymentMethod, saleId, date, comment } = saleData;
 
   const formatNumber = (num) => {
     return Number(num).toLocaleString('ru-RU');
@@ -394,6 +394,13 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
         <div class="receipt-social-qr-container">
           ${telegramQr ? `<div class="qr-box"><img src="${telegramQr}" alt="TG" /><span>Telegram</span></div>` : ''}
           ${instagramQr ? `<div class="qr-box"><img src="${instagramQr}" alt="IG" /><span>Instagram</span></div>` : ''}
+        </div>
+        ` : ''}
+
+        ${comment && comment.trim() ? `
+        <div style="border-top: 1px dashed #000; margin-top: 6px; padding-top: 6px; text-align: left;">
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 2px;">Izoh:</div>
+          <div style="font-size: 11px; word-break: break-all; white-space: pre-wrap;">${comment}</div>
         </div>
         ` : ''}
 

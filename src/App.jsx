@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ShoppingCart, Package, PackageSearch, Users, BarChart3, Moon, Sun, Globe, LogOut, CheckCircle, X } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import Cashier from './Cashier';
+import RestaurantCashier from './RestaurantCashier';
 import Warehouse from './Warehouse';
 import Debts from './Debts';
 import Reports from './Reports';
@@ -11,8 +12,19 @@ import SalesHistory from './SalesHistory';
 import InventoryHistory from './InventoryHistory';
 import AiBashoratchi from './AiBashoratchi';
 import ShiftModal from './components/ShiftModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles } from 'lucide-react';
 import { logoBase64 } from './logoBase64';
+
+export function LogoIcon({ className = "w-5 h-5 text-orange-500" }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <path d="M16 10a4 4 0 0 1-8 0"></path>
+    </svg>
+  );
+}
 
 // ── Boot Loader ──────────────────────────────────────────────────────────────
 // Shown ONLY during the initial license check. Prevents any flash.
@@ -159,10 +171,69 @@ function ActivationScreen({ theme, currentMachineId, onActivated }) {
 
 // ── Main App Component ───────────────────────────────────────────────────────
 function App() {
-  const [activeTab, setActiveTab] = useState('cashier');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (localStorage.getItem('adminSettingsAccess') === 'true') {
+      return 'settings';
+    }
+    return 'cashier';
+  });
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [successToast, setSuccessToast] = useState('');
-  const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName, shopLogo } = useApp();
+  const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName, shopLogo, terminalMode, businessType } = useApp();
+  
+  const showSettings = !terminalMode || localStorage.getItem('adminSettingsAccess') === 'true';
+  const showSidebar = currentUser && currentUser.role !== 'waiter' && (!terminalMode || localStorage.getItem('adminSettingsAccess') === 'true');
+
+  // Waiter Shaxsiy Hisoboti states
+  const [showWaiterReportModal, setShowWaiterReportModal] = useState(false);
+  const [waiterReportData, setWaiterReportData] = useState(null);
+  const [waiterReportFilter, setWaiterReportFilter] = useState('today'); // 'today' | 'yesterday' | 'week' | 'month'
+  const [waiterReportLoading, setWaiterReportLoading] = useState(false);
+
+  const fetchWaiterReport = useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'waiter' || !window.api || !window.api.getWaitersReport) return;
+    setWaiterReportLoading(true);
+    try {
+      let start = new Date();
+      let end = new Date();
+      if (waiterReportFilter === 'today') {
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+      } else if (waiterReportFilter === 'yesterday') {
+        start.setDate(start.getDate() - 1);
+        start.setHours(0,0,0,0);
+        end.setDate(end.getDate() - 1);
+        end.setHours(23,59,59,999);
+      } else if (waiterReportFilter === 'week') {
+        start.setDate(start.getDate() - 7);
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+      } else if (waiterReportFilter === 'month') {
+        start.setDate(start.getDate() - 30);
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+      }
+
+      const res = await window.api.getWaitersReport({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        waiterId: currentUser.id
+      });
+      if (res && res.success) {
+        setWaiterReportData(res.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setWaiterReportLoading(false);
+    }
+  }, [currentUser, waiterReportFilter]);
+
+  useEffect(() => {
+    if (showWaiterReportModal) {
+      fetchWaiterReport();
+    }
+  }, [showWaiterReportModal, fetchWaiterReport]);
 
   // ── Boot sequence: one-time license check, no flicker ───────────────────
   // 'booting'    → showing spinner (initial, before check completes)
@@ -231,6 +302,7 @@ function App() {
   }, [lang, t]);
 
   const handleLogout = useCallback(() => {
+    localStorage.removeItem('adminSettingsAccess');
     setCurrentUser(null);
     setActiveTab('cashier');
   }, [setCurrentUser]);
@@ -274,7 +346,7 @@ function App() {
     { id: 'settings',  icon: SettingsIcon,  label: t('settings') },
   ];
 
-  const tabs = allTabs;
+  const tabs = allTabs.filter(tab => tab.id !== 'settings' || showSettings);
 
   // ── Render: Main application ─────────────────────────────────────────────
   return (
@@ -284,92 +356,126 @@ function App() {
       }`}
     >
       {/* ── Sidebar ── */}
-      <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col transition-colors duration-300 shrink-0">
-        <div className="relative overflow-hidden shrink-0" style={{ height: '140px' }}>
+      {showSidebar ? (
+        <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col transition-colors duration-300 shrink-0">
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-900/40 relative flex items-center gap-3 shrink-0">
+            <button
+              onClick={handleLogout}
+              title="Kassa qulflansin"
+              className="absolute top-2 right-2 p-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 text-gray-500 dark:text-gray-400 rounded-lg transition-all duration-200 cursor-pointer"
+            >
+              <Lock size={16} />
+            </button>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-900/50 border border-gray-200 dark:border-gray-700/50 p-1 shrink-0">
+              <img
+                src={shopLogo || logoBase64}
+                alt="Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div className="flex flex-col min-w-0 pr-8">
+              <h1 className="text-lg font-black text-gray-900 dark:text-white leading-tight truncate flex items-center gap-1.5">
+                <LogoIcon className="w-5 h-5 text-orange-500 shrink-0" />
+                xxMpos
+              </h1>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                Kassir: {currentUser.name}
+              </p>
+            </div>
+          </div>
+
+          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
+            {tabs.map(({ id, label, icon: Icon }) => {
+              const active = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-200 ${
+                    active
+                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon
+                    size={20}
+                    className={active ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}
+                  />
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* ── Sidebar Controls ── */}
+          <div className="p-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+            <button
+              onClick={() => setShowShiftModal(true)}
+              className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Lock size={16} />
+                <span>Smenani yopish</span>
+              </div>
+            </button>
+
+            <button
+              onClick={toggleLang}
+              className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Globe size={16} />
+                <span>{lang === 'ru' ? 'Русский' : "O'zbekcha"}</span>
+              </div>
+              <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded-md font-bold uppercase">
+                {lang}
+              </span>
+            </button>
+
+            <button
+              onClick={toggleTheme}
+              className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+                <span>{theme === 'light' ? t('darkMode') : t('lightMode')}</span>
+              </div>
+            </button>
+          </div>
+
+          <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 text-xs text-center text-gray-400 dark:text-gray-500">
+            {t('version')}
+          </div>
+        </div>
+      ) : (
+        <>
+          {currentUser.role === 'waiter' && (
+            <button
+              onClick={() => setShowWaiterReportModal(true)}
+              title="Mening hisobotim"
+              className="fixed top-4 right-20 z-50 p-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-blue-400 dark:border-blue-600 cursor-pointer hover:scale-105"
+            >
+              <BarChart3 size={24} />
+            </button>
+          )}
+          {currentUser.pin === '7532' && showSettings && (
+            <button
+              onClick={() => setActiveTab(activeTab === 'settings' ? 'cashier' : 'settings')}
+              title="Sozlamalar"
+              className="fixed top-4 right-20 z-50 p-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-emerald-400 dark:border-emerald-600 cursor-pointer hover:scale-105"
+            >
+              <SettingsIcon size={24} />
+            </button>
+          )}
           <button
             onClick={handleLogout}
             title="Kassa qulflansin"
-            className="absolute top-2 right-2 z-20 p-2 bg-black/30 hover:bg-red-500 text-white rounded-xl transition-all duration-200 shadow-lg"
+            className="fixed top-4 right-4 z-50 p-3.5 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-red-400 dark:border-red-600 cursor-pointer hover:scale-105"
           >
-            <Lock size={22} />
+            <Lock size={24} />
           </button>
-          <img
-            src="/icon.png"
-            alt="Logo"
-            className="w-full h-full object-cover"
-            style={{ objectPosition: 'center top', marginTop: '-2rem' }}
-          />
-          <div className="absolute left-0 right-0 flex flex-col items-center" style={{ top: '5rem' }}>
-            <h1 className="text-xl font-black text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] leading-tight">xxMpos</h1>
-            <p className="text-xs font-semibold text-white/80 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] mt-0.5">
-              Kassir: {currentUser.name}
-            </p>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
-          {tabs.map(({ id, label, icon: Icon }) => {
-            const active = activeTab === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-200 ${
-                  active
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                <Icon
-                  size={20}
-                  className={active ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}
-                />
-                {label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* ── Sidebar Controls ── */}
-        <div className="p-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
-          <button
-            onClick={() => setShowShiftModal(true)}
-            className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Lock size={16} />
-              <span>Smenani yopish</span>
-            </div>
-          </button>
-
-          <button
-            onClick={toggleLang}
-            className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Globe size={16} />
-              <span>{lang === 'ru' ? 'Русский' : "O'zbekcha"}</span>
-            </div>
-            <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded-md font-bold uppercase">
-              {lang}
-            </span>
-          </button>
-
-          <button
-            onClick={toggleTheme}
-            className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-              <span>{theme === 'light' ? t('darkMode') : t('lightMode')}</span>
-            </div>
-          </button>
-        </div>
-
-        <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 text-xs text-center text-gray-400 dark:text-gray-500">
-          {t('version')}
-        </div>
-      </div>
+        </>
+      )}
 
       {/* ── Main Content Area ── */}
       {/*
@@ -384,7 +490,13 @@ function App() {
       >
         {/* Cashier — always rendered, shown via CSS */}
         <div style={{ display: activeTab === 'cashier' ? 'flex' : 'none' }} className="h-full flex-col">
-          <Cashier isActive={activeTab === 'cashier'} />
+          <ErrorBoundary name="Cashier">
+            {businessType === 'restaurant' ? (
+              <RestaurantCashier isActive={activeTab === 'cashier'} />
+            ) : (
+              <Cashier isActive={activeTab === 'cashier'} />
+            )}
+          </ErrorBoundary>
         </div>
 
         {/* All non-cashier tabs share the same card wrapper */}
@@ -393,25 +505,39 @@ function App() {
           className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-150 dark:border-gray-700 p-6 h-full overflow-auto transition-colors duration-300"
         >
           <div style={{ display: activeTab === 'warehouse' ? 'block' : 'none' }} className="h-full">
-            <Warehouse isActive={activeTab === 'warehouse'} />
+            <ErrorBoundary name="Warehouse">
+              <Warehouse isActive={activeTab === 'warehouse'} />
+            </ErrorBoundary>
           </div>
           <div style={{ display: activeTab === 'debts' ? 'block' : 'none' }} className="h-full">
-            <Debts isActive={activeTab === 'debts'} />
+            <ErrorBoundary name="Debts">
+              <Debts isActive={activeTab === 'debts'} />
+            </ErrorBoundary>
           </div>
           <div style={{ display: activeTab === 'history' ? 'block' : 'none' }} className="h-full">
-            <SalesHistory isActive={activeTab === 'history'} />
+            <ErrorBoundary name="SalesHistory">
+              <SalesHistory isActive={activeTab === 'history'} />
+            </ErrorBoundary>
           </div>
           <div style={{ display: activeTab === 'invlog' ? 'block' : 'none' }} className="h-full">
-            <InventoryHistory isActive={activeTab === 'invlog'} />
+            <ErrorBoundary name="InventoryHistory">
+              <InventoryHistory isActive={activeTab === 'invlog'} />
+            </ErrorBoundary>
           </div>
           <div style={{ display: activeTab === 'reports' ? 'block' : 'none' }} className="h-full">
-            <Reports isActive={activeTab === 'reports'} />
+            <ErrorBoundary name="Reports">
+              <Reports isActive={activeTab === 'reports'} />
+            </ErrorBoundary>
           </div>
           <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }} className="h-full">
-            <Settings isActive={activeTab === 'settings'} />
+            <ErrorBoundary name="Settings">
+              <Settings isActive={activeTab === 'settings'} />
+            </ErrorBoundary>
           </div>
           <div style={{ display: activeTab === 'bashoratchi' ? 'block' : 'none' }} className="h-full rounded-2xl overflow-hidden bg-slate-900 text-white">
-            <AiBashoratchi isActive={activeTab === 'bashoratchi'} />
+            <ErrorBoundary name="AiBashoratchi">
+              <AiBashoratchi isActive={activeTab === 'bashoratchi'} />
+            </ErrorBoundary>
           </div>
         </div>
       </div>
@@ -433,6 +559,125 @@ function App() {
           <button onClick={() => setSuccessToast('')} className="ml-2 hover:text-emerald-200 transition-colors">
             <X size={16} />
           </button>
+        </div>
+      )}
+      {/* Waiter Shaxsiy Hisoboti Modal */}
+      {showWaiterReportModal && waiterReportData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-150 dark:border-gray-700 w-full max-w-3xl h-[85vh] flex flex-col mx-4 overflow-hidden relative">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-150 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/30">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Shaxsiy ish hisoboti</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Ofitsiant: {currentUser.name}</p>
+              </div>
+              <button
+                onClick={() => setShowWaiterReportModal(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition text-gray-400 hover:text-gray-600 dark:hover:text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Date Filters */}
+            <div className="p-4 bg-white dark:bg-gray-800 flex gap-2 border-b border-gray-100 dark:border-gray-700">
+              {['today', 'yesterday', 'week', 'month'].map((f) => {
+                const label = f === 'today' ? 'Bugun' : f === 'yesterday' ? 'Kecha' : f === 'week' ? 'Haftalik' : 'Aylik';
+                const active = waiterReportFilter === f;
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setWaiterReportFilter(f)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      active
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                        : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 p-6 overflow-y-auto space-y-6 custom-scrollbar">
+              {waiterReportLoading ? (
+                <div className="h-40 flex items-center justify-center">
+                  <span className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {/* Stats Cards */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="p-4 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl text-center">
+                      <span className="text-[11px] font-bold text-blue-500 uppercase tracking-wider block mb-1">Jami buyurtmalar</span>
+                      <span className="text-2xl font-black text-blue-700 dark:text-blue-400">{waiterReportData.waiter?.total_receipts || 0} ta</span>
+                    </div>
+
+                    <div className="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl text-center">
+                      <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider block mb-1">Jami sotuv</span>
+                      <span className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                        {Math.round(waiterReportData.waiter?.total_sales || 0).toLocaleString('ru-RU')} UZS
+                      </span>
+                    </div>
+
+                    <div className="p-4 bg-purple-50/50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl text-center">
+                      <span className="text-[11px] font-bold text-purple-500 uppercase tracking-wider block mb-1">Mening ulushim ({waiterReportData.waiter?.percentage || 0}%)</span>
+                      <span className="text-2xl font-black text-purple-700 dark:text-purple-400">
+                        {Math.round(waiterReportData.waiter?.total_commission || 0).toLocaleString('ru-RU')} UZS
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Detailed List */}
+                  <div>
+                    <h4 className="font-bold text-gray-800 dark:text-white mb-4">Sotilgan cheklar ro'yxati</h4>
+                    {waiterReportData.receipts?.length === 0 ? (
+                      <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">Ushbu davrda sotuvlar topilmadi</p>
+                    ) : (
+                      <div className="border border-gray-150 dark:border-gray-700 rounded-2xl overflow-hidden">
+                        <table className="w-full text-sm text-left">
+                          <thead className="bg-gray-50 dark:bg-gray-900/50 text-xs font-bold text-gray-500 dark:text-gray-400 border-b border-gray-150 dark:border-gray-700">
+                            <tr>
+                              <th className="px-6 py-4">Chek #</th>
+                              <th className="px-6 py-4">Sana</th>
+                              <th className="px-6 py-4">To'lov usuli</th>
+                              <th className="px-6 py-4 text-right">Chek summasi</th>
+                              <th className="px-6 py-4 text-right">Mening ulushim</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-150 dark:divide-gray-700 text-gray-700 dark:text-gray-300">
+                            {waiterReportData.receipts?.map((r) => (
+                              <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors">
+                                <td className="px-6 py-4 font-black">#{r.shift_receipt_number}</td>
+                                <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                                  {new Date(r.created_at).toLocaleString('ru-RU', {
+                                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                                  })}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${
+                                    r.payment_method === 'cash' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' :
+                                    r.payment_method === 'card' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400' :
+                                    'bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                                  }`}>
+                                    {r.payment_method === 'cash' ? 'Naqd' : r.payment_method === 'card' ? 'Karta' : 'Qarzga'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-right font-bold">{Math.round(r.total_amount).toLocaleString('ru-RU')} so'm</td>
+                                <td className="px-6 py-4 text-right font-black text-purple-600 dark:text-purple-400">+{Math.round(r.waiter_commission).toLocaleString('ru-RU')} so'm</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

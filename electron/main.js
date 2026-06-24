@@ -3,6 +3,135 @@ const path = require('path');
 const fs = require('fs');
 const { exec, execSync } = require('child_process');
 
+// ── Network Client-Server Settings ──────────────────────────────────────────
+const networkSettingsPath = path.join(app.getPath('userData'), 'network-settings.json');
+
+function getNetworkSettingsSync() {
+  try {
+    if (fs.existsSync(networkSettingsPath)) {
+      const data = fs.readFileSync(networkSettingsPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('getNetworkSettingsSync error:', err);
+  }
+  return { role: 'server', ip: '' }; // Default
+}
+
+function saveNetworkSettingsSync(settings) {
+  try {
+    fs.writeFileSync(networkSettingsPath, JSON.stringify(settings, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    console.error('saveNetworkSettingsSync error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+const os = require('os');
+function getLocalIPs() {
+  const interfaces = os.networkInterfaces();
+  const candidates = [];
+  for (const name in interfaces) {
+    const isVirtual = /virtual|vbox|virtualbox|vmware|wsl|docker|vethernet|loopback/i.test(name);
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        const ip = iface.address;
+        let score = 50; // base score
+
+        // Prioritize common home/office subnets
+        if (ip.startsWith('192.168.')) {
+          score += 30;
+          // De-prioritize common host-only/virtual subnets
+          if (ip.includes('.56.') || ip.includes('.99.')) {
+            score -= 40;
+          }
+        } else if (ip.startsWith('10.')) {
+          score += 20;
+        } else if (ip.startsWith('172.')) {
+          const parts = ip.split('.');
+          const secondOctet = parseInt(parts[1], 10);
+          if (secondOctet >= 16 && secondOctet <= 31) {
+            // private class B, common for Docker/WSL, de-prioritize slightly
+            score -= 10;
+          } else {
+            score += 10;
+          }
+        }
+
+        // De-prioritize virtual interfaces by name
+        if (isVirtual) {
+          score -= 50;
+        }
+
+        // Prioritize typical physical connection names
+        if (/wi-fi|wifi|wlan|ethernet|eth|local/i.test(name)) {
+          score += 15;
+        }
+
+        candidates.push({ ip, score });
+      }
+    }
+  }
+
+  // Sort candidates by score descending
+  candidates.sort((a, b) => b.score - a.score);
+
+  // Return the best one (or empty array if none)
+  return candidates.length > 0 ? [candidates[0].ip] : [];
+}
+
+
+// Map of all original handlers to execute locally in server mode
+const ipcHandlers = {};
+const localChannels = [
+  'get-printers',
+  'print-receipt',
+  'print-label',
+  'get-network-settings',
+  'save-network-settings',
+  'get-machine-id',
+  'get-activation',
+  'save-activation',
+  'clear-activation',
+  'get-local-ips'
+];
+
+// Hijack ipcMain.handle to inject client-server forwarding
+const originalHandle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, fn) => {
+  ipcHandlers[channel] = fn;
+  originalHandle(channel, async (event, ...args) => {
+    const netSettings = getNetworkSettingsSync();
+    if (netSettings.role === 'client' && !localChannels.includes(channel)) {
+      try {
+        const serverUrl = `http://${netSettings.ip}:4000/api/ipc-forward`;
+        const response = await fetch(serverUrl, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-POS-Client-Token': 'xxmpos-secure-token-123'
+          },
+          body: JSON.stringify({ channel, args })
+        });
+        const res = await response.json();
+        if (res.success) {
+          return res.data;
+        } else {
+          return { success: false, error: res.error };
+        }
+      } catch (err) {
+        return { success: false, error: `Asosiy serverga ulanishda xatolik: ${err.message}` };
+      }
+    }
+    return fn(event, ...args);
+  });
+};
+
+ipcMain.handle('save-network-settings', (_, data) => saveNetworkSettingsSync(data));
+ipcMain.handle('get-network-settings', () => getNetworkSettingsSync());
+ipcMain.handle('get-local-ips', () => getLocalIPs());
+
 // ── Ngrok State ───────────────────────────────────────────────────────────────
 let ngrokProcess    = null;   // reference to the running child process
 let isNgrokStarting = false;  // guard against parallel launches
@@ -162,7 +291,7 @@ async function startNgrokAutomation(saved_token, saved_domain) {
 const { 
   initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, deleteProduct, searchProduct,
   processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
-  getLowStockProducts, clearTestData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
+  getLowStockProducts, clearTestData, resetFactoryData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
   verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase,
   getCashiers, addCashier, deleteCashier, updateCashierPin, updateProduct, addStockToProduct,
   getCurrentShiftStats, closeShift,
@@ -184,7 +313,37 @@ const {
   batchAddProducts,
   getAiInsights,
   getProduct,
-  getNextBarcode
+  getNextBarcode,
+  waiterLogin,
+  getRestaurantTables,
+  getActiveOrderForTable,
+  saveRestaurantOrder,
+  closeRestaurantOrder,
+  closeRestaurantOrderOnly,
+  getWaiters,
+  addWaiter,
+  deleteWaiter,
+  transferRestaurantTable,
+  transferRestaurantOrderWaiter,
+  cancelRestaurantOrder,
+  addDeliveryOrder,
+  addRestaurantTable,
+  deleteRestaurantTable,
+  saveProductRecipe,
+  getProductRecipe,
+  lockTable,
+  unlockTable,
+  setTablePrePrinted,
+  getWaitersReport,
+  getRestaurantOnlyProducts,
+  getProductGroups,
+  addProductGroup,
+  projectYield,
+  getOrCreateProductGroup,
+  getAttendanceList,
+  saveAttendance,
+  updateCashier,
+  updateWaiter
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
@@ -278,6 +437,244 @@ async function autoBackupDB() {
   }
 }
 
+// Kitchen slip printing helper
+async function printKitchenRunner(tableName, waiterName, items) {
+  try {
+    const settingsRes = getSettings();
+    if (!settingsRes || !settingsRes.success || !settingsRes.data) {
+      return { success: false, error: 'Settings not loaded' };
+    }
+    const settings = settingsRes.data;
+
+    const printerMap = {
+      kitchen: settings.kitchen_printer_name || settings.receipt_printer_name,
+      bar: settings.bar_printer_name || settings.receipt_printer_name,
+      cold: settings.cold_printer_name || settings.receipt_printer_name
+    };
+
+    const titleMap = {
+      kitchen: "OSHXONA CHEKI",
+      bar: "BAR CHEKI",
+      cold: "XOLODNIY CHEKI"
+    };
+
+    // Group items by printer destination
+    const groups = {};
+    for (const it of items) {
+      const prod = getProduct(it.id);
+      const dest = (prod && prod.printer_destination) ? prod.printer_destination : 'none';
+      if (!groups[dest]) {
+        groups[dest] = [];
+      }
+      groups[dest].push(it);
+    }
+
+    const destKeys = Object.keys(groups).filter(k => k !== 'none');
+    if (destKeys.length === 0) {
+      return { success: true, message: 'No items with printing destinations' };
+    }
+
+    const printPromises = destKeys.map(dest => {
+      const destItems = groups[dest];
+      const printerName = printerMap[dest];
+      const title = titleMap[dest] || "BUYURTMA CHEKI";
+      
+      if (!printerName || printerName === 'none') {
+        console.log(`No printer configured for ${dest}, skipping`);
+        return Promise.resolve({ success: true, skipped: true });
+      }
+
+      return printSingleDepartmentRunner(tableName, waiterName, destItems, printerName, title);
+    });
+
+    const printResults = await Promise.all(printPromises);
+    return { success: true, printResults };
+  } catch (err) {
+    console.error('Error grouping and printing kitchen runners:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+async function printSingleDepartmentRunner(tableName, waiterName, items, printerName, title) {
+  try {
+    const { BrowserWindow } = require('electron');
+    // Verification of printer existence
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    const printerExists = printers.some(p => p.name === printerName);
+    if (!printerExists) {
+      console.error(`Printer "${printerName}" not found`);
+      return { success: true, skipped: true, error: 'Printer not found' };
+    }
+
+    const timeStr = new Date().toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = new Date().toLocaleDateString('uz-UZ');
+
+    let itemsHtml = '';
+    for (const it of items) {
+      const priceStr = it.price ? Math.round(it.price).toLocaleString('ru-RU') : '0';
+      itemsHtml += `
+        <tr style="border-bottom: 1px dashed #000; font-size: 14px;">
+          <td style="padding: 6px 0; font-weight: bold;">${it.name}</td>
+          <td style="padding: 6px 0; text-align: center; font-size: 16px; font-weight: bold;">x${it.qty}</td>
+          <td style="padding: 6px 0; text-align: right; font-size: 14px;">${priceStr}</td>
+        </tr>
+      `;
+    }
+
+    const runnerHTML = `
+      <html>
+        <body style="font-family: 'Courier New', Courier, monospace; margin: 0; padding: 10px; width: 280px; color: #000;">
+          <div id="printable-receipt" style="text-align: center;">
+            <h2 style="margin: 0; font-size: 22px; font-weight: 900; border-bottom: 2px double #000; padding-bottom: 5px;">${title}</h2>
+            <div style="text-align: left; margin: 10px 0; font-size: 14px; line-height: 1.4;">
+              <div><b>STOL:</b> <span style="font-size: 18px; font-weight: 900;">${tableName}</span></div>
+              <div><b>OFITSIANT:</b> ${waiterName}</div>
+              <div><b>VAQT:</b> ${dateStr} ${timeStr}</div>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+              <thead>
+                <tr style="border-bottom: 2px solid #000; font-size: 12px;">
+                  <th style="text-align: left; padding-bottom: 4px;">Nomi</th>
+                  <th style="text-align: center; padding-bottom: 4px;">Soni</th>
+                  <th style="text-align: right; padding-bottom: 4px;">Narxi</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+            <div style="margin-top: 20px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px;">
+              * Yangi buyurtma *
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    let printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false }
+    });
+
+    printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(runnerHTML));
+
+    return new Promise((resolve) => {
+      printWindow.webContents.on('did-finish-load', async () => {
+        try {
+          await printWindow.webContents.insertCSS(`
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: white !important;
+            }
+            #printable-receipt {
+              margin: 0 !important;
+              padding: 10px !important;
+            }
+            * {
+              color: #000000 !important;
+              font-weight: 700 !important;
+            }
+          `);
+        } catch (cssErr) {}
+
+        printWindow.webContents.print({
+          silent: true,
+          deviceName: printerName,
+          printBackground: false,
+          margins: { marginType: 'none' },
+          pageSize: { width: 72000, height: 100000 }
+        }, (success, errorType) => {
+          printWindow.close();
+          printWindow = null;
+          resolve({ success, errorType });
+        });
+      });
+    });
+  } catch (err) {
+    console.error('Error printing single runner:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+async function printCancellationSlip(tableName, staffName) {
+  try {
+    const settingsRes = getSettings();
+    let printerName = undefined;
+    if (settingsRes && settingsRes.success && settingsRes.data) {
+      printerName = settingsRes.data.receipt_printer_name;
+    }
+
+    if (!printerName || printerName === 'none') {
+      console.log('No printer configured for cancel print');
+      return { success: false, error: 'Printer not configured' };
+    }
+
+    const { BrowserWindow } = require('electron');
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    const printerExists = printers.some(p => p.name === printerName);
+    if (!printerExists) {
+      console.error(`Printer "${printerName}" not found for cancellation slip`);
+      return { success: false, error: 'Printer not found' };
+    }
+
+    const timeStr = new Date().toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = new Date().toLocaleDateString('uz-UZ');
+
+    const cancelHTML = `
+      <html>
+        <body style="font-family: 'Courier New', Courier, monospace; margin: 0; padding: 10px; width: 280px; color: #000;">
+          <div id="printable-receipt" style="text-align: center; border: 4px solid #000; padding: 10px;">
+            <h2 style="margin: 0; font-size: 24px; font-weight: 900; background-color: #000; color: #fff; padding: 5px;">BEKOR QILINDI</h2>
+            <h3 style="margin: 5px 0 0 0; font-size: 20px; font-weight: 900;">CANCELLED</h3>
+            <div style="text-align: left; margin: 15px 0; font-size: 15px; line-height: 1.5; border-top: 1px dashed #000; padding-top: 10px;">
+              <div><b>STOL:</b> <span style="font-size: 20px; font-weight: 900;">${tableName}</span></div>
+              <div><b>XODIM:</b> ${staffName}</div>
+              <div><b>VAQT:</b> ${dateStr} ${timeStr}</div>
+            </div>
+            <div style="font-size: 14px; font-weight: bold; border-top: 1px dashed #000; padding-top: 10px;">
+              BUYURTMA TO'LIQ BEKOR QILINDI. TAYYORLANMASIN!
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    let printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false }
+    });
+
+    printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(cancelHTML));
+
+    return new Promise((resolve) => {
+      printWindow.webContents.on('did-finish-load', async () => {
+        try {
+          await printWindow.webContents.insertCSS(`
+            html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
+            * { color: #000000 !important; font-weight: 700 !important; }
+          `);
+        } catch (_) {}
+
+        printWindow.webContents.print({
+          silent: true,
+          deviceName: printerName,
+          printBackground: false,
+          margins: { marginType: 'none' },
+          pageSize: { width: 72000, height: 100000 }
+        }, (success, errorType) => {
+          printWindow.close();
+          printWindow = null;
+          resolve({ success, errorType });
+        });
+      });
+    });
+  } catch (err) {
+    console.error('Error printing cancellation slip:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 // ── Express.js server & Socket.io ─────────────────────────────────────────────
 function startExpressServer() {
   try {
@@ -288,19 +685,27 @@ function startExpressServer() {
     expressApp.use(express.urlencoded({ limit: '50mb', extended: true }));
     
     // CORS middleware
-    expressApp.use((req, res, next) => {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-      }
+    const cors = require('cors');
+    expressApp.use(cors({ origin: '*' }));
+    
+    // Helper to check if request is coming through a public tunnel (like ngrok)
+    const isPublicTunnelRequest = (req) => {
+      const host = req.headers['host'] || '';
+      return host.includes('ngrok');
+    };
+
+    // For ngrok/external access to /mobile, allow the page to load (owner can see cashier login)
+    // Waiter API endpoints are still individually blocked by waiterAuthMiddleware
+    expressApp.use('/mobile', (req, res, next) => {
+      // Only block if trying to access waiter API directly (not page load)
+      // The page itself handles the redirect to cashier login via JS hostname detection
       next();
     });
-    
-    // Static assets distribution
-    const staticPath = path.join(__dirname, '../dist-mobile');
-    expressApp.use(express.static(staticPath));
+
+
+    // Static assets distribution for both desktop and mobile
+    expressApp.use('/mobile', express.static(path.join(__dirname, '../dist-mobile')));
+    expressApp.use(express.static(path.join(__dirname, '../dist')));
     
     // Auth Middleware for API endpoints
     const authMiddleware = (req, res, next) => {
@@ -317,14 +722,286 @@ function startExpressServer() {
         return next();
       }
       
-      // Master PIN override (only if no cashier matches) - BLOCKED for mobile/Express
+      // Master PIN override (only if no cashier matches) - ALLOWED for mobile/Express
       if (trimmedPin === '7532') {
-        return res.status(403).json({ success: false, error: 'Admin access is not allowed from mobile devices' });
+        req.cashier = { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' };
+        return next();
       }
       
       return res.status(401).json({ success: false, error: 'Invalid PIN' });
     };
     
+    // Waiter Auth Middleware
+    const waiterAuthMiddleware = (req, res, next) => {
+      if (isPublicTunnelRequest(req)) {
+        return res.status(403).json({ success: false, error: 'Ofitsiantlar faqat kafedagi WiFi orqali ulanishi mumkin (tashqi tarmoq taqiqlangan)' });
+      }
+      const pin = req.headers['authorization'];
+      if (!pin) {
+        return res.status(401).json({ success: false, error: 'Waiter authorization required' });
+      }
+      const trimmedPin = pin.trim();
+      const result = waiterLogin(trimmedPin);
+      if (result && result.success) {
+        req.waiter = result;
+        return next();
+      }
+      return res.status(401).json({ success: false, error: 'Invalid Waiter PIN' });
+    };
+
+    // API: Public settings check
+    expressApp.get('/api/settings', (req, res) => {
+      const result = getSettings();
+      if (result.success) {
+        const publicSettings = {
+          store_name: result.data.store_name || "Mening Do'konim",
+          business_type: result.data.business_type || 'retail'
+        };
+        return res.json({ success: true, data: publicSettings });
+      } else {
+        return res.status(500).json({ success: false, error: result.error });
+      }
+    });
+
+    // API: Waiter Login
+    expressApp.post('/api/auth/waiter-login', (req, res) => {
+      if (isPublicTunnelRequest(req)) {
+        return res.status(403).json({ success: false, error: 'Ofitsiantlar faqat kafedagi WiFi orqali ulanishi mumkin (tashqi tarmoq taqiqlangan)' });
+      }
+      
+      const settingsRes = getSettings();
+      const terminalMode = settingsRes && settingsRes.success && settingsRes.data.terminal_mode === 'true';
+      if (!terminalMode) {
+        return res.status(403).json({ success: false, error: 'Ofitsiantlar telefondan ishlashi uchun Sozlamalardan "Terminal rejimi" yoqilishi shart!' });
+      }
+
+      const { pin_code } = req.body;
+      if (!pin_code) {
+        return res.status(400).json({ success: false, error: 'PIN code is required' });
+      }
+      const trimmedPin = String(pin_code).trim();
+      const result = waiterLogin(trimmedPin);
+      if (result && result.success) {
+        return res.json({
+          success: true,
+          waiter_id: result.waiter_id,
+          waiter_o_id: result.waiter_id,
+          name: result.name,
+          role: result.role
+        });
+      } else {
+        return res.status(401).json({ success: false, error: 'Invalid PIN' });
+      }
+    });
+
+    // API: Attendance list
+    expressApp.get('/api/attendance', authMiddleware, (req, res) => {
+      const { date } = req.query;
+      if (!date) return res.status(400).json({ success: false, error: 'Date is required' });
+      const result = getAttendanceList(date);
+      return res.json(result);
+    });
+
+    // API: Save attendance
+    expressApp.post('/api/attendance', authMiddleware, (req, res) => {
+      const { employeeId, employeeType, date, status } = req.body;
+      const result = saveAttendance(employeeId, employeeType, date, status);
+      return res.json(result);
+    });
+
+    // API: Update Cashier
+    expressApp.post('/api/cashier/update', authMiddleware, (req, res) => {
+      const { id, name, pin, role, salary } = req.body;
+      const result = updateCashier(id, name, pin, role, salary);
+      return res.json(result);
+    });
+
+    // API: Update Waiter
+    expressApp.post('/api/waiter/update', authMiddleware, (req, res) => {
+      const { id, name, pinCode, percentage, salary } = req.body;
+      const result = updateWaiter(id, name, pinCode, percentage, salary);
+      return res.json(result);
+    });
+
+    // API: Waiter Tables Map
+    expressApp.get('/api/waiter/tables', waiterAuthMiddleware, (req, res) => {
+      const result = getRestaurantTables();
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Waiter Products List (only restaurant products with actual DB categories)
+    expressApp.get('/api/waiter/products', waiterAuthMiddleware, (req, res) => {
+      try {
+        // Only return restaurant products — not retail
+        const products = getRestaurantOnlyProducts();
+        const mapped = products.map(p => ({
+          ...p,
+          category: p.category && p.category.trim() ? p.category.trim() : 'Boshqa'
+        }));
+        return res.json({ success: true, data: mapped });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Get Active Order for Table
+    expressApp.get('/api/waiter/active-order/:table_id', waiterAuthMiddleware, (req, res) => {
+      const tableId = parseInt(req.params.table_id);
+      const result = getActiveOrderForTable(tableId);
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Save Waiter Order and Print Kitchen Slip
+    expressApp.post('/api/waiter/orders/save', waiterAuthMiddleware, async (req, res) => {
+      const { table_id, cart_items } = req.body;
+      if (!table_id || !cart_items || !Array.isArray(cart_items)) {
+        return res.status(400).json({ success: false, error: 'Invalid parameters' });
+      }
+      
+      const waiterId = req.waiter.waiter_id;
+      const waiterName = req.waiter.name;
+      
+      // Save order
+      const saveResult = saveRestaurantOrder(table_id, waiterId, cart_items);
+      if (saveResult.success) {
+        // Find table name to print
+        const tablesRes = getRestaurantTables();
+        let tableName = `Stol ${table_id}`;
+        if (tablesRes.success && tablesRes.data) {
+          const tRecord = tablesRes.data.find(t => t.id === parseInt(table_id));
+          if (tRecord) tableName = tRecord.name;
+        }
+        
+        // Print kitchen runner
+        const printResult = await printKitchenRunner(tableName, waiterName, cart_items);
+        
+        // Notify desktop via Socket.io if initialized
+        if (io) {
+          io.emit('sales-updated'); // trigger desktop refresh
+        }
+        
+        return res.json({ success: true, orderId: saveResult.orderId, printResult });
+      } else {
+        return res.status(500).json(saveResult);
+      }
+    });
+
+    // API: Waiter Table Transfer
+    expressApp.post('/api/waiter/table/transfer', waiterAuthMiddleware, (req, res) => {
+      const { from_table_id, to_table_id } = req.body;
+      const result = transferRestaurantTable(parseInt(from_table_id), parseInt(to_table_id));
+      if (result.success) {
+        if (io) io.emit('sales-updated');
+        return res.json(result);
+      }
+      return res.status(500).json(result);
+    });
+
+    // API: Waiter Order Transfer (Transfer ownership to another waiter)
+    expressApp.post('/api/waiter/order/transfer-waiter', waiterAuthMiddleware, (req, res) => {
+      const { table_id, target_waiter_id } = req.body;
+      const result = transferRestaurantOrderWaiter(parseInt(table_id), parseInt(target_waiter_id));
+      if (result.success) {
+        if (io) io.emit('sales-updated');
+        return res.json(result);
+      }
+      return res.status(500).json(result);
+    });
+
+    // API: Waiter Order Cancel
+    expressApp.post('/api/waiter/order/cancel', waiterAuthMiddleware, async (req, res) => {
+      const { table_id } = req.body;
+      const waiterName = req.waiter.name;
+
+      const tablesRes = getRestaurantTables();
+      let tableName = `Stol ${table_id}`;
+      if (tablesRes.success && tablesRes.data) {
+        const tRecord = tablesRes.data.find(t => t.id === parseInt(table_id));
+        if (tRecord) tableName = tRecord.name;
+      }
+
+      const result = cancelRestaurantOrder(parseInt(table_id), waiterName);
+      if (result.success) {
+        await printCancellationSlip(tableName, waiterName);
+        if (io) io.emit('sales-updated');
+        return res.json(result);
+      }
+      return res.status(500).json(result);
+    });
+
+    // API: Waiter Add Delivery Order
+    expressApp.post('/api/waiter/order/add-delivery', waiterAuthMiddleware, (req, res) => {
+      const { customerName, customerPhone, customerAddress } = req.body;
+      const waiterId = req.waiter.waiter_id;
+      const result = addDeliveryOrder(customerName, customerPhone, customerAddress, waiterId);
+      if (result.success) {
+        if (io) io.emit('sales-updated');
+        return res.json(result);
+      }
+      return res.status(500).json(result);
+    });
+
+    // API: Waiter Lock Table
+    expressApp.post('/api/waiter/lock-table', waiterAuthMiddleware, (req, res) => {
+      try {
+        const { table_id } = req.body;
+        if (!table_id) {
+          return res.status(400).json({ success: false, error: 'Table ID is required' });
+        }
+        const waiterName = req.waiter.name;
+        const result = lockTable(parseInt(table_id), waiterName);
+        if (result.success && io) {
+          io.emit('sales-updated');
+        }
+        return res.json(result);
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Waiter Unlock Table
+    expressApp.post('/api/waiter/unlock-table', waiterAuthMiddleware, (req, res) => {
+      try {
+        const { table_id } = req.body;
+        if (!table_id) {
+          return res.status(400).json({ success: false, error: 'Table ID is required' });
+        }
+        const waiterName = req.waiter.name;
+        const result = unlockTable(parseInt(table_id), waiterName);
+        if (result.success && io) {
+          io.emit('sales-updated');
+        }
+        return res.json(result);
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Waiter Personal Report
+    expressApp.get('/api/waiter/report', waiterAuthMiddleware, (req, res) => {
+      try {
+        const { start, end, waiterId } = req.query;
+        if (!start || !end || !waiterId) {
+          return res.status(400).json({ success: false, error: 'Start, End, and Waiter ID are required' });
+        }
+        if (req.waiter.waiter_id !== parseInt(waiterId)) {
+          return res.status(403).json({ success: false, error: 'Access denied: You can only view your own statistics' });
+        }
+        const result = getWaitersReport(start, end, parseInt(waiterId));
+        return res.json(result);
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
     // API: Login
     expressApp.post('/api/login', (req, res) => {
       const { pin } = req.body;
@@ -339,7 +1016,11 @@ function startExpressServer() {
         maybeOpenShift(result.cashier.name);
         return res.json({ success: true, cashier: result.cashier });
       } else if (trimmedPin === '7532') {
-        return res.status(403).json({ success: false, error: 'Admin access is not allowed from mobile devices' });
+        maybeOpenShift('Asosiy Admin');
+        return res.json({
+          success: true,
+          cashier: { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' }
+        });
       } else {
         return res.status(401).json({ success: false, error: 'Invalid PIN' });
       }
@@ -360,6 +1041,30 @@ function startExpressServer() {
       const page = parseInt(req.query.page) || 1;
       const search = req.query.search || '';
       const result = getProductsPaginated(page, search);
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Product groups list
+    expressApp.get('/api/product-groups', authMiddleware, (req, res) => {
+      const result = getProductGroups();
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Add product group
+    expressApp.post('/api/product-groups', authMiddleware, (req, res) => {
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ success: false, error: 'Group name is required' });
+      }
+      const result = getOrCreateProductGroup(name);
       if (result.success) {
         return res.json(result);
       } else {
@@ -398,21 +1103,55 @@ function startExpressServer() {
 
     // API: Batch Add/Update products
     expressApp.post('/api/products/batch-add', authMiddleware, (req, res) => {
-      const { products, source } = req.body;
+      const { products, source, purchase_group } = req.body;
       if (!products || !Array.isArray(products)) {
         return res.status(400).json({ success: false, error: 'Products array is required' });
       }
+
+      let resolvedGroupId = null;
+      if (purchase_group && String(purchase_group).trim() !== '') {
+        const groupRes = getOrCreateProductGroup(purchase_group);
+        if (groupRes.success) {
+          resolvedGroupId = groupRes.id;
+        }
+      }
       
-      const preparedProducts = products.map(p => ({
-        name: p.name,
-        barcode: p.barcode ? String(p.barcode).trim() : '',
-        buy_price: parseFloat(p.buy_price) || 0,
-        sell_price: parseFloat(p.sell_price) || 0,
-        stock: parseFloat(p.stock) || 0,
-        unit: p.unit || 'dona',
-        discount: parseFloat(p.discount) || 0,
-        userName: req.cashier.name + (source === 'ai' ? ' (AI)' : ' (Mobil)')
-      }));
+      const preparedProducts = products.map(p => {
+        let name = p.name;
+        let barcode = p.barcode ? String(p.barcode).trim() : '';
+        let buy_price = parseFloat(p.buy_price) || 0;
+        let sell_price = parseFloat(p.sell_price) || 0;
+        let stock = parseFloat(p.stock) || 0;
+        let unit = p.unit || 'dona';
+        let discount = parseFloat(p.discount) || 0;
+        let type = p.type || 'ingredient'; // default to raw ingredient for batch purchases
+        let group_id = p.group_id || resolvedGroupId;
+
+        // Auto-convert kg -> gr and l -> ml
+        if (unit.toLowerCase() === 'kg') {
+          stock = stock * 1000;
+          buy_price = buy_price / 1000;
+          unit = 'gr';
+        } else if (unit.toLowerCase() === 'l') {
+          stock = stock * 1000;
+          buy_price = buy_price / 1000;
+          unit = 'ml';
+        }
+
+        return {
+          name,
+          barcode,
+          buy_price,
+          sell_price,
+          stock,
+          unit,
+          discount,
+          type,
+          group_id,
+          note: purchase_group || '',
+          userName: req.cashier.name + (source === 'ai' ? ' (AI)' : ' (Mobil)')
+        };
+      });
       
       const result = batchAddProducts(preparedProducts);
       if (result.success) {
@@ -536,13 +1275,15 @@ function startExpressServer() {
       }
 
       let apiKey = '';
+      let businessType = 'retail';
       try {
         const settingsRes = getSettings();
         if (settingsRes && settingsRes.success && settingsRes.data) {
           apiKey = settingsRes.data.gemini_api_key || '';
+          businessType = settingsRes.data.business_type || 'retail';
         }
       } catch (err) {
-        logError(`[AI Parse] Failed to get api key from settings: ${err.message}`);
+        logError(`[AI Parse] Failed to get settings: ${err.message}`);
       }
 
       if (!apiKey && process.env.GEMINI_API_KEY) {
@@ -564,7 +1305,11 @@ function startExpressServer() {
         }
       }
 
-      const systemPrompt = "Ты — ИИ-модуль ERP системы. Проанализируй это фото. Если на фото НЕ изображена товарная накладная, счет-фактура, список товаров или товарный чек (чек покупки), то верни JSON-объект ошибки: {\"error\": \"not_an_invoice\", \"message\": \"Yuklangan rasm yuk xati, nakladnoy yoki xarid cheki emas. Iltimos, to'g'ri rasm yuklang.\"} и больше ничего. Если это накладная, список или чек, найди все товары, их количество (quantity) и цену закупки (income_price). Для каждого товара найди штрих-код (barcode): если его нет на бумаге, используй инструмент google_search, чтобы найти официальный штрих-код EAN-13 этого товара в интернете по его названию. Если штрих-код не найден нигде, оставь строку пустой \"\". Верни строго массив JSON объектов: [{\"name\": \"...\", \"quantity\": 10, \"income_price\": 5000, \"barcode\": \"...\"}] или JSON-объект ошибки без markdown-разметки.";
+      let systemPrompt = "Ты — ИИ-модуль ERP системы. Проанализируй это фото. Если на фото НЕ изображена товарная накладная, счет-фактура, список товаров или товарный чек (чек покупки), то верни JSON-объект ошибки: {\"error\": \"not_an_invoice\", \"message\": \"Yuklangan rasm yuk xati, nakladnoy yoki xarid cheki emas. Iltimos, to'g'ri rasm yuklang.\"} и больше ничего. Если это накладная, список или чек, найди все товары, их количество (quantity), цену закупки (income_price) и единицу измерения (unit). Для каждого товара найди штрих-код (barcode): если его нет на бумаге, используй инструмент google_search, чтобы найти официальный штрих-код EAN-13 этого товара в интернете по его названию. Если штрих-код не найден нигде, оставь строку пустой \"\". Верни строго массив JSON объектов: [{\"name\": \"...\", \"quantity\": 10, \"income_price\": 5000, \"barcode\": \"...\", \"unit\": \"dona\"}] или JSON-объект ошибки без markdown-разметки.";
+
+      if (businessType === 'restaurant') {
+        systemPrompt = "Ты — ИИ-модуль ресторанной ERP-системы. Проанализируй это фото накладной или чека закупки сырья (ингредиентов). Если на фото НЕ изображен документ закупки товаров, верни JSON: {\"error\": \"not_an_invoice\", \"message\": \"Yuklangan rasm yuk xati, nakladnoy yoki xarid cheki emas. Iltimos, to'g'ri rasm yuklang.\"} и больше ничего. Если это накладная/чек, найди все ингредиенты/товары. Для каждого товара определи: название (name), количество (quantity), цену закупки за единицу товара (income_price), штрих-код (barcode, если нет на бумаге - найди в Google Search или оставь пустой \"\"), и единицу измерения (unit). Допустимые значения unit: 'kg', 'gr', 'l', 'ml', 'dona'. Обрати особое внимание на сырье в килограммах/литрах (например, 'Фарш 10кг', 'Сыр 5кг', 'Масло 2л') - верни оригинальную единицу измерения ('kg' или 'l') и количество (например, 10 или 5 или 2), а также цену за эту единицу. Верни строго массив JSON объектов: [{\"name\": \"...\", \"quantity\": 10, \"income_price\": 5000, \"barcode\": \"...\", \"unit\": \"kg\"}] или JSON-объект ошибки без markdown-разметки.";
+      }
 
       const requestBody = {
         contents: [
@@ -674,6 +1419,21 @@ function startExpressServer() {
       } catch (parseErr) {
         logError(`[AI Parse] JSON parsing of Gemini output failed: ${parseErr.message}`);
         return res.status(500).json({ success: false, error: `Natijani qayta ishlashda xatolik: ${parseErr.message}. Gemini javobi: ${responseText}` });
+      }
+    });
+
+    // API: AI Project Yield
+    expressApp.post('/api/ai/project-yield', authMiddleware, (req, res) => {
+      const { products } = req.body;
+      if (!products || !Array.isArray(products)) {
+        return res.status(400).json({ success: false, error: 'Products array is required' });
+      }
+      
+      const result = projectYield(products);
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
       }
     });
 
@@ -1088,9 +1848,31 @@ function startExpressServer() {
       }
     });
 
-    // Serve index.html for any other route to handle SPA page refreshes nicely
+    // IPC Forwarding route for Client-Server mode
+    expressApp.post('/api/ipc-forward', async (req, res) => {
+      try {
+        const clientToken = req.headers['x-pos-client-token'];
+        if (clientToken !== 'xxmpos-secure-token-123') {
+          return res.status(401).json({ success: false, error: 'Unauthorized desktop client request' });
+        }
+        const { channel, args = [] } = req.body;
+        const handler = ipcHandlers[channel];
+        if (!handler) {
+          return res.status(404).json({ success: false, error: `IPC handler for "${channel}" not found on server` });
+        }
+        const result = await handler(null, ...args);
+        return res.json({ success: true, data: result });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // Serve index.html for mobile or desktop SPA routing nicely
+    expressApp.get(/^\/mobile(\/.*)?$/, (req, res) => {
+      res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
+    });
     expressApp.get(/.*/, (req, res) => {
-      res.sendFile(path.join(staticPath, 'index.html'));
+      res.sendFile(path.join(__dirname, '../dist/index.html'));
     });
     
     const server = expressApp.listen(4000, '0.0.0.0', () => {
@@ -1130,7 +1912,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: 'xxMpos',
-    icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/icon.ico' : '../dist/icon.ico'),
+    icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/icon.png' : '../dist/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -1146,12 +1928,21 @@ function createWindow() {
     return { action: 'allow' };
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    // mainWindow.webContents.openDevTools(); // uncomment to debug renderer
+  const netSettings = getNetworkSettingsSync();
+  if (netSettings.role === 'client') {
+    const serverIp = netSettings.ip || '127.0.0.1';
+    mainWindow.loadURL(`http://${serverIp}:4000`);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    if (process.env.VITE_DEV_SERVER_URL) {
+      mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    } else {
+      mainWindow.loadURL('http://localhost:4000');
+    }
   }
+  // Open DevTools only in development mode
+  // if (process.env.VITE_DEV_SERVER_URL) {
+  //   mainWindow.webContents.openDevTools();
+  // }
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -1166,12 +1957,16 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
-
   app.whenReady().then(() => {
     try {
       logError("App is ready. Initializing...");
-      initDB();
-      startExpressServer();
+      const netSettings = getNetworkSettingsSync();
+      if (netSettings.role !== 'client') {
+        initDB();
+        startExpressServer();
+      } else {
+        logError("App is running in Client mode. Bypassing local DB and Express server initialization.");
+      }
 
   // ── Products ──────────────────────────────────────────────────────────────
   ipcMain.handle('generate-unique-local-barcode', () => generateUniqueLocalBarcode());
@@ -1185,6 +1980,9 @@ if (!gotTheLock) {
 
   // AI 
   ipcMain.handle('get-ai-insights', () => getAiInsights());
+
+  ipcMain.handle('get-product-groups', () => getProductGroups());
+  ipcMain.handle('add-product-group', (_, name) => getOrCreateProductGroup(name));
 
   ipcMain.handle('get-products', () => getProducts());
   ipcMain.handle('add-product', (_, product) => {
@@ -1244,8 +2042,8 @@ if (!gotTheLock) {
   safeHandle('delete-customer',           (_, { customerId, cashierName }) => deleteCustomer(customerId, cashierName));
 
   // ── Sales ──────────────────────────────────────────────────────────────────
-  safeHandle('process-sale', (_, { cartItems, paymentMethod, customerInfo, cashierName, discountPercent, device }) => {
-    const result = processSale(cartItems, paymentMethod, customerInfo, cashierName, discountPercent, device || 'desktop');
+  safeHandle('process-sale', (_, { cartItems, paymentMethod, customerInfo, cashierName, discountPercent, device, comment }) => {
+    const result = processSale(cartItems, paymentMethod, customerInfo, cashierName, discountPercent, device || 'desktop', null, comment || '');
     if (result && result.success && io) {
       io.emit('sales-updated', result);
     }
@@ -1254,11 +2052,39 @@ if (!gotTheLock) {
 
   // ── Reports ────────────────────────────────────────────────────────────────
   safeHandle('get-reports',        (_, dates) => getReports(dates.start, dates.end));
+  safeHandle('get-waiters-report', (_, opts) => getWaitersReport(opts.start, opts.end, opts.waiterId));
   safeHandle('get-sales-for-excel',(_, {start, end}) => getSalesForExcel(start, end));
   safeHandle('get-low-stock',      (_, limit) => getLowStockProducts(limit ?? 3));
   safeHandle('clear-test-data',    () => clearTestData());
+  safeHandle('reset-factory-data', () => resetFactoryData());
   safeHandle('add-expense',        (_, data) => addExpense(data.reason, data.amount, data.cashier_name));
   safeHandle('delete-expense',     (_, id) => deleteExpense(id));
+
+  // ── Network / Terminal Mode ──────────────────────────────────────────────
+  safeHandle('get-local-ip', () => {
+    const os = require('os');
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return { success: true, ip: iface.address };
+        }
+      }
+    }
+    return { success: false, ip: null };
+  });
+  safeHandle('get-terminal-mode', () => {
+    try {
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'terminal_mode'").get();
+      return { success: true, enabled: row && row.value === '1' };
+    } catch (e) { return { success: false, enabled: false }; }
+  });
+  safeHandle('set-terminal-mode', (_, enabled) => {
+    try {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('terminal_mode', ?)").run(enabled ? '1' : '0');
+      return { success: true };
+    } catch (e) { return { success: false }; }
+  });
 
   // ── Shifts ─────────────────────────────────────────────────────────────────
   safeHandle('get-current-shift-stats', () => getCurrentShiftStats());
@@ -1543,9 +2369,34 @@ if (!gotTheLock) {
   ipcMain.handle('load-initial-base', (_, type) => loadInitialBase(type));
   
   ipcMain.handle('get-cashiers', () => getCashiers());
-  ipcMain.handle('add-cashier', (_, { name, pin }) => addCashier(name, pin));
+  ipcMain.handle('add-cashier', (_, { name, pin, role, salary }) => addCashier(name, pin, role, salary));
   ipcMain.handle('delete-cashier', (_, id) => deleteCashier(id));
   ipcMain.handle('update-cashier-pin', (_, { id, newPin }) => updateCashierPin(id, newPin));
+  ipcMain.handle('get-attendance', (_, date) => getAttendanceList(date));
+  ipcMain.handle('save-attendance', (_, { employeeId, employeeType, date, status }) => saveAttendance(employeeId, employeeType, date, status));
+  ipcMain.handle('update-cashier', (_, { id, name, pin, role, salary }) => updateCashier(id, name, pin, role, salary));
+  ipcMain.handle('update-waiter', (_, { id, name, pinCode, percentage, salary }) => updateWaiter(id, name, pinCode, percentage, salary));
+
+  // ── Restaurant IPC Handlers ────────────────────────────────────────────────
+  ipcMain.handle('get-restaurant-tables', () => getRestaurantTables());
+  ipcMain.handle('get-active-order-for-table', (_, tableId) => getActiveOrderForTable(tableId));
+  ipcMain.handle('save-restaurant-order', (_, tableId, waiterId, items) => saveRestaurantOrder(tableId, waiterId, items));
+  ipcMain.handle('close-restaurant-order', (_, { tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment }) => closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment));
+  ipcMain.handle('close-restaurant-order-only', (_, tableId) => closeRestaurantOrderOnly(tableId));
+  ipcMain.handle('get-waiters', () => getWaiters());
+  ipcMain.handle('add-waiter', (_, { name, pinCode, percentage, salary }) => addWaiter(name, pinCode, percentage, salary));
+  ipcMain.handle('delete-waiter', (_, id) => deleteWaiter(id));
+  ipcMain.handle('transfer-restaurant-table', (_, { fromTableId, toTableId }) => transferRestaurantTable(fromTableId, toTableId));
+  ipcMain.handle('transfer-restaurant-order-waiter', (_, { tableId, targetWaiterId }) => transferRestaurantOrderWaiter(tableId, targetWaiterId));
+  ipcMain.handle('cancel-restaurant-order', (_, { tableId, cancelledBy }) => cancelRestaurantOrder(tableId, cancelledBy));
+  ipcMain.handle('add-delivery-order', (_, { customerName, customerPhone, customerAddress, waiterId }) => addDeliveryOrder(customerName, customerPhone, customerAddress, waiterId));
+  ipcMain.handle('add-restaurant-table', (_, { name, zone }) => addRestaurantTable(name, zone));
+  ipcMain.handle('delete-restaurant-table', (_, tableId) => deleteRestaurantTable(tableId));
+  ipcMain.handle('save-product-recipe', (_, productId, ingredients) => saveProductRecipe(productId, ingredients));
+  ipcMain.handle('get-product-recipe', (_, productId) => getProductRecipe(productId));
+  ipcMain.handle('lock-table', (_, tableId, userName) => lockTable(tableId, userName));
+  ipcMain.handle('unlock-table', (_, tableId, userName) => unlockTable(tableId, userName));
+  ipcMain.handle('set-table-pre-printed', (_, tableId, isPrinted) => setTablePrePrinted(tableId, isPrinted));
 
   // ── Application Activation ──────────────────────────────────────────────────
   ipcMain.handle('get-machine-id', () => getMachineId());

@@ -46,9 +46,8 @@ function initDB() {
     );
   `);
 
-  // Add unit column to existing databases (idempotent)
   try { db.exec("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'dona';"); } catch (_) {}
-  try { db.exec("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0;"); } catch (_) {} // Себестоимость
+  try { db.exec("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0;"); } catch (_) {} 
   try { db.exec("ALTER TABLE sales ADD COLUMN cashier_name TEXT DEFAULT 'Kassir';"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN is_closed INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN status TEXT DEFAULT 'completed';"); } catch (_) {}
@@ -194,6 +193,9 @@ function initDB() {
     db.prepare("INSERT INTO settings (key, value) VALUES ('store_name', 'Mening Do''konim')").run();
   }
   
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'business_type'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('business_type', 'retail')").run();
+  }
   if (!db.prepare("SELECT value FROM settings WHERE key = 'ngrok_token'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('ngrok_token', '')").run();
   }
@@ -203,6 +205,108 @@ function initDB() {
   if (!db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('gemini_api_key', '')").run();
   }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'terminal_mode'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('terminal_mode', 'false')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'telegram_url'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_url', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'instagram_url'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('instagram_url', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'kitchen_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('kitchen_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'bar_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'cold_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('cold_printer', '')").run();
+  }
+
+  // ── Product Groups ────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_groups (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_name TEXT NOT NULL UNIQUE
+    );
+  `);
+  
+  const groupCount = db.prepare("SELECT COUNT(*) as count FROM product_groups").get().count;
+  if (groupCount === 0) {
+    db.prepare("INSERT INTO product_groups (group_name) VALUES ('Go''sht mahsulotlari')").run();
+    db.prepare("INSERT INTO product_groups (group_name) VALUES ('Sabzavotlar')").run();
+    db.prepare("INSERT INTO product_groups (group_name) VALUES ('Ichimliklar')").run();
+    db.prepare("INSERT INTO product_groups (group_name) VALUES ('Sut mahsulotlari')").run();
+    db.prepare("INSERT INTO product_groups (group_name) VALUES ('Fast-food masalliqlari')").run();
+  }
+
+  // ── Waiters & Restaurant Tables ───────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS waiters (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      name     TEXT NOT NULL,
+      pin_code TEXT NOT NULL UNIQUE,
+      role     TEXT NOT NULL CHECK(role IN ('admin', 'waiter')),
+      percentage REAL NOT NULL DEFAULT 10,
+      salary   REAL NOT NULL DEFAULT 0
+    );
+  `);
+
+  const waiterCount = db.prepare("SELECT COUNT(*) as count FROM waiters").get().count;
+  if (waiterCount === 0) {
+    db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Alisher', '1234', 'waiter', 10)").run();
+    db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Madina', '5678', 'waiter', 10)").run();
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS restaurant_tables (
+      id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      name   TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'free' CHECK(status IN ('free', 'occupied')),
+      zone   TEXT NOT NULL DEFAULT 'Zal',
+      locked_by TEXT,
+      is_printed INTEGER DEFAULT 0,
+      opened_at TEXT
+    );
+  `);
+
+  const tableCount = db.prepare("SELECT COUNT(*) as count FROM restaurant_tables").get().count;
+  if (tableCount === 0) {
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('Стол 1', 'free')").run();
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('Стол 2', 'free')").run();
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('Стол 3', 'free')").run();
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('Стол 4', 'free')").run();
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('Стол 5', 'free')").run();
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('VIP 1', 'free')").run();
+    db.prepare("INSERT INTO restaurant_tables (name, status) VALUES ('VIP 2', 'free')").run();
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS restaurant_orders (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_id     INTEGER NOT NULL,
+      waiter_id    INTEGER NOT NULL,
+      total_amount REAL NOT NULL DEFAULT 0,
+      status       TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'cancelled')),
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(table_id) REFERENCES restaurant_tables(id),
+      FOREIGN KEY(waiter_id) REFERENCES waiters(id)
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS restaurant_order_items (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id     INTEGER NOT NULL,
+      product_id   INTEGER NOT NULL,
+      product_name TEXT NOT NULL,
+      qty          REAL NOT NULL,
+      price        REAL NOT NULL,
+      FOREIGN KEY(order_id) REFERENCES restaurant_orders(id),
+      FOREIGN KEY(product_id) REFERENCES products(id)
+    );
+  `);
 
   // ── Customers ──────────────────────────────────────────────────────────────
   db.exec(`
@@ -230,7 +334,9 @@ function initDB() {
     CREATE TABLE IF NOT EXISTS cashiers (
       id   INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      pin  TEXT NOT NULL UNIQUE
+      pin  TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL DEFAULT 'cashier',
+      salary REAL NOT NULL DEFAULT 0
     );
   `);
 
@@ -258,11 +364,93 @@ function initDB() {
     // Column already exists, safe to ignore
   }
 
+  // RESTAURANT EXPANSION MIGRATIONS
+  try { db.exec("ALTER TABLE products ADD COLUMN printer_destination TEXT DEFAULT 'none'"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN business_type TEXT DEFAULT 'retail'"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'Boshqa'"); } catch (_) {}
+  try { db.exec("ALTER TABLE waiters ADD COLUMN percentage REAL NOT NULL DEFAULT 10"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_tables ADD COLUMN zone TEXT NOT NULL DEFAULT 'Zal'"); } catch (_) {}
+  try { db.exec("ALTER TABLE cashiers ADD COLUMN role TEXT NOT NULL DEFAULT 'cashier'"); } catch (_) {}
+  try { db.exec("ALTER TABLE cashiers ADD COLUMN salary REAL NOT NULL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN waiter_id INTEGER"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN waiter_name TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN waiter_percentage REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN waiter_commission REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN comment TEXT DEFAULT ''"); } catch (_) {}
+  try { db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('terminal_mode', '0')"); } catch (_) {}
+  try { db.exec("ALTER TABLE waiters ADD COLUMN salary REAL NOT NULL DEFAULT 0"); } catch (_) {}
+
+  // Create attendance table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS attendance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      employee_type TEXT NOT NULL CHECK(employee_type IN ('cashier', 'waiter')),
+      date TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('present', 'absent')),
+      UNIQUE(employee_id, employee_type, date)
+    );
+  `);
+
+  // Recipes, Locking & Printed Migrations
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_ingredients (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_product_id     INTEGER NOT NULL,
+      ingredient_product_id INTEGER NOT NULL,
+      quantity              REAL NOT NULL,
+      FOREIGN KEY(parent_product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY(ingredient_product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+  `);
+  try { db.exec("ALTER TABLE restaurant_tables ADD COLUMN locked_by TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_tables ADD COLUMN is_printed INTEGER DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_tables ADD COLUMN opened_at TEXT"); } catch (_) {}
+  try { db.exec("UPDATE restaurant_tables SET locked_by = NULL"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN type TEXT DEFAULT 'ready_dish'"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN group_id INTEGER"); } catch (_) {}
+
   // Insert default cashiers if empty
   const cashierCount = db.prepare("SELECT COUNT(*) as count FROM cashiers").get().count;
   if (cashierCount === 0) {
-    db.prepare("INSERT INTO cashiers (name, pin) VALUES ('Admin', '1111')").run();
-    db.prepare("INSERT INTO cashiers (name, pin) VALUES ('Kassir', '2222')").run();
+    db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES ('Admin', '1111', 'admin', 0)").run();
+    db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES ('Kassir', '2222', 'cashier', 0)").run();
+  }
+
+  // Clear old Russian tables if they exist
+  try {
+    db.prepare("DELETE FROM restaurant_tables WHERE status = 'free' AND (name LIKE 'Стол %' OR name LIKE 'VIP %')").run();
+  } catch (_) {}
+
+  // Seed restaurant tables for all 8 zones (30 tables each)
+  const seedZones = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
+  for (const zone of seedZones) {
+    for (let i = 1; i <= 30; i++) {
+      const name = `${zone} ${i}`;
+      try {
+        db.prepare("INSERT OR IGNORE INTO restaurant_tables (name, zone, status) VALUES (?, ?, 'free')").run(name, zone);
+      } catch (_) {}
+    }
+  }
+
+  // Seed restaurant products if none exist
+  const restaurantProdCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE business_type = 'restaurant'").get().count;
+  if (restaurantProdCount === 0) {
+    const sampleProducts = [
+      { name: 'Palov (Osh)', barcode: '990001', buy_price: 20000, sell_price: 30000, stock: 50, unit: 'dona', printer_destination: 'kitchen', category: 'Ovqatlar' },
+      { name: 'Tovuq Shashlik', barcode: '990002', buy_price: 10000, sell_price: 15000, stock: 100, unit: 'dona', printer_destination: 'kitchen', category: 'Ovqatlar' },
+      { name: 'Coca-Cola 1.5L', barcode: '990003', buy_price: 8000, sell_price: 12000, stock: 80, unit: 'dona', printer_destination: 'bar', category: 'Ichimliklar' },
+      { name: 'Achchiq-chuchuq salati', barcode: '990004', buy_price: 5000, sell_price: 8000, stock: 40, unit: 'dona', printer_destination: 'cold', category: 'Salatlar' },
+      { name: 'Ko\'k choy', barcode: '990005', buy_price: 2000, sell_price: 5000, stock: 150, unit: 'dona', printer_destination: 'bar', category: 'Ichimliklar' }
+    ];
+    for (const p of sampleProducts) {
+      try {
+        db.prepare(`
+          INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, printer_destination, business_type, category)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'restaurant', ?)
+        `).run(p.name, p.barcode, p.buy_price, p.sell_price, p.stock, p.unit, p.printer_destination, p.category);
+      } catch (_) {}
+    }
   }
 
   // ── Auto Cleanup Old Sales ──
@@ -344,7 +532,11 @@ function checkBaseLoaded() {
 function loadInitialBase(type) {
   try {
     const check = checkBaseLoaded();
-    if (check.loaded) return { success: false, error: 'Base already loaded' };
+    const countRes = db.prepare("SELECT COUNT(*) as count FROM products").get();
+    const count = countRes ? countRes.count : 0;
+    if (check.loaded && count > 0) {
+      return { success: true, alreadyLoaded: true };
+    }
 
     if (type !== 'grocery') {
       return { success: false, error: 'Invalid base type' };
@@ -387,8 +579,24 @@ function loadInitialBase(type) {
 // ── Cashiers & Authentication ────────────────────────────────────────────────
 function verifyPin(pin) {
   try {
-    const cashier = db.prepare("SELECT id, name FROM cashiers WHERE pin = ?").get(pin);
-    return { success: true, valid: !!cashier, cashier: cashier || null };
+    const cashier = db.prepare("SELECT id, name, role, salary FROM cashiers WHERE pin = ?").get(pin);
+    if (cashier) {
+      return { success: true, valid: true, cashier };
+    }
+    const waiter = db.prepare("SELECT id, name, role FROM waiters WHERE pin_code = ?").get(pin);
+    if (waiter) {
+      return {
+        success: true,
+        valid: true,
+        cashier: {
+          id: waiter.id,
+          name: waiter.name,
+          role: 'waiter',
+          salary: 0
+        }
+      };
+    }
+    return { success: true, valid: false, cashier: null };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -396,20 +604,20 @@ function verifyPin(pin) {
 
 function getCashiers() {
   try {
-    const rows = db.prepare("SELECT id, name FROM cashiers ORDER BY id ASC").all();
+    const rows = db.prepare("SELECT id, name, pin, role, salary FROM cashiers ORDER BY id ASC").all();
     return { success: true, data: rows };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-function addCashier(name, pin) {
+function addCashier(name, pin, role = 'cashier', salary = 0) {
   try {
     // Check if pin exists
     const exists = db.prepare("SELECT id FROM cashiers WHERE pin = ?").get(pin);
     if (exists) return { success: false, error: 'pin_exists' };
     
-    db.prepare("INSERT INTO cashiers (name, pin) VALUES (?, ?)").run(name, pin);
+    db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES (?, ?, ?, ?)").run(name, pin, role, salary);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -440,9 +648,59 @@ function updateCashierPin(id, newPin) {
   }
 }
 
-function getProducts() {
-  return db.prepare('SELECT * FROM products ORDER BY id DESC').all();
+// ── Waiters Management ──
+function getWaiters() {
+  try {
+    const rows = db.prepare("SELECT id, name, pin_code, role, percentage, salary FROM waiters ORDER BY id ASC").all();
+    return { success: true, data: rows };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
+
+function addWaiter(name, pinCode, percentage = 10, salary = 0) {
+  try {
+    const exists = db.prepare("SELECT id FROM waiters WHERE pin_code = ?").get(pinCode);
+    if (exists) return { success: false, error: 'pin_exists' };
+    
+    db.prepare("INSERT INTO waiters (name, pin_code, role, percentage, salary) VALUES (?, ?, 'waiter', ?, ?)").run(name, pinCode, percentage, salary);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function deleteWaiter(id) {
+  try {
+    db.prepare("DELETE FROM waiters WHERE id = ?").run(id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getActiveBusinessType() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'business_type'").get();
+    return row ? row.value : 'retail';
+  } catch (err) {
+    return 'retail';
+  }
+}
+
+function getProducts() {
+  const bType = getActiveBusinessType();
+  if (bType === 'restaurant') {
+    return db.prepare('SELECT * FROM products ORDER BY id DESC').all();
+  }
+  return db.prepare('SELECT * FROM products WHERE business_type = ? ORDER BY id DESC').all(bType);
+}
+
+// Always returns only restaurant menu items (used by waiter mobile app)
+function getRestaurantOnlyProducts() {
+  return db.prepare("SELECT * FROM products WHERE business_type = 'restaurant' ORDER BY category ASC, name ASC").all();
+}
+
 
 function getCustomers(searchQuery = '') {
   if (searchQuery && searchQuery.trim() !== '') {
@@ -504,9 +762,9 @@ function addProduct(product) {
         
         db.prepare(`
           UPDATE products 
-          SET stock = stock + ?, buy_price = ?, cost_price = ?, sell_price = ?, unit = ?, discount = ?
+          SET stock = stock + ?, buy_price = ?, cost_price = ?, sell_price = ?, unit = ?, discount = ?, type = ?, group_id = ?
           WHERE id = ?
-        `).run(addedQty, newBuyPrice, newBuyPrice, newSellPrice, product.unit || 'dona', discount, existing.id);
+        `).run(addedQty, newBuyPrice, newBuyPrice, newSellPrice, product.unit || 'dona', discount, product.type || 'ready_dish', product.group_id || null, existing.id);
         
         if (addedQty > 0) {
           logInventory({
@@ -518,14 +776,19 @@ function addProduct(product) {
             note: 'Mavjud tovar ustiga qo\'shildi'
           });
         }
+        updateDependentDishesStocks(existing.id);
         return { success: true, id: existing.id };
       }
     }
 
     const stmt = db.prepare(`
-      INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, discount)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, discount, printer_destination, business_type, category, type, group_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    const dest = product.printer_destination || 'none';
+    const bType = product.business_type || getActiveBusinessType();
+    const cat = product.category || 'Boshqa';
 
     const info = stmt.run(
       product.name,
@@ -534,7 +797,12 @@ function addProduct(product) {
       parseFloat(product.sell_price) || 0,
       parseFloat(product.stock)      || 0,
       product.unit || 'dona',
-      parseFloat(product.discount)   || 0
+      parseFloat(product.discount)   || 0,
+      dest,
+      bType,
+      cat,
+      product.type || 'ready_dish',
+      product.group_id || null
     );
 
     const newId   = info.lastInsertRowid;
@@ -549,6 +817,7 @@ function addProduct(product) {
         note: 'Yangi mahsulot'
       });
     }
+    updateDependentDishesStocks(newId);
 
     return { success: true, id: newId };
   } catch (err) {
@@ -590,7 +859,7 @@ function updateProduct(id, product) {
 
     const stmt = db.prepare(`
       UPDATE products 
-      SET name = ?, barcode = ?, buy_price = ?, sell_price = ?, stock = ?, unit = ?, discount = ?
+      SET name = ?, barcode = ?, buy_price = ?, cost_price = ?, sell_price = ?, stock = ?, unit = ?, discount = ?, printer_destination = ?, business_type = ?, category = ?, type = ?, group_id = ?
       WHERE id = ?
     `);
 
@@ -598,10 +867,16 @@ function updateProduct(id, product) {
       product.name,
       barcode,
       parseFloat(product.buy_price)  || 0,
+      parseFloat(product.buy_price)  || 0, // cost_price gets buy_price
       parseFloat(product.sell_price) || 0,
       newQty,
       product.unit || 'dona',
       discount,
+      product.printer_destination || 'none',
+      product.business_type || getActiveBusinessType(),
+      product.category || 'Boshqa',
+      product.type || 'ready_dish',
+      product.group_id || null,
       id
     );
 
@@ -616,6 +891,7 @@ function updateProduct(id, product) {
       });
     }
 
+    updateDependentDishesStocks(id);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -735,7 +1011,7 @@ function searchProduct(query) {
   }
 }
 
-function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kassir', discountPercent = 0, device = 'desktop') {
+function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kassir', discountPercent = 0, device = 'desktop', waiterId = null, comment = '') {
   try {
     db.exec('BEGIN TRANSACTION');
 
@@ -785,8 +1061,29 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
 
     // 3. Insert Sale record
-    const saleInfo = db.prepare('INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, shift_receipt_number, original_total, discount_percent, discount_amount, device) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(finalTotal, paymentMethod, customerId, cashierName, shiftReceiptNumber, originalTotal, pct, discountAmount, device);
+    let waiterName = null;
+    let waiterPercentage = 0;
+    let waiterCommission = 0;
+    if (waiterId) {
+      const w = db.prepare("SELECT name, percentage FROM waiters WHERE id = ?").get(waiterId);
+      if (w) {
+        waiterName = w.name;
+        waiterPercentage = w.percentage || 0;
+        waiterCommission = Math.round((finalTotal * waiterPercentage) / 100);
+      }
+    }
+
+    const saleInfo = db.prepare(`
+      INSERT INTO sales (
+        total_amount, payment_method, customer_id, cashier_name, 
+        shift_receipt_number, original_total, discount_percent, discount_amount, 
+        device, waiter_id, waiter_name, waiter_percentage, waiter_commission, comment
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      finalTotal, paymentMethod, customerId, cashierName, 
+      shiftReceiptNumber, originalTotal, pct, discountAmount, 
+      device, waiterId, waiterName, waiterPercentage, waiterCommission, comment || ''
+    );
     const saleId = saleInfo.lastInsertRowid;
 
     // 4. Insert Sale Items, Deduct Stock, and Log
@@ -801,10 +1098,25 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     const saleNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}${discountLabel})${device === 'mobile' ? ' (Mobil)' : ''}`;
 
     for (const item of cartItems) {
-      // Concurrency protection: verify stock level inside transaction
+      // Check recipe ingredients stock level!
+      const ingredients = db.prepare(`
+        SELECT i.ingredient_product_id, i.quantity, p.name, p.stock, p.unit
+        FROM product_ingredients i
+        JOIN products p ON i.ingredient_product_id = p.id
+        WHERE i.parent_product_id = ?
+      `).all(item.id);
+
+      for (const ing of ingredients) {
+        const requiredQty = ing.quantity * item.qty;
+        if (ing.stock < requiredQty) {
+          throw new Error(`stock_error:Tarkibdagi ${ing.name}:${requiredQty}:${ing.stock}`);
+        }
+      }
+
+      // Concurrency protection for product itself
       const row = db.prepare('SELECT name, stock FROM products WHERE id = ?').get(item.id);
       const currentStock = row ? row.stock : 0;
-      if (currentStock < item.qty) {
+      if (ingredients.length === 0 && currentStock < item.qty) {
         throw new Error(`stock_error:${row ? row.name : item.name}:${item.qty}:${currentStock}`);
       }
 
@@ -814,7 +1126,25 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
       const priceAfterDiscount = item.sell_price * (1 - itemPct / 100);
 
       insertItem.run(saleId, item.id, item.qty, priceAfterDiscount, itemPct, itemDiscAmount, item.name, item.unit || 'dona');
-      deductStock.run(item.qty, item.id);
+      
+      // If product has ingredients, deduct ingredient stock and log it
+      if (ingredients.length > 0) {
+        for (const ing of ingredients) {
+          const requiredQty = ing.quantity * item.qty;
+          db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(requiredQty, ing.ingredient_product_id);
+          
+          logInventory({
+            productId: ing.ingredient_product_id,
+            productName: ing.name,
+            actionType: 'chiqim',
+            quantityChanged: -requiredQty,
+            userName: cashierName || 'Kassir',
+            note: `Taom tarkibi bo'yicha sarflandi: ${item.name} × ${item.qty}`
+          });
+        }
+      } else {
+        deductStock.run(item.qty, item.id);
+      }
 
       // Custom note for item-level discount
       let itemNote = saleNote;
@@ -1148,6 +1478,88 @@ function getReports(startDateISO, endDateISO) {
       LIMIT 150
     `).all();
 
+    const waiterStats = db.prepare(`
+      SELECT ro.waiter_id, w.name as waiter_name, w.percentage, SUM(ro.total_amount) as total_sales
+      FROM restaurant_orders ro
+      JOIN waiters w ON w.id = ro.waiter_id
+      WHERE ro.status = 'completed' AND ro.created_at >= ? AND ro.created_at <= ?
+      GROUP BY ro.waiter_id, w.name, w.percentage
+    `).all(startDateISO, endDateISO);
+
+    const cashiersList = db.prepare(`
+      SELECT id, name, role, salary FROM cashiers
+    `).all();
+
+    const waitersList = db.prepare(`
+      SELECT id, name, percentage, salary FROM waiters
+    `).all();
+
+    const startDay = startDateISO.substring(0, 10);
+    const endDay = endDateISO.substring(0, 10);
+
+    const cashierAttendance = db.prepare(`
+      SELECT employee_id, COUNT(*) as present_days
+      FROM attendance
+      WHERE employee_type = 'cashier' AND date >= ? AND date <= ? AND status = 'present'
+      GROUP BY employee_id
+    `).all(startDay, endDay);
+    
+    const cashierAttMap = {};
+    for (const row of cashierAttendance) {
+      cashierAttMap[row.employee_id] = row.present_days;
+    }
+
+    const waiterAttendance = db.prepare(`
+      SELECT employee_id, COUNT(*) as present_days
+      FROM attendance
+      WHERE employee_type = 'waiter' AND date >= ? AND date <= ? AND status = 'present'
+      GROUP BY employee_id
+    `).all(startDay, endDay);
+
+    const waiterAttMap = {};
+    for (const row of waiterAttendance) {
+      waiterAttMap[row.employee_id] = row.present_days;
+    }
+
+    // Get individual waiter commissions in this range
+    const waiterComms = db.prepare(`
+      SELECT waiter_id, SUM(waiter_commission) as comm
+      FROM sales
+      WHERE created_at >= ? AND created_at <= ? AND status != 'refunded' AND waiter_id IS NOT NULL
+      GROUP BY waiter_id
+    `).all(startDateISO, endDateISO);
+    
+    const waiterCommMap = {};
+    for (const row of waiterComms) {
+      waiterCommMap[row.waiter_id] = row.comm;
+    }
+
+    let totalSalaries = 0;
+    for (const c of cashiersList) {
+      const presentDays = cashierAttMap[c.id] || 0;
+      c.present_days = presentDays;
+      c.earned_salary = (c.salary / 30) * presentDays;
+      c.total_earned = c.earned_salary;
+      totalSalaries += c.earned_salary;
+    }
+    for (const w of waitersList) {
+      const presentDays = waiterAttMap[w.id] || 0;
+      w.present_days = presentDays;
+      w.earned_salary = (w.salary / 30) * presentDays;
+      w.commissions = waiterCommMap[w.id] || 0;
+      w.total_earned = w.earned_salary + w.commissions;
+      totalSalaries += w.earned_salary;
+    }
+
+    const commissionsRow = db.prepare(`
+      SELECT SUM(waiter_commission) as total_commissions
+      FROM sales
+      WHERE created_at >= ? AND created_at <= ? AND status != 'refunded'
+    `).get(startDateISO, endDateISO);
+    const totalCommissions = commissionsRow?.total_commissions || 0;
+
+    const netProfit = totalProfit - totalExpenses - totalSalaries - totalCommissions;
+
     return {
       success: true,
       data: {
@@ -1161,7 +1573,13 @@ function getReports(startDateISO, endDateISO) {
         warehouseBuyValue,
         warehouseSellValue,
         totalDebtPayments,
-        agingProducts
+        agingProducts,
+        waiterStats,
+        cashiersList,
+        waitersList,
+        totalSalaries,
+        totalCommissions,
+        netProfit
       }
     };
   } catch (err) {
@@ -1184,7 +1602,38 @@ function clearTestData() {
   try {
     db.exec('BEGIN TRANSACTION');
 
-    // Clear everything
+    // Clear sales history
+    db.exec('DELETE FROM sale_items');
+    db.exec('DELETE FROM sales');
+    db.exec('DELETE FROM inventory_logs');
+    db.exec('DELETE FROM expenses');
+    db.exec('DELETE FROM write_offs');
+    db.exec('DELETE FROM shifts_history');
+    db.exec('DELETE FROM debt_payments');
+    db.exec('DELETE FROM restaurant_orders');
+
+    // Reset customer debts
+    db.exec('UPDATE customers SET total_debt = 0');
+
+    // Reset tables
+    db.exec("UPDATE restaurant_tables SET status = 'free', locked_by = NULL, is_printed = 0, opened_at = NULL");
+
+    // Reset auto-increment counters for sales & history tables
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('sale_items', 'sales', 'inventory_logs', 'expenses', 'write_offs', 'shifts_history', 'debt_payments', 'restaurant_orders')");
+
+    db.exec('COMMIT');
+    return { success: true };
+  } catch (err) {
+    if (db.inTransaction) db.exec('ROLLBACK');
+    return { success: false, error: err.message };
+  }
+}
+
+function resetFactoryData() {
+  try {
+    db.exec('BEGIN TRANSACTION');
+
+    // 1. Delete all tables
     db.exec('DELETE FROM sale_items');
     db.exec('DELETE FROM sales');
     db.exec('DELETE FROM inventory_logs');
@@ -1194,14 +1643,50 @@ function clearTestData() {
     db.exec('DELETE FROM debt_payments');
     db.exec('DELETE FROM customers');
     db.exec('DELETE FROM products');
+    db.exec('DELETE FROM product_ingredients');
+    db.exec('DELETE FROM restaurant_orders');
+    db.exec('DELETE FROM settings');
+    db.exec('DELETE FROM waiters');
+    db.exec('DELETE FROM cashiers');
+    db.exec('DELETE FROM restaurant_tables');
 
-    // Reset auto-increment counters
-    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('sale_items', 'sales', 'inventory_logs', 'expenses', 'write_offs', 'shifts_history', 'debt_payments', 'customers', 'products')");
+    // 2. Reset sequence
+    db.exec("DELETE FROM sqlite_sequence");
+
+    // 3. Re-seed default settings
+    db.prepare("INSERT INTO settings (key, value) VALUES ('store_name', 'Mening Do''konim')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('business_type', 'retail')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('ngrok_token', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('ngrok_domain', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('gemini_api_key', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('terminal_mode', 'false')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_url', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('instagram_url', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('kitchen_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('cold_printer', '')").run();
+
+    // 4. Re-seed default cashiers
+    db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES ('Admin', '1111', 'admin', 0)").run();
+    db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES ('Kassir', '2222', 'cashier', 0)").run();
+
+    // 5. Re-seed default waiters
+    db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Alisher', '1234', 'waiter', 10)").run();
+    db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Madina', '5678', 'waiter', 10)").run();
+
+    // 6. Re-seed default restaurant tables
+    const seedZones = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
+    for (const zone of seedZones) {
+      for (let i = 1; i <= 30; i++) {
+        const name = `${zone} ${i}`;
+        db.prepare("INSERT INTO restaurant_tables (name, zone, status) VALUES (?, ?, 'free')").run(name, zone);
+      }
+    }
 
     db.exec('COMMIT');
     return { success: true };
   } catch (err) {
-    db.exec('ROLLBACK');
+    if (db.inTransaction) db.exec('ROLLBACK');
     return { success: false, error: err.message };
   }
 }
@@ -1806,28 +2291,54 @@ function getProductsPaginated(page = 1, searchQuery = '') {
     const offset = (page - 1) * limit;
     let products;
     let totalCount;
+    const bType = getActiveBusinessType();
 
     if (searchQuery && searchQuery.trim() !== '') {
       const queryStr = `%${searchQuery.trim().toLowerCase()}%`;
-      products = db.prepare(`
-        SELECT * FROM products 
-        WHERE my_lower(name) LIKE ? OR my_lower(barcode) LIKE ? 
-        ORDER BY id DESC LIMIT ? OFFSET ?
-      `).all(queryStr, queryStr, limit, offset);
+      if (bType === 'restaurant') {
+        products = db.prepare(`
+          SELECT * FROM products 
+          WHERE (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?) 
+          ORDER BY id DESC LIMIT ? OFFSET ?
+        `).all(queryStr, queryStr, limit, offset);
 
-      totalCount = db.prepare(`
-        SELECT COUNT(*) as count FROM products 
-        WHERE my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?
-      `).get(queryStr, queryStr).count;
+        totalCount = db.prepare(`
+          SELECT COUNT(*) as count FROM products 
+          WHERE (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?)
+        `).get(queryStr, queryStr).count;
+      } else {
+        products = db.prepare(`
+          SELECT * FROM products 
+          WHERE business_type = ? AND (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?) 
+          ORDER BY id DESC LIMIT ? OFFSET ?
+        `).all(bType, queryStr, queryStr, limit, offset);
+
+        totalCount = db.prepare(`
+          SELECT COUNT(*) as count FROM products 
+          WHERE business_type = ? AND (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?)
+        `).get(bType, queryStr, queryStr).count;
+      }
     } else {
-      products = db.prepare(`
-        SELECT * FROM products 
-        ORDER BY id DESC LIMIT ? OFFSET ?
-      `).all(limit, offset);
+      if (bType === 'restaurant') {
+        products = db.prepare(`
+          SELECT * FROM products 
+          ORDER BY id DESC LIMIT ? OFFSET ?
+        `).all(limit, offset);
 
-      totalCount = db.prepare(`
-        SELECT COUNT(*) as count FROM products
-      `).get().count;
+        totalCount = db.prepare(`
+          SELECT COUNT(*) as count FROM products
+        `).get().count;
+      } else {
+        products = db.prepare(`
+          SELECT * FROM products 
+          WHERE business_type = ?
+          ORDER BY id DESC LIMIT ? OFFSET ?
+        `).all(bType, limit, offset);
+
+        totalCount = db.prepare(`
+          SELECT COUNT(*) as count FROM products WHERE business_type = ?
+        `).get(bType).count;
+      }
     }
 
     return {
@@ -2149,12 +2660,721 @@ function getNextBarcode() {
   }
 }
 
+// ── Restaurant / Waiter POS ──────────────────────────────────────────────────
+function waiterLogin(pinCode) {
+  try {
+    const waiter = db.prepare("SELECT id, name, role FROM waiters WHERE pin_code = ?").get(pinCode);
+    if (waiter) {
+      return { success: true, waiter_id: waiter.id, name: waiter.name, role: waiter.role };
+    }
+    return { success: false, error: 'Invalid PIN' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getRestaurantTables() {
+  try {
+    // Dynamically check if active orders exist to determine occupied status
+    const rows = db.prepare(`
+      SELECT t.id, t.name, t.zone, t.locked_by, t.is_printed, t.opened_at,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM restaurant_orders o WHERE o.table_id = t.id AND o.status = 'active'
+        ) THEN 'occupied' ELSE 'free' END as status,
+        (
+          SELECT w.name 
+          FROM restaurant_orders o 
+          JOIN waiters w ON o.waiter_id = w.id 
+          WHERE o.table_id = t.id AND o.status = 'active' 
+          LIMIT 1
+        ) as waiter_name
+      FROM restaurant_tables t
+      ORDER BY t.id ASC
+    `).all();
+    return { success: true, data: rows };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function addRestaurantTable(name, zone) {
+  try {
+    const info = db.prepare("INSERT INTO restaurant_tables (name, zone, status) VALUES (?, ?, 'free')").run(name, zone);
+    return { success: true, id: info.lastInsertRowid };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function deleteRestaurantTable(tableId) {
+  try {
+    // Check if the table has an active order
+    const active = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    if (active) {
+      return { success: false, error: 'Bu stolda aktiv buyurtma bor, avval buyurtmani yoping!' };
+    }
+    db.prepare("DELETE FROM restaurant_tables WHERE id = ?").run(tableId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+
+
+function getActiveOrderForTable(tableId) {
+  try {
+    const order = db.prepare("SELECT id, waiter_id, total_amount, status, created_at FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    if (!order) {
+      return { success: true, data: null };
+    }
+    const items = db.prepare(`
+      SELECT item.product_id as id, item.product_name as name, item.qty, item.price, p.unit, p.category 
+      FROM restaurant_order_items item
+      LEFT JOIN products p ON p.id = item.product_id
+      WHERE item.order_id = ?
+    `).all(order.id);
+    return { success: true, data: { order, items } };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function saveRestaurantOrder(tableId, waiterId, cartItems) {
+  try {
+    db.prepare("BEGIN TRANSACTION").run();
+    
+    // If cart is empty, clean up the active order (if any) and mark table as free
+    if (!cartItems || cartItems.length === 0) {
+      const active = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+      if (active) {
+        db.prepare("DELETE FROM restaurant_order_items WHERE order_id = ?").run(active.id);
+        db.prepare("DELETE FROM restaurant_orders WHERE id = ?").run(active.id);
+      }
+      db.prepare("UPDATE restaurant_tables SET status = 'free', is_printed = 0, locked_by = NULL, opened_at = NULL WHERE id = ?").run(tableId);
+      db.prepare("COMMIT").run();
+      deleteTableIfDelivery(tableId);
+      return { success: true };
+    }
+
+    // Calculate total amount
+    let totalAmount = 0;
+    for (const item of cartItems) {
+      totalAmount += (item.qty * item.price);
+    }
+    
+    // Check if there is an active order
+    let order = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    let orderId;
+    if (order) {
+      orderId = order.id;
+      // Update order
+      db.prepare("UPDATE restaurant_orders SET total_amount = ?, waiter_id = ? WHERE id = ?").run(totalAmount, waiterId, orderId);
+      // Delete old items
+      db.prepare("DELETE FROM restaurant_order_items WHERE order_id = ?").run(orderId);
+    } else {
+      // Insert new order
+      const info = db.prepare("INSERT INTO restaurant_orders (table_id, waiter_id, total_amount, status) VALUES (?, ?, ?, 'active')").run(tableId, waiterId, totalAmount);
+      orderId = info.lastInsertRowid;
+    }
+    
+    // Insert items
+    const insertItem = db.prepare("INSERT INTO restaurant_order_items (order_id, product_id, product_name, qty, price) VALUES (?, ?, ?, ?, ?)");
+    for (const item of cartItems) {
+      insertItem.run(orderId, item.id, item.name, item.qty, item.price);
+    }
+    
+    // Update table status and opened_at if not set
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    db.prepare("UPDATE restaurant_tables SET status = 'occupied', opened_at = COALESCE(opened_at, ?) WHERE id = ?").run(nowStr, tableId);
+    
+    db.prepare("COMMIT").run();
+    
+    return { success: true, orderId };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
+function deleteTableIfDelivery(tableId) {
+  try {
+    const table = db.prepare("SELECT name, zone FROM restaurant_tables WHERE id = ?").get(tableId);
+    if (table && table.zone === 'Dostavka') {
+      // Only delete if it is a custom delivery table (starts with "Dostavka: ")
+      if (table.name.startsWith('Dostavka: ')) {
+        db.prepare("DELETE FROM restaurant_tables WHERE id = ?").run(tableId);
+      }
+    }
+  } catch (err) {
+    console.error("Error deleting delivery table:", err);
+  }
+}
+
+function closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment = '') {
+  try {
+    // Find active order
+    const orderRes = getActiveOrderForTable(tableId);
+    if (!orderRes.success || !orderRes.data) {
+      return { success: false, error: 'No active order for this table' };
+    }
+    const { order, items } = orderRes.data;
+    
+    // Call processSale
+    const cartItems = items.map(it => ({
+      id: it.id,
+      name: it.name,
+      qty: it.qty,
+      sell_price: it.price,
+      unit: it.unit || 'dona',
+      category: it.category || 'Boshqa'
+    }));
+    
+    // 1. Execute standard checkout first (this performs stock check and deduction)
+    const saleResult = processSale(cartItems, paymentMethod, customerInfo, cashierName, discountPercent, 'mobile', order.waiter_id, comment);
+    
+    if (saleResult && saleResult.success) {
+      // 2. If checkout succeeded, run a transaction to close restaurant order and free table
+      db.prepare("BEGIN TRANSACTION").run();
+      try {
+        // Mark order as completed
+        db.prepare("UPDATE restaurant_orders SET status = 'completed' WHERE id = ?").run(order.id);
+        
+        // Mark table as free, reset locks, printed status, and opened_at
+        db.prepare("UPDATE restaurant_tables SET status = 'free', is_printed = 0, locked_by = NULL, opened_at = NULL WHERE id = ?").run(tableId);
+        
+        db.prepare("COMMIT").run();
+      } catch (transErr) {
+        try { db.prepare("ROLLBACK").run(); } catch (_) {}
+        throw transErr;
+      }
+      
+      // If it was delivery, delete table
+      deleteTableIfDelivery(tableId);
+      
+      return { success: true, saleResult };
+    } else {
+      return { success: false, error: saleResult ? saleResult.error : 'Sotuvni yakunlashda xatolik yuz berdi' };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function closeRestaurantOrderOnly(tableId) {
+  try {
+    const order = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    if (order) {
+      db.prepare("UPDATE restaurant_orders SET status = 'completed' WHERE id = ?").run(order.id);
+    }
+    db.prepare("UPDATE restaurant_tables SET status = 'free', is_printed = 0, locked_by = NULL, opened_at = NULL WHERE id = ?").run(tableId);
+    
+    // If it was delivery, delete table
+    deleteTableIfDelivery(tableId);
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function transferRestaurantTable(fromTableId, toTableId) {
+  try {
+    db.prepare("BEGIN TRANSACTION").run();
+    
+    const order = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(fromTableId);
+    if (!order) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, error: 'Buyurtma topilmadi' };
+    }
+
+    const targetTable = db.prepare("SELECT status FROM restaurant_tables WHERE id = ?").get(toTableId);
+    if (targetTable && targetTable.status === 'occupied') {
+      db.prepare("ROLLBACK").run();
+      return { success: false, error: 'Nishon stol band' };
+    }
+
+    const fromTable = db.prepare("SELECT opened_at FROM restaurant_tables WHERE id = ?").get(fromTableId);
+    const openedAt = fromTable ? fromTable.opened_at : null;
+
+    db.prepare("UPDATE restaurant_orders SET table_id = ? WHERE id = ?").run(toTableId, order.id);
+    db.prepare("UPDATE restaurant_tables SET status = 'free', opened_at = NULL WHERE id = ?").run(fromTableId);
+    db.prepare("UPDATE restaurant_tables SET status = 'occupied', opened_at = ? WHERE id = ?").run(openedAt, toTableId);
+
+    db.prepare("COMMIT").run();
+    return { success: true };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
+function transferRestaurantOrderWaiter(tableId, targetWaiterId) {
+  try {
+    db.prepare("UPDATE restaurant_orders SET waiter_id = ? WHERE table_id = ? AND status = 'active'").run(targetWaiterId, tableId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function cancelRestaurantOrder(tableId, cancelledBy) {
+  try {
+    db.prepare("BEGIN TRANSACTION").run();
+    
+    const order = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    if (!order) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, error: 'Buyurtma topilmadi' };
+    }
+
+    db.prepare("UPDATE restaurant_orders SET status = 'cancelled' WHERE id = ?").run(order.id);
+    db.prepare("UPDATE restaurant_tables SET status = 'free', locked_by = NULL, is_printed = 0, opened_at = NULL WHERE id = ?").run(tableId);
+
+    db.prepare("COMMIT").run();
+    
+    // If it was delivery, delete table
+    deleteTableIfDelivery(tableId);
+
+    return { success: true, orderId: order.id };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
+function addDeliveryOrder(customerName, customerPhone, customerAddress, waiterId) {
+  try {
+    db.prepare("BEGIN TRANSACTION").run();
+    
+    const tableName = `Dostavka: ${customerName} (${customerPhone}) - ${customerAddress}`;
+    const info = db.prepare("INSERT INTO restaurant_tables (name, zone, status) VALUES (?, 'Dostavka', 'occupied')").run(tableName);
+    const tableId = info.lastInsertRowid;
+
+    const orderInfo = db.prepare("INSERT INTO restaurant_orders (table_id, waiter_id, total_amount, status) VALUES (?, ?, 0, 'active')").run(tableId, waiterId);
+    
+    db.prepare("COMMIT").run();
+    return { success: true, tableId, tableName, orderId: orderInfo.lastInsertRowid };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
+function saveProductRecipe(productId, ingredients) {
+  try {
+    db.prepare("BEGIN TRANSACTION").run();
+    db.prepare("DELETE FROM product_ingredients WHERE parent_product_id = ?").run(productId);
+    
+    const stmt = db.prepare("INSERT INTO product_ingredients (parent_product_id, ingredient_product_id, quantity) VALUES (?, ?, ?)");
+    for (const ing of ingredients) {
+      stmt.run(productId, ing.ingredient_product_id, parseFloat(ing.quantity) || 0);
+    }
+    
+    // Dynamically calculate parent product buy_price (cost price) as sum of ingredients' costs
+    let calculatedCost = 0;
+    for (const ing of ingredients) {
+      const ingProduct = db.prepare("SELECT buy_price FROM products WHERE id = ?").get(ing.ingredient_product_id);
+      if (ingProduct) {
+        calculatedCost += (ingProduct.buy_price * (parseFloat(ing.quantity) || 0));
+      }
+    }
+    db.prepare("UPDATE products SET buy_price = ?, cost_price = ? WHERE id = ?").run(calculatedCost, calculatedCost, productId);
+    calculateAvailablePortions(productId);
+    
+    db.prepare("COMMIT").run();
+    return { success: true, calculatedCost };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
+function getProductRecipe(productId) {
+  try {
+    const rows = db.prepare(`
+      SELECT i.ingredient_product_id, i.quantity, p.name, p.unit, p.buy_price, p.stock
+      FROM product_ingredients i
+      JOIN products p ON i.ingredient_product_id = p.id
+      WHERE i.parent_product_id = ?
+    `).all(productId);
+    return { success: true, data: rows };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function calculateAvailablePortions(dishId) {
+  try {
+    const ingredients = db.prepare(`
+      SELECT i.ingredient_product_id, i.quantity, p.stock
+      FROM product_ingredients i
+      JOIN products p ON i.ingredient_product_id = p.id
+      WHERE i.parent_product_id = ?
+    `).all(dishId);
+
+    if (ingredients.length === 0) return null; // Not a ready dish with a recipe
+
+    let minPortions = Infinity;
+    for (const ing of ingredients) {
+      if (ing.quantity <= 0) continue;
+      const portions = ing.stock / ing.quantity;
+      if (portions < minPortions) {
+        minPortions = portions;
+      }
+    }
+
+    const available = minPortions === Infinity ? 0 : Math.floor(minPortions);
+    db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(available, dishId);
+    return available;
+  } catch (err) {
+    console.error('Error calculating portions:', err);
+    return 0;
+  }
+}
+
+function updateDependentDishesStocks(ingredientId) {
+  try {
+    const parentDishes = db.prepare(`
+      SELECT DISTINCT parent_product_id FROM product_ingredients WHERE ingredient_product_id = ?
+    `).all(ingredientId);
+
+    for (const row of parentDishes) {
+      calculateAvailablePortions(row.parent_product_id);
+    }
+  } catch (err) {
+    console.error('Error updating dependent dishes:', err);
+  }
+}
+
+function getProductGroups() {
+  try {
+    const rows = db.prepare("SELECT * FROM product_groups ORDER BY group_name ASC").all();
+    return { success: true, data: rows };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function addProductGroup(name) {
+  try {
+    const stmt = db.prepare("INSERT INTO product_groups (group_name) VALUES (?)");
+    const info = stmt.run(name);
+    return { success: true, id: info.lastInsertRowid };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getOrCreateProductGroup(name) {
+  try {
+    const trimmed = String(name).trim();
+    let row = db.prepare("SELECT id FROM product_groups WHERE LOWER(group_name) = LOWER(?)").get(trimmed);
+    if (row) {
+      return { success: true, id: row.id };
+    }
+    const info = db.prepare("INSERT INTO product_groups (group_name) VALUES (?)").run(trimmed);
+    return { success: true, id: info.lastInsertRowid };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function projectYield(products) {
+  try {
+    const recipes = db.prepare(`
+      SELECT DISTINCT parent_product_id, p.name as dish_name
+      FROM product_ingredients i
+      JOIN products p ON i.parent_product_id = p.id
+    `).all();
+
+    const stockChanges = {};
+    for (const p of products) {
+      let qty = parseFloat(p.quantity) || 0;
+      let unit = p.unit || 'dona';
+      if (unit.toLowerCase() === 'kg' || unit.toLowerCase() === 'l') {
+        qty = qty * 1000;
+      }
+
+      let existing = null;
+      if (p.barcode && String(p.barcode).trim() !== '') {
+        existing = db.prepare('SELECT id FROM products WHERE barcode = ?').get(p.barcode);
+      }
+      if (!existing && p.name) {
+        existing = db.prepare('SELECT id FROM products WHERE LOWER(name) = LOWER(?)').get(p.name);
+      }
+
+      if (existing) {
+        stockChanges[existing.id] = (stockChanges[existing.id] || 0) + qty;
+      }
+    }
+
+    const projections = [];
+
+    for (const dish of recipes) {
+      const ingredients = db.prepare(`
+        SELECT i.ingredient_product_id, i.quantity, p.stock
+        FROM product_ingredients i
+        JOIN products p ON i.ingredient_product_id = p.id
+        WHERE i.parent_product_id = ?
+      `).all(dish.parent_product_id);
+
+      if (ingredients.length === 0) continue;
+
+      let currentMin = Infinity;
+      let simulatedMin = Infinity;
+
+      for (const ing of ingredients) {
+        if (ing.quantity <= 0) continue;
+        const currentPortions = ing.stock / ing.quantity;
+        if (currentPortions < currentMin) {
+          currentMin = currentPortions;
+        }
+
+        const added = stockChanges[ing.ingredient_product_id] || 0;
+        const simulatedPortions = (ing.stock + added) / ing.quantity;
+        if (simulatedPortions < simulatedMin) {
+          simulatedMin = simulatedPortions;
+        }
+      }
+
+      const currentAvailable = currentMin === Infinity ? 0 : Math.floor(currentMin);
+      const simulatedAvailable = simulatedMin === Infinity ? 0 : Math.floor(simulatedMin);
+      const additional = simulatedAvailable - currentAvailable;
+
+      if (additional > 0) {
+        projections.push({
+          dish_id: dish.parent_product_id,
+          dish_name: dish.dish_name,
+          current: currentAvailable,
+          simulated: simulatedAvailable,
+          additional: additional
+        });
+      }
+    }
+
+    return { success: true, projections };
+  } catch (err) {
+    console.error('Error projecting yield:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+function lockTable(tableId, userName) {
+  try {
+    const table = db.prepare("SELECT locked_by, status, opened_at FROM restaurant_tables WHERE id = ?").get(tableId);
+    if (!table) return { success: false, error: 'Stol topilmadi' };
+    
+    if (table.locked_by && table.locked_by !== userName) {
+      return { success: false, lockedBy: table.locked_by };
+    }
+    
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    if (!table.opened_at && table.status === 'free') {
+      db.prepare("UPDATE restaurant_tables SET locked_by = ?, opened_at = ? WHERE id = ?").run(userName, nowStr, tableId);
+    } else {
+      db.prepare("UPDATE restaurant_tables SET locked_by = ? WHERE id = ?").run(userName, tableId);
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function unlockTable(tableId, userName) {
+  try {
+    const table = db.prepare("SELECT locked_by, status FROM restaurant_tables WHERE id = ?").get(tableId);
+    if (table && table.locked_by === userName) {
+      if (table.status === 'free') {
+        db.prepare("UPDATE restaurant_tables SET locked_by = NULL, opened_at = NULL WHERE id = ?").run(tableId);
+      } else {
+        db.prepare("UPDATE restaurant_tables SET locked_by = NULL WHERE id = ?").run(tableId);
+      }
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function setTablePrePrinted(tableId, isPrinted) {
+  try {
+    db.prepare("UPDATE restaurant_tables SET is_printed = ? WHERE id = ?").run(parseInt(isPrinted) || 0, tableId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getWaitersReport(startDateISO, endDateISO, waiterId = null) {
+  try {
+    const sanitizeDate = (d) => {
+      if (!d) return d;
+      return d.replace('T', ' ').replace('Z', '').substring(0, 19);
+    };
+    const start = sanitizeDate(startDateISO);
+    const end = sanitizeDate(endDateISO);
+
+    if (waiterId) {
+      // 1. Consolidated stats for single waiter
+      const stats = db.prepare(`
+        SELECT 
+          w.id,
+          w.name,
+          w.percentage,
+          COUNT(s.id) as total_receipts,
+          IFNULL(SUM(s.total_amount), 0) as total_sales,
+          IFNULL(SUM(s.waiter_commission), 0) as total_commission
+        FROM waiters w
+        LEFT JOIN sales s ON s.waiter_id = w.id AND s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+        WHERE w.id = ?
+        GROUP BY w.id
+      `).get(start, end, waiterId);
+
+      // 2. Detailed list of receipts
+      const receipts = db.prepare(`
+        SELECT 
+          id,
+          shift_receipt_number,
+          total_amount,
+          payment_method,
+          created_at,
+          waiter_percentage,
+          waiter_commission
+        FROM sales
+        WHERE waiter_id = ? AND created_at >= ? AND created_at <= ? AND status != 'refunded'
+        ORDER BY created_at DESC
+      `).all(waiterId, start, end);
+
+      return { 
+        success: true, 
+        data: { 
+          waiter: stats || { id: waiterId, name: 'Ochirilgan ofitsiant', percentage: 0, total_receipts: 0, total_sales: 0, total_commission: 0 }, 
+          receipts 
+        } 
+      };
+    } else {
+      // Consolidated stats for all waiters
+      const rows = db.prepare(`
+        SELECT 
+          w.id,
+          w.name,
+          w.percentage,
+          COUNT(s.id) as total_receipts,
+          IFNULL(SUM(s.total_amount), 0) as total_sales,
+          IFNULL(SUM(s.waiter_commission), 0) as total_commission
+        FROM waiters w
+        LEFT JOIN sales s ON s.waiter_id = w.id AND s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+        GROUP BY w.id
+        ORDER BY total_sales DESC
+      `).all(start, end);
+
+      // Also get deleted waiters who have sales in this period
+      const deletedRows = db.prepare(`
+        SELECT 
+          waiter_id as id,
+          waiter_name as name,
+          waiter_percentage as percentage,
+          COUNT(id) as total_receipts,
+          IFNULL(SUM(total_amount), 0) as total_sales,
+          IFNULL(SUM(waiter_commission), 0) as total_commission
+        FROM sales
+        WHERE waiter_id IS NOT NULL AND waiter_id NOT IN (SELECT id FROM waiters) AND created_at >= ? AND created_at <= ? AND status != 'refunded'
+        GROUP BY waiter_id
+        ORDER BY total_sales DESC
+      `).all(start, end);
+
+      const allRows = [...rows, ...deletedRows];
+
+      return { success: true, data: allRows };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getAttendanceList(date) {
+  try {
+    const cashiers = db.prepare("SELECT id, name, role, salary FROM cashiers").all();
+    const waiters = db.prepare("SELECT id, name, percentage, salary FROM waiters").all();
+    const attendance = db.prepare("SELECT employee_id, employee_type, status FROM attendance WHERE date = ?").all();
+    
+    const attMap = {};
+    for (const att of attendance) {
+      attMap[`${att.employee_type}_${att.employee_id}`] = att.status;
+    }
+    
+    const list = [];
+    for (const c of cashiers) {
+      list.push({
+        id: c.id,
+        name: c.name,
+        type: 'cashier',
+        role: c.role,
+        salary: c.salary,
+        status: attMap[`cashier_${c.id}`] || 'absent'
+      });
+    }
+    for (const w of waiters) {
+      list.push({
+        id: w.id,
+        name: w.name,
+        type: 'waiter',
+        role: 'waiter',
+        salary: w.salary,
+        status: attMap[`waiter_${w.id}`] || 'absent'
+      });
+    }
+    return { success: true, data: list };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function saveAttendance(employeeId, employeeType, date, status) {
+  try {
+    db.prepare(`
+      INSERT INTO attendance (employee_id, employee_type, date, status)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(employee_id, employee_type, date) DO UPDATE SET status = excluded.status
+    `).run(employeeId, employeeType, date, status);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function updateCashier(id, name, pin, role, salary) {
+  try {
+    const exists = db.prepare("SELECT id FROM cashiers WHERE pin = ? AND id != ?").get(pin, id);
+    if (exists) return { success: false, error: 'pin_exists' };
+
+    db.prepare("UPDATE cashiers SET name = ?, pin = ?, role = ?, salary = ? WHERE id = ?").run(name, pin, role, salary, id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function updateWaiter(id, name, pinCode, percentage, salary) {
+  try {
+    const exists = db.prepare("SELECT id FROM waiters WHERE pin_code = ? AND id != ?").get(pinCode, id);
+    if (exists) return { success: false, error: 'pin_exists' };
+
+    db.prepare("UPDATE waiters SET name = ?, pin_code = ?, percentage = ?, salary = ? WHERE id = ?").run(name, pinCode, percentage, salary, id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = { 
   initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, updateProduct, addStockToProduct, deleteProduct, searchProduct,
   processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
-  getLowStockProducts, clearTestData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
+  getLowStockProducts, clearTestData, resetFactoryData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
   verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase,
   getCashiers, addCashier, deleteCashier, updateCashierPin,
+  getAttendanceList, saveAttendance, updateCashier, updateWaiter,
   getCurrentShiftStats, closeShift,
   optimizeDatabase, getDBPath,
   writeOffProduct, getWriteOffs,
@@ -2174,5 +3394,33 @@ module.exports = {
   batchAddProducts,
   getAiInsights,
   getProduct,
-  getNextBarcode
+  getNextBarcode,
+  waiterLogin,
+  getRestaurantTables,
+  getActiveOrderForTable,
+  saveRestaurantOrder,
+  closeRestaurantOrder,
+  closeRestaurantOrderOnly,
+  getWaiters,
+  addWaiter,
+  deleteWaiter,
+  transferRestaurantTable,
+  transferRestaurantOrderWaiter,
+  cancelRestaurantOrder,
+  addDeliveryOrder,
+  addRestaurantTable,
+  deleteRestaurantTable,
+  saveProductRecipe,
+  getProductRecipe,
+  getProductGroups,
+  addProductGroup,
+  getOrCreateProductGroup,
+  calculateAvailablePortions,
+  updateDependentDishesStocks,
+  projectYield,
+  lockTable,
+  unlockTable,
+  setTablePrePrinted,
+  getWaitersReport,
+  getRestaurantOnlyProducts
 };

@@ -59,8 +59,11 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
       }
 
       // 2. Save shift to DB (includes async backup)
-      stats.closed_by = currentUser?.name || 'Admin'; // Track closing cashier
-      const res = await window.api.closeShift(stats);
+      const finalStats = {
+        ...stats,
+        closed_by: currentUser?.name || 'Admin' // Track closing cashier
+      };
+      const res = await window.api.closeShift(finalStats);
       
       if (res && res.success) {
         setSuccessMsg("Smena yopildi va baza nusxalandi!");

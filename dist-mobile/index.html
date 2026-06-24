@@ -62,9 +62,26 @@
   <div id="screen-login" class="flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950">
     <div class="flex flex-col items-center mt-12">
       <!-- Logo/Icon -->
-      <div class="w-20 h-20 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/10">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-10 h-10 text-indigo-400 animate-pulse">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+      <div class="w-20 h-20 flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/10">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-20 h-20">
+          <defs>
+            <linearGradient id="primaryGradLogin" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#6366f1" />
+              <stop offset="50%" stop-color="#4f46e5" />
+              <stop offset="100%" stop-color="#3730a3" />
+            </linearGradient>
+            <linearGradient id="accentGradLogin" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#06b6d4" />
+              <stop offset="100%" stop-color="#3b82f6" />
+            </linearGradient>
+          </defs>
+          <polygon points="256,64 420,160 420,352 256,448 92,352 92,160" fill="none" stroke="url(#accentGradLogin)" stroke-width="12" opacity="0.4" />
+          <polygon points="256,80 404,166 404,346 256,432 108,346 108,166" fill="url(#primaryGradLogin)" stroke="#ffffff" stroke-width="4" stroke-opacity="0.2" />
+          <g transform="translate(196, 196)">
+            <rect width="120" height="80" rx="12" fill="#090d16" stroke="url(#accentGradLogin)" stroke-width="8" />
+            <rect x="20" y="24" width="28" height="22" rx="4" fill="url(#accentGradLogin)" />
+            <line x1="20" y1="58" x2="100" y2="58" stroke="#ffffff" stroke-width="4" stroke-opacity="0.4" />
+          </g>
         </svg>
       </div>
       <h1 class="text-3xl font-black tracking-tight text-white mb-2">xxMpos Mobile</h1>
@@ -100,6 +117,302 @@
         </button>
       </div>
     </div>
+
+    <!-- Waiter login link (only shown in restaurant mode, not on ngrok) -->
+    <div id="waiter-login-link-container" class="pb-4 text-center hidden">
+      <button onclick="showScreen('waiter-login')" class="text-slate-500 hover:text-emerald-400 text-xs font-semibold underline underline-offset-2 transition-colors">
+        🍽️ Ofitsiant kirishi
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ================= WAITER LOGIN SCREEN ================= -->
+  <div id="screen-waiter-login" class="hidden flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950">
+    <div class="flex flex-col items-center mt-12">
+      <!-- Logo/Icon -->
+      <div class="w-20 h-20 flex items-center justify-center mb-6 shadow-2xl shadow-emerald-500/10">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-20 h-20">
+          <defs>
+            <linearGradient id="primaryGradWaiter" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#10b981" />
+              <stop offset="50%" stop-color="#059669" />
+              <stop offset="100%" stop-color="#047857" />
+            </linearGradient>
+            <linearGradient id="accentGradWaiter" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#34d399" />
+              <stop offset="100%" stop-color="#059669" />
+            </linearGradient>
+          </defs>
+          <polygon points="256,64 420,160 420,352 256,448 92,352 92,160" fill="none" stroke="url(#accentGradWaiter)" stroke-width="12" opacity="0.4" />
+          <polygon points="256,80 404,166 404,346 256,432 108,346 108,166" fill="url(#primaryGradWaiter)" stroke="#ffffff" stroke-width="4" stroke-opacity="0.2" />
+          <g transform="translate(196, 196)">
+            <rect width="120" height="80" rx="12" fill="#090d16" stroke="url(#accentGradWaiter)" stroke-width="8" />
+            <rect x="20" y="24" width="28" height="22" rx="4" fill="url(#accentGradWaiter)" />
+            <line x1="20" y1="58" x2="100" y2="58" stroke="#ffffff" stroke-width="4" stroke-opacity="0.4" />
+          </g>
+        </svg>
+      </div>
+      <h1 class="text-3xl font-black tracking-tight text-white mb-2">Ofitsiant Kirish</h1>
+      <p class="text-slate-400 text-sm font-medium">Ofitsiant PIN-kodini kiriting</p>
+    </div>
+
+    <!-- PIN dots -->
+    <div class="flex gap-6 justify-center my-6">
+      <div id="waiter-pin-dot-1" class="w-4 h-4 rounded-full border border-slate-700 bg-transparent transition-all duration-150"></div>
+      <div id="waiter-pin-dot-2" class="w-4 h-4 rounded-full border border-slate-700 bg-transparent transition-all duration-150"></div>
+      <div id="waiter-pin-dot-3" class="w-4 h-4 rounded-full border border-slate-700 bg-transparent transition-all duration-150"></div>
+      <div id="waiter-pin-dot-4" class="w-4 h-4 rounded-full border border-slate-700 bg-transparent transition-all duration-150"></div>
+    </div>
+
+    <!-- Keypad -->
+    <div class="w-full max-w-sm mb-6">
+      <div class="grid grid-cols-3 gap-4">
+        <button onclick="pressWaiterKey('1')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">1</button>
+        <button onclick="pressWaiterKey('2')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">2</button>
+        <button onclick="pressWaiterKey('3')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">3</button>
+        <button onclick="pressWaiterKey('4')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">4</button>
+        <button onclick="pressWaiterKey('5')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">5</button>
+        <button onclick="pressWaiterKey('6')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">6</button>
+        <button onclick="pressWaiterKey('7')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">7</button>
+        <button onclick="pressWaiterKey('8')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">8</button>
+        <button onclick="pressWaiterKey('9')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">9</button>
+        <button onclick="clearWaiterPin()" class="py-5 bg-red-950/20 border border-red-900/30 active:bg-red-900/30 active:scale-95 transition-all text-lg font-bold rounded-2xl text-red-400">C</button>
+        <button onclick="pressWaiterKey('0')" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all text-2xl font-bold rounded-2xl text-white">0</button>
+        <button onclick="backspaceWaiterPin()" class="py-5 bg-slate-900/60 border border-slate-800/80 active:bg-slate-800 active:scale-95 transition-all flex items-center justify-center rounded-2xl text-slate-400">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9.75 14.25 12m0 0 2.25 2.25M14.25 12l2.25-2.25M14.25 12 12 14.25m-2.58 4.92-6.375-6.375a1.125 1.125 0 0 1 0-1.59L9.42 4.83c.211-.211.498-.33.796-.33H19.5a2.25 2.25 0 0 1 2.25 2.25v10.5a2.25 2.25 0 0 1-2.25 2.25h-9.284c-.298 0-.585-.119-.796-.33Z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Owner / Admin login link -->
+    <div class="pb-4 text-center">
+      <button onclick="showScreen('login')" class="text-slate-500 hover:text-slate-300 text-xs font-semibold underline underline-offset-2 transition-colors">
+        🏪 Cafe egasi / Kassir kirishi
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= WAITER APPLICATION SHELL ================= -->
+  <div id="waiter-shell" class="hidden flex flex-col h-full bg-slate-950">
+    <!-- Waiter Header -->
+    <header class="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800/80 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-8 h-8">
+            <defs>
+              <linearGradient id="primaryGradMiniW" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#10b981" />
+                <stop offset="100%" stop-color="#047857" />
+              </linearGradient>
+              <linearGradient id="accentGradMiniW" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#34d399" />
+                <stop offset="100%" stop-color="#059669" />
+              </linearGradient>
+            </defs>
+            <polygon points="256,64 420,160 420,352 256,448 92,352 92,160" fill="none" stroke="url(#accentGradMiniW)" stroke-width="16" />
+            <polygon points="256,80 404,166 404,346 256,432 108,346 108,166" fill="url(#primaryGradMiniW)" />
+            <g transform="translate(196, 196)">
+              <rect width="120" height="80" rx="12" fill="#090d16" stroke="url(#accentGradMiniW)" stroke-width="10" />
+            </g>
+          </svg>
+        </div>
+        <div>
+          <h2 id="waiter-store-title" class="text-sm font-black text-white leading-tight">xxMpos Cafe</h2>
+          <p id="header-waiter" class="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Ofitsiant: Admin</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="openWaiterStatsModal()" class="p-2 py-1.5 rounded-xl bg-indigo-600 text-white active:scale-95 transition-all flex items-center gap-1 text-[10px] font-bold shadow-md shadow-indigo-600/10">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z" />
+          </svg>
+          Hisobot
+        </button>
+        <button onclick="logoutWaiter()" class="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Sections -->
+    <main class="flex-1 relative overflow-hidden">
+      <!-- Tables Screen -->
+      <section id="waiter-screen-tables" class="hidden absolute inset-0 overflow-y-auto p-6 space-y-6">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xl font-black text-white">Stollar Xaritasi</h3>
+          <button onclick="loadWaiterTables()" class="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white active:scale-95 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+          </button>
+        </div>
+        <!-- Seating Zone Tabs -->
+        <div id="waiter-zone-tabs" class="flex gap-2 overflow-x-auto pb-1 shrink-0">
+          <!-- Dynamically filled tabs -->
+        </div>
+        <div id="waiter-tables-grid" class="grid grid-cols-2 gap-4">
+          <!-- Dynamically filled grid of tables -->
+        </div>
+      </section>
+
+      <!-- Order Screen (Menu Builder) -->
+      <section id="waiter-screen-order" class="hidden absolute inset-0 flex flex-col bg-slate-950">
+        <!-- Top bar -->
+        <div class="flex items-center gap-3 px-4 py-3 bg-slate-900/40 border-b border-slate-900 shrink-0">
+          <button onclick="goBackToTables()" class="p-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white active:scale-95 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.75-7.5" />
+            </svg>
+          </button>
+          <div class="flex-1 flex justify-between items-center">
+            <div>
+              <h4 id="waiter-order-title" class="text-sm font-black text-white leading-tight">Stol ...</h4>
+              <p id="waiter-order-subtitle" class="text-[10px] text-slate-400 font-semibold leading-tight">Yangi buyurtma</p>
+            </div>
+            <!-- STOL KO'CHIRISH BUTTON -->
+            <button id="btn-transfer-table-waiter" onclick="transferWaiterTablePrompt()" class="hidden p-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white active:scale-95 transition-all flex items-center justify-center gap-1 text-xs font-bold shrink-0 border border-slate-800">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+              </svg>
+              Ko'chirish
+            </button>
+          </div>
+        </div>
+
+        <!-- Lock warning banner -->
+        <div id="waiter-order-lock-banner" class="hidden px-4 py-2.5 bg-rose-600/20 border-b border-rose-500/30 text-rose-300 text-xs font-bold flex items-center justify-between shrink-0">
+          <span class="flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-rose-400 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+            Ushbu buyurtma boshqa ofitsiantga tegishli!
+          </span>
+        </div>
+
+        <!-- Categories horizontal scroll -->
+        <div class="px-4 py-3 bg-slate-900/10 shrink-0 border-b border-slate-900/40">
+          <div id="waiter-categories" class="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth whitespace-nowrap">
+            <!-- Dynamically populated buttons -->
+          </div>
+        </div>
+
+        <!-- Search input -->
+        <div class="px-4 py-2 bg-slate-950 shrink-0">
+          <input type="text" id="waiter-menu-search" oninput="onWaiterMenuSearch()" placeholder="Taom yoki ichimlik qidirish..." class="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-4 text-xs font-semibold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all">
+        </div>
+
+        <!-- Products List -->
+        <div id="waiter-menu-products" class="flex-1 overflow-y-auto p-4 space-y-3">
+          <!-- Dynamically populated products -->
+        </div>
+
+        <!-- Fixed Bottom Oshxonaga Yuborish Button Container -->
+        <div class="p-4 bg-slate-900 border-t border-slate-850 shrink-0 flex flex-col gap-2">
+          <button id="btn-take-over" onclick="takeOverActiveOrder()" class="hidden w-full py-4 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-98 transition-all font-black text-sm text-white shadow-lg shadow-amber-650/20 flex items-center justify-center gap-2">
+            <span>Tahrirlashni o'zlashtirish (Take Over)</span>
+          </button>
+          <button id="btn-send-to-kitchen" onclick="sendOrderToKitchen()" class="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 transition-all font-black text-sm text-white shadow-lg shadow-emerald-650/20 flex items-center justify-center gap-2">
+            <span id="kitchen-btn-text">Oshxonaga yuborish</span>
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Waiter Stats Modal -->
+  <div id="waiter-stats-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          📊 Shaxsiy Hisobot
+        </h3>
+        <button onclick="closeWaiterStatsModal()" class="text-slate-400 hover:text-white p-1">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      
+      <!-- Date filters inside modal -->
+      <div class="p-4 bg-slate-950/40 border-b border-slate-850 shrink-0">
+        <div class="grid grid-cols-4 gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-850">
+          <button onclick="changeWaiterStatsFilter('today')" id="w-filter-today" class="py-1.5 rounded-lg text-[10px] font-bold text-center transition-all bg-indigo-600 text-white shadow-md shadow-indigo-650/15">Bugun</button>
+          <button onclick="changeWaiterStatsFilter('yesterday')" id="w-filter-yesterday" class="py-1.5 rounded-lg text-[10px] font-bold text-center transition-all text-slate-400 hover:text-white">Kecha</button>
+          <button onclick="changeWaiterStatsFilter('week')" id="w-filter-week" class="py-1.5 rounded-lg text-[10px] font-bold text-center transition-all text-slate-400 hover:text-white">Hafta</button>
+          <button onclick="changeWaiterStatsFilter('month')" id="w-filter-month" class="py-1.5 rounded-lg text-[10px] font-bold text-center transition-all text-slate-400 hover:text-white">Oy</button>
+        </div>
+      </div>
+      
+      <!-- Scrollable content -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- KPI Cards Grid -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-950/60 border border-slate-850 rounded-2xl p-4">
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Cheklar</div>
+            <div id="w-stats-receipts" class="text-xl font-black text-white">0 ta</div>
+          </div>
+          <div class="bg-slate-950/60 border border-slate-850 rounded-2xl p-4">
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Foiz (Ulush)</div>
+            <div id="w-stats-percent" class="text-xl font-black text-emerald-400">0%</div>
+          </div>
+        </div>
+        
+        <div class="bg-slate-950/60 border border-slate-850 rounded-2xl p-4 flex justify-between items-center">
+          <div>
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Jami Savdo</div>
+            <div id="w-stats-sales" class="text-lg font-black text-white">0 UZS</div>
+          </div>
+          <span class="text-xl">💵</span>
+        </div>
+        
+        <div class="bg-slate-950/60 border border-slate-850 rounded-2xl p-4 flex justify-between items-center">
+          <div>
+            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Hisoblangan Oylik</div>
+            <div id="w-stats-commission" class="text-lg font-black text-emerald-400">0 UZS</div>
+          </div>
+          <span class="text-xl">💰</span>
+        </div>
+        
+        <!-- Checks list -->
+        <div class="space-y-2.5">
+          <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Sotuvlar tarixi</h4>
+          <div id="w-stats-checks-list" class="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Delivery Modal -->
+  <div id="waiter-delivery-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm space-y-4">
+      <h3 class="text-lg font-bold text-white">Yangi yetkazib berish</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Mijoz ismi</label>
+          <input id="delivery-cust-name" type="text" placeholder="Ism familiya" class="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Mijoz telefoni</label>
+          <input id="delivery-cust-phone" type="text" placeholder="+998901234567" class="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Mijoz manzili</label>
+          <textarea id="delivery-cust-address" placeholder="Manzil va lokatsiya tafsilotlari" class="w-full h-20 bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"></textarea>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeAddDeliveryModal()" class="flex-1 py-2.5 rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold transition">Bekor qilish</button>
+        <button onclick="createDeliveryOrder()" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition">Yaratish</button>
+      </div>
+    </div>
   </div>
 
   <!-- ================= MAIN APPLICATION SHELL ================= -->
@@ -107,8 +420,24 @@
     <!-- Top Header -->
     <header class="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800/80 shrink-0">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-white text-sm">
-          M
+        <div class="w-8 h-8 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-8 h-8">
+            <defs>
+              <linearGradient id="primaryGradMiniM" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#6366f1" />
+                <stop offset="100%" stop-color="#3730a3" />
+              </linearGradient>
+              <linearGradient id="accentGradMiniM" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#06b6d4" />
+                <stop offset="100%" stop-color="#3b82f6" />
+              </linearGradient>
+            </defs>
+            <polygon points="256,64 420,160 420,352 256,448 92,352 92,160" fill="none" stroke="url(#accentGradMiniM)" stroke-width="16" />
+            <polygon points="256,80 404,166 404,346 256,432 108,346 108,166" fill="url(#primaryGradMiniM)" />
+            <g transform="translate(196, 196)">
+              <rect width="120" height="80" rx="12" fill="#090d16" stroke="url(#accentGradMiniM)" stroke-width="10" />
+            </g>
+          </svg>
         </div>
         <div>
           <h2 class="text-sm font-bold text-white leading-tight">xxMpos</h2>
@@ -865,8 +1194,20 @@
       </div>
 
       <!-- Scrollable List of Parsed Items -->
-      <div id="ai-kirim-items-list" class="flex-1 overflow-y-auto p-6 space-y-4">
-        <!-- Generated dynamically -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- Purchase Group Name Field -->
+        <div class="bg-slate-950 p-5 rounded-2xl border border-slate-850 space-y-2">
+          <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wide">Xarid guruhi nomi</label>
+          <input type="text" id="ai-purchase-group" placeholder="Masalan: Haftalik Fast-food xaridi" class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-purple-500">
+        </div>
+
+        <!-- Recipe Portion Yield Projections -->
+        <div id="yield-projection-container"></div>
+
+        <!-- Items list -->
+        <div id="ai-kirim-items-list" class="space-y-4">
+          <!-- Generated dynamically -->
+        </div>
       </div>
 
       <!-- Footer: Confirm Action -->
@@ -1178,7 +1519,20 @@
 
       // Aging products state
       agingProducts: [],
-      agingDaysLimit: 10
+      agingDaysLimit: 10,
+
+      // Waiter state
+      waiterPin: '',
+      waiter: null,
+      waiterTables: [],
+      waiterActiveTableId: null,
+      waiterActiveTableName: '',
+      waiterProducts: [],
+      waiterMenuQuery: '',
+      waiterSelectedCategory: 'Barchasi',
+      waiterSelectedZone: 'Zal',
+      waiterActiveOrderOwnerId: null,
+      waiterCart: []
     };
 
     // Life cycle initialization
@@ -1193,16 +1547,67 @@
       if (startInput) startInput.value = todayISO;
       if (endInput) endInput.value = todayISO;
 
-      // Check if logged in
+      // Check business type on load
+      fetch(`${API_URL}/api/settings`)
+        .then(res => res.json())
+        .then(settings => {
+          if (settings.success) {
+            state.business_type = settings.data.business_type;
+            state.store_name = settings.data.store_name;
+            document.title = settings.data.store_name || "xxMpos";
+            
+            if (state.business_type === 'restaurant') {
+              initWaiterFlow();
+            } else {
+              initRetailFlow();
+            }
+          } else {
+            initRetailFlow();
+          }
+        })
+        .catch(err => {
+          console.error("Failed to load settings:", err);
+          initRetailFlow();
+        });
+    });
+
+    function initRetailFlow() {
       const savedPin = localStorage.getItem('cashier_pin');
       if (savedPin) {
         state.pin = savedPin;
-        // Verify PIN is still valid on start
         verifyStoredPin();
       } else {
         showScreen('login');
       }
-    });
+    }
+
+    function initWaiterFlow() {
+      // If accessed via ngrok or any public/external URL, redirect to cashier (owner) login
+      const isExternalAccess = window.location.hostname.includes('ngrok') ||
+                               window.location.hostname.includes('ngrok-free') ||
+                               window.location.hostname.includes('loca.lt') ||
+                               window.location.hostname.includes('serveo.net') ||
+                               window.location.hostname.includes('trycloudflare');
+      if (isExternalAccess) {
+        // External/ngrok access — only show cashier/owner login, hide waiter link
+        const waiterLink = document.getElementById('waiter-login-link-container');
+        if (waiterLink) waiterLink.classList.add('hidden');
+        showScreen('login');
+        return;
+      }
+      // Local WiFi access — show "Ofitsiant kirishi" link on cashier screen too
+      const waiterLink = document.getElementById('waiter-login-link-container');
+      if (waiterLink) waiterLink.classList.remove('hidden');
+      
+      const savedWaiterPin = localStorage.getItem('waiter_pin');
+      if (savedWaiterPin) {
+        state.waiterPin = savedWaiterPin;
+        submitWaiterPin(savedWaiterPin);
+      } else {
+        showScreen('waiter-login');
+      }
+    }
+
 
     function switchCart(cartId) {
       // Sync reference
@@ -1312,12 +1717,18 @@
       }
     }
 
+    let stateUpdateYieldTimeout = null;
+
     function renderAiKirimModal(items) {
       stateParsedAiItems = items;
       document.getElementById('ai-items-count').innerText = `${items.length} ta tovar aniqlandi`;
       
       const container = document.getElementById('ai-kirim-items-list');
       container.innerHTML = '';
+
+      // Reset purchase group name on load
+      const groupInput = document.getElementById('ai-purchase-group');
+      if (groupInput) groupInput.value = '';
 
       if (items.length === 0) {
         container.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">Tovarlar aniqlanmadi yoki o'chirildi.</p>`;
@@ -1386,11 +1797,64 @@
       });
 
       document.getElementById('modal-ai-kirim').classList.remove('hidden');
+      updateYieldProjection();
+    }
+
+    async function updateYieldProjection() {
+      const container = document.getElementById('yield-projection-container');
+      if (!container) return;
+      if (state.business_type !== 'restaurant' || stateParsedAiItems.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/api/ai/project-yield`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': state.pin
+          },
+          body: JSON.stringify({ products: stateParsedAiItems })
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          container.innerHTML = '';
+
+          if (result.success && result.projections && result.projections.length > 0) {
+            let html = `
+              <div class="bg-gradient-to-r from-purple-950/80 to-indigo-950/80 border border-purple-800/40 rounded-2xl p-4 space-y-2">
+                <div class="flex items-center gap-2">
+                  <span class="animate-pulse flex h-2 w-2 rounded-full bg-emerald-400"></span>
+                  <span class="text-xs font-black text-purple-300 uppercase tracking-widest">Retseptlar Prognozi</span>
+                </div>
+                <div class="space-y-1.5">
+            `;
+            result.projections.forEach(proj => {
+              html += `
+                <p class="text-xs font-bold text-slate-100">
+                  Ushbu kirim hisobiga tizimda yana <span class="text-emerald-400 font-black">+${proj.additional} ta</span> ${proj.dish_name} tayyorlash imkoniyati yaratildi.
+                </p>
+              `;
+            });
+            html += `
+                </div>
+              </div>
+            `;
+            container.innerHTML = html;
+          }
+        }
+      } catch (err) {
+        console.error('Yield projection error:', err);
+      }
     }
 
     function updateAiItemField(index, field, value) {
       if (stateParsedAiItems[index]) {
         stateParsedAiItems[index][field] = value;
+        if (stateUpdateYieldTimeout) clearTimeout(stateUpdateYieldTimeout);
+        stateUpdateYieldTimeout = setTimeout(updateYieldProjection, 500);
       }
     }
 
@@ -1436,6 +1900,8 @@
         discount: 0
       }));
 
+      const purchaseGroupVal = document.getElementById('ai-purchase-group')?.value || '';
+
       try {
         const res = await fetch(`${API_URL}/api/products/batch-add`, {
           method: 'POST',
@@ -1443,7 +1909,11 @@
             'Content-Type': 'application/json',
             'Authorization': state.pin
           },
-          body: JSON.stringify({ products: productsPayload, source: 'ai' })
+          body: JSON.stringify({ 
+            products: productsPayload, 
+            source: 'ai',
+            purchase_group: purchaseGroupVal
+          })
         });
 
         if (res.status === 401) {
@@ -1466,15 +1936,916 @@
 
     // Helper: Screen manager
     function showScreen(screenId) {
+      // Hide all main containers
+      document.getElementById('screen-login').classList.add('hidden');
+      document.getElementById('screen-waiter-login').classList.add('hidden');
+      document.getElementById('app-shell').classList.add('hidden');
+      document.getElementById('waiter-shell').classList.add('hidden');
+
       if (screenId === 'login') {
         document.getElementById('screen-login').classList.remove('hidden');
-        document.getElementById('app-shell').classList.add('hidden');
         clearPinDots();
-      } else {
-        document.getElementById('screen-login').classList.add('hidden');
+      } else if (screenId === 'waiter-login') {
+        document.getElementById('screen-waiter-login').classList.remove('hidden');
+        clearWaiterPinDots();
+      } else if (screenId === 'waiter-shell') {
+        document.getElementById('waiter-shell').classList.remove('hidden');
+        showWaiterScreen('tables');
+      } else if (screenId === 'app' || screenId === 'app-shell') {
         document.getElementById('app-shell').classList.remove('hidden');
         switchTab(state.activeTab);
       }
+    }
+
+    function showWaiterScreen(subScreenId) {
+      document.getElementById('waiter-screen-tables').classList.add('hidden');
+      document.getElementById('waiter-screen-order').classList.add('hidden');
+
+      if (subScreenId === 'tables') {
+        document.getElementById('waiter-screen-tables').classList.remove('hidden');
+        loadWaiterTables();
+      } else if (subScreenId === 'order') {
+        document.getElementById('waiter-screen-order').classList.remove('hidden');
+      }
+    }
+
+    // ================= WAITER LOGIN FLOW =================
+    function pressWaiterKey(num) {
+      if (state.waiterPin.length < 4) {
+        state.waiterPin += num;
+        updateWaiterPinDots();
+        if (state.waiterPin.length === 4) {
+          submitWaiterPin(state.waiterPin);
+        }
+      }
+    }
+
+    function clearWaiterPin() {
+      state.waiterPin = '';
+      updateWaiterPinDots();
+    }
+
+    function backspaceWaiterPin() {
+      state.waiterPin = state.waiterPin.slice(0, -1);
+      updateWaiterPinDots();
+    }
+
+    function updateWaiterPinDots() {
+      for (let i = 1; i <= 4; i++) {
+        const dot = document.getElementById(`waiter-pin-dot-${i}`);
+        if (state.waiterPin.length >= i) {
+          dot.classList.remove('bg-transparent', 'border-slate-700');
+          dot.classList.add('bg-emerald-500', 'border-emerald-400', 'scale-125');
+        } else {
+          dot.classList.add('bg-transparent', 'border-slate-700');
+          dot.classList.remove('bg-emerald-500', 'border-emerald-400', 'scale-125');
+        }
+      }
+    }
+
+    function clearWaiterPinDots() {
+      state.waiterPin = '';
+      updateWaiterPinDots();
+    }
+
+    async function submitWaiterPin(pin) {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/waiter-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin_code: pin })
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          state.waiter = data;
+          localStorage.setItem('waiter_pin', pin);
+          document.getElementById('header-waiter').innerText = `Ofitsiant: ${data.name}`;
+          if (document.getElementById('waiter-store-title')) {
+            document.getElementById('waiter-store-title').innerText = state.store_name || "xxMpos Cafe";
+          }
+          showToast(`Xush kelibsiz, ${data.name}!`);
+          showScreen('waiter-shell');
+        } else {
+          showToast('Noto\'g\'ri PIN-kod!', 'error');
+          clearWaiterPinDots();
+          localStorage.removeItem('waiter_pin');
+        }
+      } catch (err) {
+        showToast('Serverga ulanishda xatolik!', 'error');
+        clearWaiterPinDots();
+      }
+    }
+
+    function logoutWaiter() {
+      localStorage.removeItem('waiter_pin');
+      state.waiterPin = '';
+      state.waiter = null;
+      state.waiterCart = [];
+      state.waiterProducts = []; // Clear product cache so fresh data is loaded on next login
+      showScreen('waiter-login');
+    }
+
+
+    let waiterStatsFilter = 'today';
+
+    function openWaiterStatsModal() {
+      document.getElementById('waiter-stats-modal').classList.remove('hidden');
+      loadWaiterStats();
+    }
+
+    function closeWaiterStatsModal() {
+      document.getElementById('waiter-stats-modal').classList.add('hidden');
+    }
+
+    function changeWaiterStatsFilter(filter) {
+      waiterStatsFilter = filter;
+      
+      ['today', 'yesterday', 'week', 'month'].forEach(f => {
+        const btn = document.getElementById(`w-filter-${f}`);
+        if (!btn) return;
+        if (f === filter) {
+          btn.className = "py-1.5 rounded-lg text-[10px] font-bold text-center transition-all bg-indigo-600 text-white shadow-md shadow-indigo-650/15";
+        } else {
+          btn.className = "py-1.5 rounded-lg text-[10px] font-bold text-center transition-all text-slate-400 hover:text-white";
+        }
+      });
+      
+      loadWaiterStats();
+    }
+
+    async function loadWaiterStats() {
+      const activeWaiter = state.waiter || (localStorage.getItem('waiter_pin') ? { waiter_id: null } : null);
+      if (!activeWaiter) return;
+      try {
+        let start = new Date();
+        let end = new Date();
+        if (waiterStatsFilter === 'today') {
+          start.setHours(0,0,0,0);
+          end.setHours(23,59,59,999);
+        } else if (waiterStatsFilter === 'yesterday') {
+          start.setDate(start.getDate() - 1);
+          start.setHours(0,0,0,0);
+          end.setDate(end.getDate() - 1);
+          end.setHours(23,59,59,999);
+        } else if (waiterStatsFilter === 'week') {
+          start.setDate(start.getDate() - 7);
+          start.setHours(0,0,0,0);
+          end.setHours(23,59,59,999);
+        } else if (waiterStatsFilter === 'month') {
+          start.setDate(start.getDate() - 30);
+          start.setHours(0,0,0,0);
+          end.setHours(23,59,59,999);
+        }
+
+        const pinToken = state.waiterPin || localStorage.getItem('waiter_pin');
+        let wId = activeWaiter.waiter_id;
+        if (!wId && pinToken) {
+          const verifyRes = await fetch(`${API_URL}/api/auth/waiter-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin_code: pinToken })
+          });
+          if (verifyRes.ok) {
+            const verifyData = await verifyRes.json();
+            state.waiter = verifyData;
+            wId = verifyData.waiter_id;
+          }
+        }
+
+        if (!wId) return;
+
+        const res = await fetch(`${API_URL}/api/waiter/report?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}&waiterId=${wId}`, {
+          headers: { 'Authorization': pinToken }
+        });
+        
+        if (res.ok) {
+          const result = await res.json();
+          if (result.success && result.data) {
+            const { waiter, receipts } = result.data;
+            const totalCommission = receipts.reduce((sum, r) => sum + r.waiter_commission, 0);
+            const totalSales = receipts.reduce((sum, r) => sum + r.total_amount, 0);
+            
+            document.getElementById('w-stats-receipts').innerText = receipts.length + " ta";
+            document.getElementById('w-stats-percent').innerText = waiter.percentage + "%";
+            document.getElementById('w-stats-sales').innerText = Math.round(totalSales).toLocaleString('ru-RU') + " UZS";
+            document.getElementById('w-stats-commission').innerText = Math.round(totalCommission).toLocaleString('ru-RU') + " UZS";
+            
+            const listDiv = document.getElementById('w-stats-checks-list');
+            listDiv.innerHTML = '';
+            if (receipts.length === 0) {
+              listDiv.innerHTML = '<div class="text-center text-slate-500 py-4 text-[10px] font-semibold">Cheklar mavjud emas</div>';
+            } else {
+              receipts.forEach(r => {
+                let dateStr = r.created_at;
+                try {
+                  const parts = r.created_at.split(' ');
+                  if (parts.length === 2) {
+                    const timeParts = parts[1].split(':');
+                    dateStr = `${timeParts[0]}:${timeParts[1]}`;
+                  }
+                } catch (_) {}
+                
+                const item = document.createElement('div');
+                item.className = "flex justify-between items-center p-3 bg-slate-950/40 border border-slate-850 rounded-xl text-xs";
+                item.innerHTML = `
+                  <div>
+                    <div class="font-bold text-white">Chek #${r.shift_receipt_number}</div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">${dateStr} | ${r.payment_method === 'cash' ? 'Naqd' : r.payment_method === 'card' ? 'Plastik' : 'Nasiya'}</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-bold text-white">${Math.round(r.total_amount).toLocaleString('ru-RU')}</div>
+                    <div class="text-[10px] text-emerald-400 font-black">+${Math.round(r.waiter_commission).toLocaleString('ru-RU')}</div>
+                  </div>
+                `;
+                listDiv.appendChild(item);
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // ================= WAITER TABLES MAP =================
+    async function loadWaiterTables() {
+      try {
+        const res = await fetch(`${API_URL}/api/waiter/tables`, {
+          headers: { 'Authorization': state.waiterPin || localStorage.getItem('waiter_pin') }
+        });
+        if (res.ok) {
+          const result = await res.json();
+          state.waiterTables = result.data;
+          renderWaiterTables();
+        } else {
+          showToast('Stollarni yuklashda xatolik!', 'error');
+        }
+      } catch (err) {
+        showToast('Serverga ulanishda xatolik!', 'error');
+      }
+    }
+
+    function renderWaiterTables() {
+      // Render Seating Zone tabs dynamically
+      const tabsContainer = document.getElementById('waiter-zone-tabs');
+      if (tabsContainer) {
+        tabsContainer.innerHTML = '';
+        const zones = [];
+        if (state.waiterTables && state.waiterTables.length > 0) {
+          state.waiterTables.forEach(t => {
+            if (t.zone && !zones.includes(t.zone)) {
+              zones.push(t.zone);
+            }
+          });
+        }
+        if (zones.length === 0) {
+          zones.push('Zal', 'Terrassa', 'Chorpoya', 'Dostavka');
+        }
+        
+        // Ensure Dostavka is always last if present
+        const dIdx = zones.indexOf('Dostavka');
+        if (dIdx > -1) {
+          zones.splice(dIdx, 1);
+          zones.push('Dostavka');
+        }
+
+        // If the selected zone is not in the list anymore, select the first one
+        if (!state.waiterSelectedZone || !zones.includes(state.waiterSelectedZone)) {
+          state.waiterSelectedZone = zones[0];
+        }
+
+        for (const z of zones) {
+          const isActive = (state.waiterSelectedZone || 'Zal') === z;
+          const btnClass = isActive 
+            ? "px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10 active:scale-95 shrink-0"
+            : "px-4 py-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0";
+          tabsContainer.insertAdjacentHTML('beforeend', `<button onclick="setWaiterZone('${z}')" class="${btnClass} cursor-pointer">${z}</button>`);
+        }
+      }
+
+      const grid = document.getElementById('waiter-tables-grid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      // If zone is Dostavka, show "+ Yangi Dostavka" button
+      if ((state.waiterSelectedZone || 'Zal') === 'Dostavka') {
+        const addBtnHtml = `
+          <button onclick="openAddDeliveryModal()" class="col-span-2 w-full p-4 rounded-3xl bg-slate-900 border border-emerald-500/30 text-emerald-400 hover:text-white text-xs font-black transition-all flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5 text-emerald-400">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Yangi yetkazib berish (Dostavka)
+          </button>
+        `;
+        grid.insertAdjacentHTML('beforeend', addBtnHtml);
+      }
+
+      const filteredTables = (state.waiterTables || []).filter(t => (t.zone || 'Zal') === (state.waiterSelectedZone || 'Zal'));
+
+      for (const table of filteredTables) {
+        const isOccupied = table.status === 'occupied';
+        const cardClass = isOccupied 
+          ? "p-6 rounded-3xl bg-slate-900 border border-rose-500/30 flex flex-col justify-between items-center text-center shadow-lg active:scale-95 transition-all min-h-[130px] cursor-pointer" 
+          : "p-6 rounded-3xl bg-slate-900 border border-emerald-500/20 flex flex-col justify-between items-center text-center shadow-lg active:scale-95 transition-all min-h-[130px] cursor-pointer";
+        
+        const badgeClass = isOccupied 
+          ? "px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full text-[10px] font-black text-rose-400"
+          : "px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-[10px] font-black text-emerald-400";
+        
+        const badgeText = isOccupied ? "BAND" : "BO'SH";
+        
+        let infoHtml = '';
+        if (table.locked_by) {
+          infoHtml = `<span class="text-[10px] block text-rose-500 font-bold mt-1">🔐 ${table.locked_by}</span>`;
+        } else if (table.waiter_name) {
+          infoHtml = `<span class="text-[10px] block text-emerald-400 font-bold mt-1">👤 ${table.waiter_name}</span>`;
+        }
+
+        let durationHtml = '';
+        if (isOccupied && table.opened_at) {
+          try {
+            const openedTime = new Date(table.opened_at.replace(' ', 'T'));
+            const now = new Date();
+            const diffMs = now - openedTime;
+            if (!isNaN(diffMs) && diffMs >= 0) {
+              const diffMins = Math.floor(diffMs / 60000);
+              const hours = Math.floor(diffMins / 60);
+              const mins = diffMins % 60;
+              const durText = hours > 0 ? `${hours}s ${mins}m` : `${mins}m`;
+              durationHtml = `<span class="text-[10px] block text-rose-400 font-black mt-1">⏳ ${durText}</span>`;
+            }
+          } catch (_) {}
+        }
+
+        const cardHtml = `
+          <button onclick="selectWaiterTable(${table.id}, '${table.name}')" class="${cardClass}">
+            <div class="w-12 h-12 rounded-2xl flex items-center justify-center ${isOccupied ? 'bg-rose-500/10' : 'bg-emerald-500/10'} mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6 ${isOccupied ? 'text-rose-400' : 'text-emerald-400'}">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25A2.25 2.25 0 0 1 13.5 8.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+              </svg>
+            </div>
+            <div class="text-sm font-bold text-white mb-1">${table.name}</div>
+            <span class="${badgeClass}">${badgeText}</span>
+            ${infoHtml}
+            ${durationHtml}
+          </button>
+        `;
+        grid.insertAdjacentHTML('beforeend', cardHtml);
+      }
+    }
+
+    function setWaiterZone(zone) {
+      state.waiterSelectedZone = zone;
+      renderWaiterTables();
+    }
+
+    function openAddDeliveryModal() {
+      document.getElementById('waiter-delivery-modal').classList.remove('hidden');
+      document.getElementById('delivery-cust-name').value = '';
+      document.getElementById('delivery-cust-phone').value = '';
+      document.getElementById('delivery-cust-address').value = '';
+    }
+
+    function closeAddDeliveryModal() {
+      document.getElementById('waiter-delivery-modal').classList.add('hidden');
+    }
+
+    async function createDeliveryOrder() {
+      const name = document.getElementById('delivery-cust-name').value.trim();
+      const phone = document.getElementById('delivery-cust-phone').value.trim();
+      const address = document.getElementById('delivery-cust-address').value.trim();
+
+      if (!name || !phone || !address) {
+        showToast('Iltimos, barcha maydonlarni to\'ldiring!', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/api/waiter/order/add-delivery`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': state.waiterPin || localStorage.getItem('waiter_pin')
+          },
+          body: JSON.stringify({
+            customerName: name,
+            customerPhone: phone,
+            customerAddress: address
+          })
+        });
+
+        if (res.ok) {
+          showToast('Dostavka buyurtmasi yaratildi!');
+          closeAddDeliveryModal();
+          await loadWaiterTables();
+        } else {
+          showToast('Xatolik yuz berdi!', 'error');
+        }
+      } catch (err) {
+        showToast('Serverga ulanishda xatolik!', 'error');
+      }
+    }
+
+    async function selectWaiterTable(tableId, tableName) {
+      try {
+        const lockRes = await fetch(`${API_URL}/api/waiter/lock-table`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': state.waiterPin || localStorage.getItem('waiter_pin') 
+          },
+          body: JSON.stringify({ table_id: tableId })
+        });
+        if (lockRes.ok) {
+          const lockResult = await lockRes.json();
+          if (!lockResult.success) {
+            showToast(`Ushbu stol band! Hozirda "${lockResult.lockedBy}" ishlatmoqda!`, 'error');
+            return;
+          }
+        } else {
+          showToast('Stolni band qilishda xatolik yuz berdi!', 'error');
+          return;
+        }
+      } catch (err) {
+        console.error("Lock error:", err);
+        showToast('Serverga ulanishda xatolik!', 'error');
+        return;
+      }
+
+      state.waiterActiveTableId = tableId;
+      state.waiterActiveTableName = tableName;
+      state.waiterCart = [];
+      
+      document.getElementById('waiter-order-title').innerText = tableName;
+      document.getElementById('waiter-order-subtitle').innerText = 'Yuklanmoqda...';
+
+      // Load products if not loaded yet
+      if (state.waiterProducts.length === 0) {
+        await loadWaiterProducts();
+      }
+
+      // Check if table is occupied, load active order
+      try {
+        const res = await fetch(`${API_URL}/api/waiter/active-order/${tableId}`, {
+          headers: { 'Authorization': state.waiterPin || localStorage.getItem('waiter_pin') }
+        });
+        if (res.ok) {
+          const result = await res.json();
+          if (result.success && result.data) {
+            state.waiterActiveOrderOwnerId = result.data.order.waiter_id;
+            // Populate waiter cart with existing items
+            state.waiterCart = result.data.items.map(item => ({
+              id: item.id,
+              name: item.name,
+              qty: item.qty,
+              price: item.price,
+              unit: item.unit || 'dona'
+            }));
+            document.getElementById('waiter-order-subtitle').innerText = 'Tahrirlash rejimi';
+          } else {
+            state.waiterActiveOrderOwnerId = null;
+            document.getElementById('waiter-order-subtitle').innerText = 'Yangi buyurtma';
+          }
+        }
+      } catch (err) {
+        console.error("Error loading active order:", err);
+        document.getElementById('waiter-order-subtitle').innerText = 'Yangi buyurtma';
+        state.waiterActiveOrderOwnerId = null;
+      }
+
+      const isLocked = state.waiterActiveOrderOwnerId !== null && 
+                       state.waiter && 
+                       state.waiter.waiter_id !== state.waiterActiveOrderOwnerId;
+
+      const lockBanner = document.getElementById('waiter-order-lock-banner');
+      if (lockBanner) {
+        if (isLocked) {
+          lockBanner.classList.remove('hidden');
+        } else {
+          lockBanner.classList.add('hidden');
+        }
+      }
+
+      updateTransferTableButtonVisibility();
+
+      showWaiterScreen('order');
+      renderCategories();
+      renderWaiterMenuProducts();
+      updateKitchenButton();
+    }
+
+    // ================= WAITER PRODUCTS & CART =================
+    async function loadWaiterProducts() {
+      try {
+        const res = await fetch(`${API_URL}/api/waiter/products`, {
+          headers: { 'Authorization': state.waiterPin || localStorage.getItem('waiter_pin') }
+        });
+        if (res.ok) {
+          const result = await res.json();
+          state.waiterProducts = result.data;
+        } else {
+          showToast('Taomlar ro\'yxatini yuklashda xatolik!', 'error');
+        }
+      } catch (err) {
+        showToast('Serverga ulanishda xatolik!', 'error');
+      }
+    }
+
+    function renderCategories() {
+      const catContainer = document.getElementById('waiter-categories');
+      if (!catContainer) return;
+      catContainer.innerHTML = '';
+
+      // Get unique categories from state.waiterProducts
+      const uniqueCategories = new Set();
+      uniqueCategories.add('Barchasi');
+      for (const p of state.waiterProducts) {
+        if (p.category) {
+          uniqueCategories.add(p.category);
+        }
+      }
+      const categories = Array.from(uniqueCategories);
+
+      if (!categories.includes(state.waiterSelectedCategory)) {
+        state.waiterSelectedCategory = 'Barchasi';
+      }
+      
+      for (const cat of categories) {
+        const isActive = state.waiterSelectedCategory === cat;
+        const btnClass = isActive
+          ? "px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10 active:scale-95"
+          : "px-4 py-2 bg-slate-900 border border-slate-850/20 text-slate-400 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-95";
+        
+        const btnHtml = `<button onclick="setWaiterCategory('${cat}')" class="${btnClass}">${cat}</button>`;
+        catContainer.insertAdjacentHTML('beforeend', btnHtml);
+      }
+    }
+
+    function setWaiterCategory(cat) {
+      state.waiterSelectedCategory = cat;
+      renderCategories();
+      renderWaiterMenuProducts();
+    }
+
+    function onWaiterMenuSearch() {
+      state.waiterMenuQuery = document.getElementById('waiter-menu-search').value.trim();
+      renderWaiterMenuProducts();
+    }
+
+    function renderWaiterMenuProducts() {
+      const container = document.getElementById('waiter-menu-products');
+      if (!container) return;
+      container.innerHTML = '';
+
+      // Filter products
+      let filtered = state.waiterProducts;
+      if (state.waiterSelectedCategory !== 'Barchasi') {
+        filtered = filtered.filter(p => p.category === state.waiterSelectedCategory);
+      }
+      if (state.waiterMenuQuery) {
+        const q = state.waiterMenuQuery.toLowerCase();
+        filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="text-center text-slate-500 py-8 text-xs font-semibold">Taom topilmadi</div>`;
+        return;
+      }
+
+      const isLocked = state.waiterActiveOrderOwnerId !== null && 
+                       state.waiter && 
+                       state.waiter.waiter_id !== state.waiterActiveOrderOwnerId;
+
+      for (const p of filtered) {
+        const cartItem = state.waiterCart.find(item => item.id === p.id);
+        const qty = cartItem ? cartItem.qty : 0;
+        
+        let actionsHtml = '';
+        if (isLocked) {
+          if (qty > 0) {
+            actionsHtml = `
+              <div class="flex items-center bg-slate-800/40 border border-slate-800/80 rounded-xl overflow-hidden opacity-60">
+                <button disabled class="p-2.5 text-slate-650 cursor-not-allowed">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
+                  </svg>
+                </button>
+                <span class="px-3 text-sm font-black text-slate-400 min-w-[24px] text-center">${qty}</span>
+                <button disabled class="p-2.5 text-slate-650 cursor-not-allowed">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
+              </div>
+            `;
+          } else {
+            actionsHtml = `
+              <button disabled class="px-4 py-2 rounded-xl bg-slate-800 text-slate-500 text-xs font-black flex items-center gap-1 opacity-50 cursor-not-allowed">
+                Qo'shish
+              </button>
+            `;
+          }
+        } else if (qty === 0) {
+          actionsHtml = `
+            <button onclick="changeWaiterCartQty(${p.id}, 1)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-xs font-black text-white flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Qo'shish
+            </button>
+          `;
+        } else {
+          actionsHtml = `
+            <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+              <button onclick="changeWaiterCartQty(${p.id}, -1)" class="p-2.5 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
+                </svg>
+              </button>
+              <span class="px-3 text-sm font-black text-white min-w-[24px] text-center">${qty}</span>
+              <button onclick="changeWaiterCartQty(${p.id}, 1)" class="p-2.5 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            </div>
+          `;
+        }
+
+        const priceFormatted = formatMoney(p.sell_price) + " UZS";
+        const prodHtml = `
+          <div class="flex items-center justify-between p-4 bg-slate-900/60 border border-slate-850 rounded-2xl">
+            <div class="flex-1 pr-3">
+              <div class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">${p.category}</div>
+              <h5 class="text-sm font-bold text-white leading-tight mb-1">${p.name}</h5>
+              <div class="text-xs font-black text-emerald-400">${priceFormatted}</div>
+            </div>
+            <div>
+              ${actionsHtml}
+            </div>
+          </div>
+        `;
+        container.insertAdjacentHTML('beforeend', prodHtml);
+      }
+    }
+
+    function changeWaiterCartQty(prodId, change) {
+      const prod = state.waiterProducts.find(p => p.id === prodId);
+      if (!prod) return;
+
+      let cartItem = state.waiterCart.find(item => item.id === prodId);
+      
+      if (!cartItem && change > 0) {
+        cartItem = {
+          id: prod.id,
+          name: prod.name,
+          qty: 0,
+          price: prod.sell_price,
+          unit: prod.unit || 'dona'
+        };
+        state.waiterCart.push(cartItem);
+      }
+
+      if (cartItem) {
+        cartItem.qty += change;
+        if (cartItem.qty <= 0) {
+          state.waiterCart = state.waiterCart.filter(item => item.id !== prodId);
+        }
+      }
+
+      renderWaiterMenuProducts();
+      updateKitchenButton();
+    }
+
+    function updateKitchenButton() {
+      const btn = document.getElementById('btn-send-to-kitchen');
+      const textSpan = document.getElementById('kitchen-btn-text');
+      const btnTakeOver = document.getElementById('btn-take-over');
+      if (!btn || !textSpan || !btnTakeOver) return;
+
+      const isLocked = state.waiterActiveOrderOwnerId !== null && 
+                       state.waiter && 
+                       state.waiter.waiter_id !== state.waiterActiveOrderOwnerId;
+
+      if (isLocked) {
+        btn.classList.add('hidden');
+        btnTakeOver.classList.remove('hidden');
+      } else {
+        btnTakeOver.classList.add('hidden');
+        btn.classList.remove('hidden');
+
+        let total = 0;
+        for (const item of state.waiterCart) {
+          total += (item.qty * item.price);
+        }
+
+        if (state.waiterCart.length === 0) {
+          textSpan.innerText = "Oshxonaga yuborish (Bo'sh)";
+          btn.disabled = true;
+          btn.classList.add('opacity-50', 'pointer-events-none');
+        } else {
+          textSpan.innerText = `Oshxonaga yuborish — ${formatMoney(total)} UZS`;
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'pointer-events-none');
+        }
+      }
+    }
+
+    function updateTransferTableButtonVisibility() {
+      const btn = document.getElementById('btn-transfer-table-waiter');
+      if (!btn) return;
+      const isOccupied = state.waiterActiveOrderOwnerId !== null;
+      const isLocked = isOccupied && state.waiter && state.waiter.waiter_id !== state.waiterActiveOrderOwnerId;
+      
+      if (isOccupied && !isLocked) {
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
+
+    async function takeOverActiveOrder() {
+      const pin = prompt("Tahrirlashni o'zlashtirish uchun PIN-kodni kiriting:");
+      if (!pin) return;
+
+      try {
+        // Validate against waiter login first to verify PIN is valid and extract the waiter's details
+        const loginRes = await fetch(`${API_URL}/api/auth/waiter-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin_code: pin })
+        });
+        
+        if (!loginRes.ok) {
+          showToast("Noto'g'ri PIN-kod!", "error");
+          return;
+        }
+        
+        const loginData = await loginRes.json();
+        const targetWaiterId = loginData.waiter_id;
+
+        // Perform order transfer using verified PIN
+        const res = await fetch(`${API_URL}/api/waiter/order/transfer-waiter`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': pin
+          },
+          body: JSON.stringify({
+            table_id: state.waiterActiveTableId,
+            target_waiter_id: targetWaiterId
+          })
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          if (result.success) {
+            showToast("Tahrirlash muvaffaqiyatli o'zlashtirildi!");
+            
+            // If the waiter took it over as themselves, update active credentials in PWA state
+            if (pin === state.waiterPin) {
+              state.waiter = loginData;
+            }
+            
+            // Reload the table state
+            await selectWaiterTable(state.waiterActiveTableId, state.waiterActiveTableName);
+          } else {
+            showToast("Xatolik yuz berdi: " + (result.error || "Noma'lum xatolik"), "error");
+          }
+        } else {
+          const errData = await res.json();
+          showToast("Xatolik: " + (errData.error || "Xatolik yuz berdi"), "error");
+        }
+      } catch (err) {
+        showToast("Serverga ulanishda xatolik!", "error");
+        console.error(err);
+      }
+    }
+
+    async function transferWaiterTablePrompt() {
+      const freeTables = (state.waiterTables || []).filter(t => t.status !== 'occupied' && t.zone !== 'Dostavka');
+      if (freeTables.length === 0) {
+        showToast("Bo'sh stollar mavjud emas!", "error");
+        return;
+      }
+      
+      let msg = "Ko'chirmoqchi bo'lgan stol nomini kiriting:\nBo'sh stollar:\n";
+      freeTables.forEach(t => {
+        msg += `- ${t.name}\n`;
+      });
+      
+      const targetTableName = prompt(msg);
+      if (!targetTableName) return;
+      
+      const targetTable = freeTables.find(t => t.name.toLowerCase() === targetTableName.trim().toLowerCase());
+      if (!targetTable) {
+        showToast("Noto'g'ri stol nomi kiritildi!", "error");
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API_URL}/api/waiter/table/transfer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': state.waiterPin || localStorage.getItem('waiter_pin')
+          },
+          body: JSON.stringify({
+            from_table_id: state.waiterActiveTableId,
+            to_table_id: targetTable.id
+          })
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          if (result.success) {
+            showToast(`Stol ko'chirildi: ${state.waiterActiveTableName} -> ${targetTable.name}`);
+            showWaiterScreen('tables');
+          } else {
+            showToast("Ko'chirishda xatolik: " + (result.error || "Noma'lum xatolik"), "error");
+          }
+        } else {
+          const errData = await res.json();
+          showToast("Xatolik: " + (errData.error || "Xatolik yuz berdi"), "error");
+        }
+      } catch (err) {
+        showToast("Serverga ulanishda xatolik!", "error");
+        console.error(err);
+      }
+    }
+
+    async function goBackToTables() {
+      if (state.waiterActiveTableId) {
+        try {
+          await fetch(`${API_URL}/api/waiter/unlock-table`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': state.waiterPin || localStorage.getItem('waiter_pin')
+            },
+            body: JSON.stringify({ table_id: state.waiterActiveTableId })
+          });
+        } catch (err) {
+          console.error("Unlock error:", err);
+        }
+      }
+      showWaiterScreen('tables');
+    }
+
+    async function sendOrderToKitchen() {
+      if (state.waiterCart.length === 0) return;
+      const btn = document.getElementById('btn-send-to-kitchen');
+      const textSpan = document.getElementById('kitchen-btn-text');
+      
+      btn.disabled = true;
+      textSpan.innerText = "Yuborilmoqda...";
+
+      try {
+        const res = await fetch(`${API_URL}/api/waiter/orders/save`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': state.waiterPin || localStorage.getItem('waiter_pin')
+          },
+          body: JSON.stringify({
+            table_id: state.waiterActiveTableId,
+            cart_items: state.waiterCart
+          })
+        });
+
+        if (res.ok) {
+          showToast('Buyurtma oshxonaga yuborildi!');
+          
+          try {
+            await fetch(`${API_URL}/api/waiter/unlock-table`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': state.waiterPin || localStorage.getItem('waiter_pin')
+              },
+              body: JSON.stringify({ table_id: state.waiterActiveTableId })
+            });
+          } catch (unlockErr) {
+            console.error("Unlock error:", unlockErr);
+          }
+
+          state.waiterCart = [];
+          showWaiterScreen('tables');
+        } else {
+          showToast('Xatolik yuz berdi!', 'error');
+          btn.disabled = false;
+          updateKitchenButton();
+        }
+      } catch (err) {
+        showToast('Serverga ulanishda xatolik!', 'error');
+        btn.disabled = false;
+        updateKitchenButton();
+      }
+    }
+
+    function formatMoney(amount) {
+      return String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
     }
 
     // Helper: Format money inputs dynamically (Thousand spaces and digit blocking)

@@ -1,8 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
-import {
+import { 
   Search, ShoppingCart, Trash2, Plus, Minus,
-  Banknote, CreditCard, Clock, X, CheckCircle2, PackageOpen, Users, AlertCircle
+  User, Barcode, HelpCircle, Check, Play,
+  CheckCircle2, CreditCard, Clock, ArrowLeft, RefreshCw, Eye, EyeOff, Wifi, X,
+  ShieldAlert, Banknote, Users, PackageOpen, AlertCircle
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands } from './utils';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
@@ -46,12 +49,32 @@ function formatPhoneNumber(value) {
 export default memo(function Cashier({ isActive }) {
   const { 
     cart, setCart, carts, activeCartId, setActiveCartId, t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts,
-    globalCustomers: customers, fetchGlobalCustomers
+    globalCustomers: customers, fetchGlobalCustomers, businessType
   } = useApp();
   const [debtForm, setDebtForm] = useState({ id: '', name: '', phone: '' });
 
+  // Network / QR Code Modal State
+  const [showNetworkModal, setShowNetworkModal] = useState(false);
+  const [localIps, setLocalIps] = useState([]);
+  const [ngrokUrl, setNgrokUrl] = useState('');
+  const [expressPort, setExpressPort] = useState(4000);
+
   const [query, setQuery]             = useState('');
   const [toast, setToast]             = useState(null);
+
+  const [managerAction, setManagerAction] = useState(null);
+  const [managerPin, setManagerPin] = useState('');
+  const [managerError, setManagerError] = useState('');
+
+  const checkManagerApproval = (action) => {
+    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === '7532') {
+      action();
+    } else {
+      setManagerAction(() => action);
+      setManagerPin('');
+      setManagerError('');
+    }
+  };
   const [printData, setPrintData]     = useState(null);
   const [isPrintEnabled, setIsPrintEnabled] = useState(() => localStorage.getItem('isPrintEnabled') !== 'false');
   const receiptPrintRef               = useRef(null);
@@ -90,6 +113,32 @@ export default memo(function Cashier({ isActive }) {
       });
     }
   }, [fetchGlobalProducts, fetchGlobalCustomers]);
+
+  useEffect(() => {
+    if (!window.api) return;
+    
+    // Load local IPs
+    if (window.api.getLocalIPs) {
+      window.api.getLocalIPs().then(ips => setLocalIps(ips || []));
+    }
+    
+    // Load Ngrok Url
+    if (window.api.getNgrokUrl) {
+      window.api.getNgrokUrl().then(url => setNgrokUrl(url || ''));
+    }
+
+    // Load Express Port
+    if (window.api.getExpressPort) {
+      window.api.getExpressPort().then(port => setExpressPort(port || 4000));
+    }
+
+    // Listen for updates
+    if (window.api.onNgrokUrlUpdated) {
+      window.api.onNgrokUrlUpdated((url) => {
+        setNgrokUrl(url || '');
+      });
+    }
+  }, []);
 
   const [visibleCount, setVisibleCount] = useState(50);
   const [receipt, setReceipt]         = useState(null);
@@ -361,6 +410,14 @@ export default memo(function Cashier({ isActive }) {
 
   const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id));
   const clearCart = () => setCart([]);
+
+  const handleRemoveFromCart = (id) => {
+    checkManagerApproval(() => removeFromCart(id));
+  };
+
+  const handleClearCart = () => {
+    checkManagerApproval(() => clearCart());
+  };
   
   const total = cart.reduce((sum, i) => {
     const qty = parseFloat(i.qty) || 0;
@@ -715,25 +772,35 @@ export default memo(function Cashier({ isActive }) {
     <div className="h-full flex gap-4 min-h-0">
       {/* ══ LEFT: Search Panel ══════════════════════════════════════════════ */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        <div className="relative mb-4">
-          <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={handleQueryChange}
-            onKeyDown={handleKeyDown}
-            placeholder={t('searchPlaceholder')}
-            className="w-full pl-12 pr-12 py-4 text-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:outline-none rounded-2xl transition-colors shadow-sm"
-          />
-          {query && (
-            <button
-              onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              <X size={20} />
-            </button>
-          )}
+        <div className="flex gap-2 mb-4 shrink-0">
+          <div className="relative flex-1">
+            <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={handleQueryChange}
+              onKeyDown={handleKeyDown}
+              placeholder={t('searchPlaceholder')}
+              className="w-full pl-12 pr-12 py-4 text-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:outline-none rounded-2xl transition-colors shadow-sm"
+            />
+            {query && (
+              <button
+                onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X size={20} />
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowNetworkModal(true)}
+            title="Terminal ulanish sozlamalari (QR kod)"
+            className="px-5 bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-200 dark:border-gray-700 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95 hover:scale-[1.02]"
+          >
+            <Wifi size={24} />
+          </button>
         </div>
 
         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
@@ -812,7 +879,7 @@ export default memo(function Cashier({ isActive }) {
             )}
           </div>
           {cart.length > 0 && (
-            <button onClick={clearCart} className="text-sm font-semibold text-red-500 hover:text-red-600 dark:hover:text-red-400 transition-colors px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md">
+            <button onClick={handleClearCart} className="text-sm font-semibold text-red-500 hover:text-red-600 dark:hover:text-red-400 transition-colors px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md">
               {t('clearCart')}
             </button>
           )}
@@ -861,7 +928,7 @@ export default memo(function Cashier({ isActive }) {
                     {item.name}
                   </p>
                   <button
-                    onClick={() => removeFromCart(item.id)}
+                    onClick={() => handleRemoveFromCart(item.id)}
                     className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded-md transition-colors shrink-0"
                   >
                     <X size={16} />
@@ -1199,6 +1266,215 @@ export default memo(function Cashier({ isActive }) {
           cashierName={currentUser?.name}
         />
       </div>
+
+      {/* Network / Connection QR Codes Modal */}
+      {showNetworkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 transition-colors">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-150 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/10">
+              <div className="flex items-center gap-3">
+                <Wifi className="text-blue-600 dark:text-blue-400" size={24} />
+                <div>
+                  <h3 className="text-lg font-black text-gray-900 dark:text-white">Terminalga ulanish</h3>
+                  <p className="text-xs font-semibold text-gray-455 dark:text-gray-500">
+                    {businessType === 'restaurant' 
+                      ? "Afitsiantlar va masofaviy ulanish uchun QR kodlar" 
+                      : "Masofaviy boshqarish va ulanish QR kodlari"}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowNetworkModal(false)} 
+                className="p-2 text-gray-400 hover:text-gray-650 dark:hover:text-gray-200 cursor-pointer rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[60vh] space-y-6 custom-scrollbar">
+              {/* Lokal Tarmoq (WiFi) Section */}
+              {businessType === 'restaurant' && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/60 pb-2 flex items-center gap-2">
+                    <span className="text-emerald-500">📶</span> Lokal tarmoq (WiFi) — Afitsiantlar uchun
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    Afitsiantlar telefonlari ushbu kompyuter bilan <b>bir xil WiFi tarmoqqa</b> ulangan bo'lishi kerak. So'ng quyidagi QR kodni skanerlash orqali dasturga kirishadi.
+                  </p>
+
+                  {localIps.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {localIps.map((ip, idx) => {
+                        const waiterUrl = `http://${ip}:${expressPort}/mobile`;
+                        return (
+                          <div key={idx} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
+                            <span className="text-xs font-black px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-md">
+                              IP: {ip}
+                            </span>
+                            <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
+                              <QRCodeSVG
+                                value={waiterUrl}
+                                size={140}
+                                level="M"
+                                includeMargin={false}
+                                fgColor="#0f172a"
+                                bgColor="#ffffff"
+                              />
+                            </div>
+                            <div className="text-center w-full">
+                              <a
+                                href={waiterUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 block"
+                              >
+                                {waiterUrl}
+                              </a>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(waiterUrl);
+                                setToast("Havola nusxalandi!");
+                              }}
+                              className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
+                            >
+                              📋 Havolani nusxalash
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold">
+                      ⚠️ Lokal IP topilmadi. Tarmoq sozlamalarini va kompyuter WiFi ulanishini tekshiring.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tashqi Tarmoq (Ngrok / Internet) Section */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/60 pb-2 flex items-center gap-2">
+                  <span className="text-blue-500">🌐</span> Tashqi tarmoq (Internet / Ngrok) — Masofaviy nazorat
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Internet orqali dunyoning istalgan nuqtasidan ulanish uchun (WiFi shart emas).
+                </p>
+
+                {ngrokUrl ? (() => {
+                  const normalizedNgrok = ngrokUrl.replace(/\/$/, '') + '/mobile';
+                  return (
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
+                      <span className="text-xs font-black px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-md">
+                        Faol Tunnel
+                      </span>
+                      <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
+                        <QRCodeSVG
+                          value={normalizedNgrok}
+                          size={140}
+                          level="M"
+                          includeMargin={false}
+                          fgColor="#0f172a"
+                          bgColor="#ffffff"
+                        />
+                      </div>
+                      <div className="text-center w-full">
+                        <a
+                          href={normalizedNgrok}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-450 break-all underline hover:text-emerald-500 block"
+                        >
+                          {normalizedNgrok}
+                        </a>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(normalizedNgrok);
+                          setToast("Havola nusxalandi!");
+                        }}
+                        className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
+                      >
+                        📋 Havolani nusxalash
+                      </button>
+                    </div>
+                  );
+                })() : (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold">
+                    ℹ️ Tashqi tunnel (Ngrok) yoqilmagan. Uni yoqish uchun Sozlamalar -{'>'} Tarmoq sozlamalari bo'limiga o'ting.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-150 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowNetworkModal(false)}
+                className="py-2 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-md cursor-pointer"
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Manager Approval PIN Modal */}
+      {managerAction && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors p-6">
+            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+              <ShieldAlert className="text-red-500" size={20} />
+              Menejer tasdig'i talab etiladi
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-semibold">
+              Ushbu tovar yoki amalni bekor qilish uchun menejer yoki admin PIN-kodini kiriting.
+            </p>
+            <input
+              type="password"
+              maxLength={4}
+              placeholder="PIN"
+              value={managerPin}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '');
+                setManagerPin(val);
+                if (val.length === 4) {
+                  window.api.verifyPin(val).then(res => {
+                    if (res && res.success && res.valid && (res.cashier.role === 'manager' || res.cashier.role === 'admin')) {
+                      managerAction();
+                      setManagerAction(null);
+                    } else if (val === '7532') {
+                      managerAction();
+                      setManagerAction(null);
+                    } else {
+                      setManagerError("PIN noto'g'ri yoki ruxsat etilmagan role!");
+                      setManagerPin('');
+                    }
+                  });
+                }
+              }}
+              className="w-full text-center border border-gray-350 dark:border-gray-600 rounded-lg px-3 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:outline-none text-lg tracking-widest font-bold"
+              autoFocus
+            />
+            {managerError && (
+              <p className="text-xs text-red-500 font-bold mt-2 text-center">{managerError}</p>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setManagerAction(null)}
+                className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

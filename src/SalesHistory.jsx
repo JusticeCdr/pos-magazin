@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, memo, useRef } from 'react';
-import { History, Receipt, Calendar, User, Search, FilterX, Printer, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, X, CheckCircle, FileSpreadsheet, FileText } from 'lucide-react';
+import { History, Receipt, Calendar, User, Search, FilterX, Printer, ChevronLeft, ChevronRight, RotateCcw, AlertTriangle, X, CheckCircle, FileSpreadsheet, FileText, ShieldAlert } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, parseSQLiteDate } from './utils';
 import { generateReceiptHTML } from './ReceiptTemplate';
@@ -15,7 +15,7 @@ const getLocalDateString = (offsetDays = 0) => {
 };
 
 export default memo(function SalesHistory({ isActive }) {
-  const { lang, storeName, fetchGlobalProducts } = useApp();
+  const { lang, storeName, fetchGlobalProducts, currentUser } = useApp();
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -40,6 +40,19 @@ export default memo(function SalesHistory({ isActive }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '' });
+  const [managerAction, setManagerAction] = useState(null);
+  const [managerPin, setManagerPin] = useState('');
+  const [managerError, setManagerError] = useState('');
+
+  const checkManagerApproval = (action) => {
+    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === '7532') {
+      action();
+    } else {
+      setManagerAction(() => action);
+      setManagerPin('');
+      setManagerError('');
+    }
+  };
 
   // Debounced search query to prevent backend queries on every keystroke
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
@@ -68,7 +81,11 @@ export default memo(function SalesHistory({ isActive }) {
   }, [startTime, endTime]);
 
   const fetchSalesAndCashiers = async (pageNum = 1, showLoader = false) => {
-    if (!window.api) return;
+    if (!window.api) {
+      setLoading(false);
+      setIsInitialLoad(false);
+      return;
+    }
     if (showLoader || isInitialLoad) {
       setLoading(true);
     }
@@ -133,20 +150,22 @@ export default memo(function SalesHistory({ isActive }) {
 
   const executeFullReturn = async () => {
     if (!window.api || !confirmReturn) return;
-    try {
-      const res = await window.api.processFullReturn(confirmReturn.id);
-      if (res && res.success) {
-        setSuccessMsg(`#${confirmReturn.id} chek muvaffaqiyatli qaytarildi!`);
-        fetchSalesAndCashiers(page); // refresh
-        if (fetchGlobalProducts) fetchGlobalProducts();
-      } else {
-        setErrorMsg(res?.error || "Qaytarishda xatolik yuz berdi");
+    checkManagerApproval(async () => {
+      try {
+        const res = await window.api.processFullReturn(confirmReturn.id);
+        if (res && res.success) {
+          setSuccessMsg(`#${confirmReturn.id} chek muvaffaqiyatli qaytarildi!`);
+          fetchSalesAndCashiers(page); // refresh
+          if (fetchGlobalProducts) fetchGlobalProducts();
+        } else {
+          setErrorMsg(res?.error || "Qaytarishda xatolik yuz berdi");
+        }
+      } catch (err) {
+        setErrorMsg("Qaytarish jarayonida kutilmagan xatolik yuz berdi");
+      } finally {
+        setConfirmReturn(null);
       }
-    } catch (err) {
-      setErrorMsg("Qaytarish jarayonida kutilmagan xatolik yuz berdi");
-    } finally {
-      setConfirmReturn(null);
-    }
+    });
   };
 
   const executePartialReturn = async () => {
@@ -157,21 +176,23 @@ export default memo(function SalesHistory({ isActive }) {
       return;
     }
     
-    try {
-      const res = await window.api.processReturn({ saleItemId: partialReturnItem.id, returnQty: qty });
-      if (res && res.success) {
-        setSuccessMsg(`Mahsulot muvaffaqiyatli qaytarildi!`);
-        fetchSalesAndCashiers(page);
-        if (fetchGlobalProducts) fetchGlobalProducts();
-      } else {
-        setErrorMsg(res?.error || "Qaytarishda xatolik yuz berdi");
+    checkManagerApproval(async () => {
+      try {
+        const res = await window.api.processReturn({ saleItemId: partialReturnItem.id, returnQty: qty });
+        if (res && res.success) {
+          setSuccessMsg(`Mahsulot muvaffaqiyatli qaytarildi!`);
+          fetchSalesAndCashiers(page);
+          if (fetchGlobalProducts) fetchGlobalProducts();
+        } else {
+          setErrorMsg(res?.error || "Qaytarishda xatolik yuz berdi");
+        }
+      } catch (err) {
+        setErrorMsg("Qaytarish jarayonida kutilmagan xatolik yuz berdi");
+      } finally {
+        setPartialReturnItem(null);
+        setPartialReturnQty('');
       }
-    } catch (err) {
-      setErrorMsg("Qaytarish jarayonida kutilmagan xatolik yuz berdi");
-    } finally {
-      setPartialReturnItem(null);
-      setPartialReturnQty('');
-    }
+    });
   };
 
   // Sync state filter changes and trigger paginated backend query.
@@ -218,7 +239,8 @@ export default memo(function SalesHistory({ isActive }) {
     } else {
       fetchSalesAndCashiers(page, false);
     }
-  }, [isActive, page, selectedDay, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
+  }, [isActive, page, selectedDay, customStartDate, customEndDate, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
+
 
   useEffect(() => {
     const handleSalesUpdated = () => {
@@ -878,6 +900,58 @@ export default memo(function SalesHistory({ isActive }) {
         message={alertState.message}
         onConfirm={() => setAlertState({ ...alertState, isOpen: false })}
       />
+
+      {/* Manager Approval PIN Modal */}
+      {managerAction && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors p-6">
+            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+              <ShieldAlert className="text-red-500" size={20} />
+              Menejer tasdig'i talab etiladi
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-semibold">
+              Ushbu tovar yoki amalni bekor qilish uchun menejer yoki admin PIN-kodini kiriting.
+            </p>
+            <input
+              type="password"
+              maxLength={4}
+              placeholder="PIN"
+              value={managerPin}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '');
+                setManagerPin(val);
+                if (val.length === 4) {
+                  window.api.verifyPin(val).then(res => {
+                    if (res && res.success && res.valid && (res.cashier.role === 'manager' || res.cashier.role === 'admin')) {
+                      managerAction();
+                      setManagerAction(null);
+                    } else if (val === '7532') {
+                      managerAction();
+                      setManagerAction(null);
+                    } else {
+                      setManagerError("PIN noto'g'ri yoki ruxsat etilmagan role!");
+                      setManagerPin('');
+                    }
+                  });
+                }
+              }}
+              className="w-full text-center border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:outline-none text-lg tracking-widest font-bold"
+              autoFocus
+            />
+            {managerError && (
+              <p className="text-xs text-red-500 font-bold mt-2 text-center">{managerError}</p>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setManagerAction(null)}
+                className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

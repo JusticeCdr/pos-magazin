@@ -27,7 +27,7 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
 
   if (!saleData) return null;
 
-  const { cartItems = [], total = 0, paymentMethod, saleId, date, dailyReceiptNumber, shiftReceiptNumber } = saleData;
+  const { cartItems = [], total = 0, paymentMethod, saleId, date, dailyReceiptNumber, shiftReceiptNumber, isPreCheck, comment } = saleData;
 
   const totalOriginalAll = cartItems.reduce((sum, item) => {
     return sum + (item.qty * item.sell_price);
@@ -114,6 +114,11 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
             Qayta chiqarilgan chek
           </p>
         )}
+        {isPreCheck && (
+          <div style={{ textTransform: 'uppercase', textAlign: 'center', fontWeight: '900', border: '2px solid #000', padding: '4px', fontSize: '12px', margin: '5px 0' }}>
+            STOL HISOBI (PRE-CHEK)
+          </div>
+        )}
       </div>
       
       <div style={{ marginBottom: '5px' }}>
@@ -134,29 +139,54 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
       <div style={{ borderBottom: '1px dashed #000', margin: '5px 0' }}></div>
 
       <div style={{ margin: '10px 0' }}>
-        {cartItems.map((item, index) => {
-          const itemPct = parseFloat(item.discount || item.discount_percent) || 0;
-          const itemTotalOriginal = item.qty * item.sell_price;
-          const itemDiscAmount = Math.round(itemTotalOriginal * (itemPct / 100));
-          const itemTotalFinal = itemTotalOriginal - itemDiscAmount;
+        {(() => {
+          const grouped = {};
+          cartItems.forEach((item, index) => {
+            const cat = item.category || 'Boshqa';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push({ ...item, originalIndex: index + 1 });
+          });
+          
+          return Object.entries(grouped).map(([category, items]) => (
+            <div key={category} style={{ marginBottom: '10px' }}>
+              <div style={{
+                fontWeight: '900',
+                fontSize: '11px',
+                textTransform: 'uppercase',
+                borderBottom: '1px solid #000',
+                paddingBottom: '2px',
+                marginBottom: '5px',
+                color: '#000',
+                letterSpacing: '1px'
+              }}>
+                -- {category} --
+              </div>
+              {items.map((item, idx) => {
+                const itemPct = parseFloat(item.discount || item.discount_percent) || 0;
+                const itemTotalOriginal = item.qty * item.sell_price;
+                const itemDiscAmount = Math.round(itemTotalOriginal * (itemPct / 100));
+                const itemTotalFinal = itemTotalOriginal - itemDiscAmount;
 
-          return (
-            <div key={index} style={{ marginBottom: '6px', display: 'block', fontSize: '12px' }}>
-              <div style={{ fontWeight: 'bold', wordBreak: 'break-all', lineHeight: '1.2' }}>
-                {index + 1}. {item.name}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#000', marginTop: '2px', paddingLeft: '12px' }}>
-                <span>{item.qty} {item.unit || 'dona'} x {formatNumber(item.sell_price)} so'm</span>
-                <span style={{ fontWeight: 'bold' }}>{formatNumber(itemTotalFinal)} so'm</span>
-              </div>
-              {itemPct > 0 && (
-                <div style={{ fontSize: '10px', fontStyle: 'italic', paddingLeft: '12px', color: '#555' }}>
-                  (Chegirma: -{itemPct}%)
-                </div>
-              )}
+                return (
+                  <div key={idx} style={{ marginBottom: '6px', display: 'block', fontSize: '12px' }}>
+                    <div style={{ fontWeight: 'bold', wordBreak: 'break-all', lineHeight: '1.2' }}>
+                      {item.originalIndex}. {item.name}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#000', marginTop: '2px', paddingLeft: '12px' }}>
+                      <span>{item.qty} {item.unit || 'dona'} x {formatNumber(item.sell_price)} so'm</span>
+                      <span style={{ fontWeight: 'bold' }}>{formatNumber(itemTotalFinal)} so'm</span>
+                    </div>
+                    {itemPct > 0 && (
+                      <div style={{ fontSize: '10px', fontStyle: 'italic', paddingLeft: '12px', color: '#555' }}>
+                        (Chegirma: -{itemPct}%)
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          ));
+        })()}
       </div>
 
       <div style={{ borderTop: '1px solid #000', marginTop: '5px', paddingTop: '5px' }}>
@@ -176,11 +206,18 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
           <span>JAMI:</span>
           <span>{formatNumber(total)} so'm</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', marginTop: '2px' }}>
-          <span>To'lov turi:</span>
-          <span>{paymentMethodLabel}</span>
-        </div>
+        {!isPreCheck && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', marginTop: '2px' }}>
+            <span>To'lov turi:</span>
+            <span>{paymentMethodLabel}</span>
+          </div>
+        )}
       </div>
+      {comment && (
+        <div style={{ borderTop: '1px dashed #000', marginTop: '5px', paddingTop: '5px', fontSize: '10px', fontWeight: 'bold', wordBreak: 'break-all' }}>
+          Izoh: {comment}
+        </div>
+      )}
 
       {(() => {
         const tgQr = localStorage.getItem('telegramQrCode');
