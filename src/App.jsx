@@ -355,17 +355,31 @@ function App() {
         theme === 'dark' ? 'dark bg-gray-900 text-gray-100' : 'bg-gray-100 text-gray-900'
       }`}
     >
+      {/* Global floating action buttons container in top-right corner */}
+      <div className="fixed top-4 right-4 z-[99] flex items-center gap-3">
+        {currentUser?.role === 'waiter' && (
+          <button
+            onClick={() => setShowWaiterReportModal(true)}
+            title="Mening hisobotim"
+            className="p-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-blue-400 dark:border-blue-600 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+          >
+            <BarChart3 size={22} />
+          </button>
+        )}
+
+        <button
+          onClick={handleLogout}
+          title="Kassa qulflansin"
+          className="p-3.5 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-red-400 dark:border-red-600 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+        >
+          <Lock size={22} />
+        </button>
+      </div>
+
       {/* ── Sidebar ── */}
-      {showSidebar ? (
+      {showSidebar && (
         <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col transition-colors duration-300 shrink-0">
           <div className="p-4 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/50 dark:bg-gray-900/40 relative flex items-center gap-3 shrink-0">
-            <button
-              onClick={handleLogout}
-              title="Kassa qulflansin"
-              className="absolute top-2 right-2 p-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 text-gray-500 dark:text-gray-400 rounded-lg transition-all duration-200 cursor-pointer"
-            >
-              <Lock size={16} />
-            </button>
             <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-900/50 border border-gray-200 dark:border-gray-700/50 p-1 shrink-0">
               <img
                 src={shopLogo || logoBase64}
@@ -374,8 +388,7 @@ function App() {
               />
             </div>
             <div className="flex flex-col min-w-0 pr-8">
-              <h1 className="text-lg font-black text-gray-900 dark:text-white leading-tight truncate flex items-center gap-1.5">
-                <LogoIcon className="w-5 h-5 text-orange-500 shrink-0" />
+              <h1 className="text-lg font-black text-gray-900 dark:text-white leading-tight truncate">
                 xxMpos
               </h1>
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-0.5 truncate">
@@ -447,34 +460,6 @@ function App() {
             {t('version')}
           </div>
         </div>
-      ) : (
-        <>
-          {currentUser.role === 'waiter' && (
-            <button
-              onClick={() => setShowWaiterReportModal(true)}
-              title="Mening hisobotim"
-              className="fixed top-4 right-20 z-50 p-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-blue-400 dark:border-blue-600 cursor-pointer hover:scale-105"
-            >
-              <BarChart3 size={24} />
-            </button>
-          )}
-          {currentUser.pin === '7532' && showSettings && (
-            <button
-              onClick={() => setActiveTab(activeTab === 'settings' ? 'cashier' : 'settings')}
-              title="Sozlamalar"
-              className="fixed top-4 right-20 z-50 p-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-emerald-400 dark:border-emerald-600 cursor-pointer hover:scale-105"
-            >
-              <SettingsIcon size={24} />
-            </button>
-          )}
-          <button
-            onClick={handleLogout}
-            title="Kassa qulflansin"
-            className="fixed top-4 right-4 z-50 p-3.5 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-red-400 dark:border-red-600 cursor-pointer hover:scale-105"
-          >
-            <Lock size={24} />
-          </button>
-        </>
       )}
 
       {/* ── Main Content Area ── */}

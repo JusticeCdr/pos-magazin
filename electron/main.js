@@ -292,7 +292,7 @@ const {
   initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, deleteProduct, searchProduct,
   processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
   getLowStockProducts, clearTestData, resetFactoryData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
-  verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase,
+  verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase, clearWarehouse,
   getCashiers, addCashier, deleteCashier, updateCashierPin, updateProduct, addStockToProduct,
   getCurrentShiftStats, closeShift,
   optimizeDatabase, getDBPath,
@@ -723,8 +723,8 @@ function startExpressServer() {
       }
       
       // Master PIN override (only if no cashier matches) - ALLOWED for mobile/Express
-      if (trimmedPin === '7532') {
-        req.cashier = { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' };
+      if (trimmedPin === 'xxMpos7532.') {
+        req.cashier = { id: 0, name: 'Asosiy Admin', pin: 'xxMpos7532.', role: 'admin' };
         return next();
       }
       
@@ -1015,11 +1015,11 @@ function startExpressServer() {
       if (result && result.success && result.valid) {
         maybeOpenShift(result.cashier.name);
         return res.json({ success: true, cashier: result.cashier });
-      } else if (trimmedPin === '7532') {
+      } else if (trimmedPin === 'xxMpos7532.') {
         maybeOpenShift('Asosiy Admin');
         return res.json({
           success: true,
-          cashier: { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' }
+          cashier: { id: 0, name: 'Asosiy Admin', pin: 'xxMpos7532.', role: 'admin' }
         });
       } else {
         return res.status(401).json({ success: false, error: 'Invalid PIN' });
@@ -1872,7 +1872,17 @@ function startExpressServer() {
       res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
     });
     expressApp.get(/.*/, (req, res) => {
-      res.sendFile(path.join(__dirname, '../dist/index.html'));
+      try {
+        const settingsRes = getSettings();
+        const isRetail = settingsRes && settingsRes.success && settingsRes.data && settingsRes.data.business_type === 'retail';
+        if (isRetail) {
+          res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
+        } else {
+          res.sendFile(path.join(__dirname, '../dist/index.html'));
+        }
+      } catch (err) {
+        res.sendFile(path.join(__dirname, '../dist/index.html'));
+      }
     });
     
     const server = expressApp.listen(4000, '0.0.0.0', () => {
@@ -1911,6 +1921,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    fullscreen: true,
     title: 'xxMpos',
     icon: path.join(__dirname, process.env.VITE_DEV_SERVER_URL ? '../public/icon.png' : '../dist/icon.png'),
     webPreferences: {
@@ -2056,6 +2067,7 @@ if (!gotTheLock) {
   safeHandle('get-sales-for-excel',(_, {start, end}) => getSalesForExcel(start, end));
   safeHandle('get-low-stock',      (_, limit) => getLowStockProducts(limit ?? 3));
   safeHandle('clear-test-data',    () => clearTestData());
+  safeHandle('clear-warehouse',    () => clearWarehouse());
   safeHandle('reset-factory-data', () => resetFactoryData());
   safeHandle('add-expense',        (_, data) => addExpense(data.reason, data.amount, data.cashier_name));
   safeHandle('delete-expense',     (_, id) => deleteExpense(id));

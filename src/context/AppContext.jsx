@@ -92,6 +92,19 @@ export function AppProvider({ children }) {
     }
   };
 
+  const [receiptLogo, setReceiptLogoState] = useState(() => {
+    return localStorage.getItem('receiptLogoBase64') || '';
+  });
+
+  const setReceiptLogo = (val) => {
+    setReceiptLogoState(val);
+    if (val) {
+      localStorage.setItem('receiptLogoBase64', val);
+    } else {
+      localStorage.removeItem('receiptLogoBase64');
+    }
+  };
+
   const updateTerminalMode = async (val) => {
     setTerminalMode(val);
     if (window.api) {
@@ -138,6 +151,13 @@ export function AppProvider({ children }) {
             setShopLogoState('');
             localStorage.removeItem('shopLogoBase64');
           }
+          if (res.data.receipt_logo) {
+            setReceiptLogoState(res.data.receipt_logo);
+            localStorage.setItem('receiptLogoBase64', res.data.receipt_logo);
+          } else {
+            setReceiptLogoState('');
+            localStorage.removeItem('receiptLogoBase64');
+          }
         }
       }).catch(() => {});
       fetchGlobalCustomers();
@@ -146,36 +166,51 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     let socket;
-    if (window.api) {
-      window.api.getExpressPort().then(port => {
-        socket = io(`http://localhost:${port}`);
-        
-        socket.on('connect', () => {
-          console.log('🔌 Connected to local WebSocket server');
-        });
-        
-        socket.on('sales-updated', (data) => {
-          console.log('🔄 WebSocket: Sales updated, reloading products and stats...', data);
-          fetchGlobalProducts();
-          fetchGlobalCustomers();
-          window.dispatchEvent(new CustomEvent('sales-updated', { detail: data }));
-        });
-        
-        socket.on('products-updated', (data) => {
-          console.log('🔄 WebSocket: Products updated, reloading products...', data);
-          fetchGlobalProducts();
-          window.dispatchEvent(new CustomEvent('products-updated', { detail: data }));
-        });
-        
-        socket.on('debts-updated', (data) => {
-          console.log('🔄 WebSocket: Debts updated, reloading customers...', data);
-          fetchGlobalCustomers();
-          window.dispatchEvent(new CustomEvent('debts-updated', { detail: data }));
-        });
-      }).catch(err => {
-        console.error('Failed to get Express port:', err);
+    
+    const initSocket = (url) => {
+      socket = io(url);
+      
+      socket.on('connect', () => {
+        console.log('🔌 Connected to local WebSocket server');
       });
+      
+      socket.on('sales-updated', (data) => {
+        console.log('🔄 WebSocket: Sales updated, reloading products and stats...', data);
+        fetchGlobalProducts();
+        fetchGlobalCustomers();
+        window.dispatchEvent(new CustomEvent('sales-updated', { detail: data }));
+      });
+      
+      socket.on('products-updated', (data) => {
+        console.log('🔄 WebSocket: Products updated, reloading products...', data);
+        fetchGlobalProducts();
+        window.dispatchEvent(new CustomEvent('products-updated', { detail: data }));
+      });
+      
+      socket.on('debts-updated', (data) => {
+        console.log('🔄 WebSocket: Debts updated, reloading customers...', data);
+        fetchGlobalCustomers();
+        window.dispatchEvent(new CustomEvent('debts-updated', { detail: data }));
+      });
+    };
+
+    if (window.api && typeof window.api.getExpressPort === 'function') {
+      // In desktop app, fetch actual express port
+      window.api.getExpressPort().then(port => {
+        if (port) {
+          initSocket(`http://localhost:${port}`);
+        } else {
+          initSocket(window.location.origin);
+        }
+      }).catch(err => {
+        console.error('Failed to get Express port, falling back to window origin:', err);
+        initSocket(window.location.origin);
+      });
+    } else {
+      // In web browser, connect directly to the serving host origin
+      initSocket(window.location.origin);
     }
+    
     return () => {
       if (socket) socket.disconnect();
     };
@@ -184,7 +219,7 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{ 
       cart, setCart, carts, setCarts, activeCartId, setActiveCartId, theme, toggleTheme, lang, toggleLang, t,
-      currentUser, setCurrentUser, storeName, setStoreName, businessType, setBusinessType, shopLogo, setShopLogo,
+      currentUser, setCurrentUser, storeName, setStoreName, businessType, setBusinessType, shopLogo, setShopLogo, receiptLogo, setReceiptLogo,
       terminalMode, updateTerminalMode,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded

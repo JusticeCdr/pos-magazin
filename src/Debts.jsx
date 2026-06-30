@@ -52,10 +52,8 @@ export default memo(function Debts({ isActive }) {
   };
 
   useEffect(() => {
-    if (isActive) {
-      fetchCustomers();
-    }
-  }, [isActive]);
+    fetchCustomers();
+  }, []);
 
   const reloadDebtDetails = async (customerId) => {
     if (!customerId) return;

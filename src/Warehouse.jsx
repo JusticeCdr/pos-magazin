@@ -23,11 +23,13 @@ const EMPTY_FORM = {
   stock: '',
   unit: 'dona',
   discount: '',
+  category: 'Boshqa',
+  type: 'ready_dish',
 };
 
 export default memo(function Warehouse({ isActive }) {
   const { 
-    t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName, shopLogo,
+    t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName, shopLogo, businessType,
   } = useApp();
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -39,6 +41,55 @@ export default memo(function Warehouse({ isActive }) {
   const [productToDelete, setProductToDelete] = useState(null); // For custom delete modal
   const [existingProductId, setExistingProductId] = useState(null);
   const stockInputRef = useRef(null);
+
+  // ── Recipe / Composition state ─────────────────────────────────────────────
+  const [recipeIngredients, setRecipeIngredients] = useState([]);
+  const [selectedIngId, setSelectedIngId] = useState('');
+  const [ingQty, setIngQty] = useState('');
+
+  const rawMaterials = useMemo(() => {
+    return globalProducts.filter(p => p.type === 'raw_material');
+  }, [globalProducts]);
+
+  const projectedCostPrice = useMemo(() => {
+    return recipeIngredients.reduce((sum, ing) => {
+      const rawProd = rawMaterials.find(p => p.id === ing.ingredient_product_id);
+      const buyPrice = rawProd ? (parseFloat(rawProd.buy_price) || 0) : 0;
+      return sum + (buyPrice * (parseFloat(ing.quantity) || 0));
+    }, 0);
+  }, [recipeIngredients, rawMaterials]);
+
+  const handleAddIngredient = () => {
+    if (!selectedIngId || !ingQty) return;
+    const qty = parseFloat(ingQty);
+    if (isNaN(qty) || qty <= 0) return;
+
+    const ingProduct = rawMaterials.find(p => p.id === parseInt(selectedIngId));
+    if (!ingProduct) return;
+
+    setRecipeIngredients(prev => {
+      const exists = prev.find(item => item.ingredient_product_id === ingProduct.id);
+      if (exists) {
+        return prev.map(item => item.ingredient_product_id === ingProduct.id
+          ? { ...item, quantity: qty }
+          : item
+        );
+      }
+      return [...prev, {
+        ingredient_product_id: ingProduct.id,
+        quantity: qty,
+        name: ingProduct.name,
+        unit: ingProduct.unit || 'dona'
+      }];
+    });
+
+    setSelectedIngId('');
+    setIngQty('');
+  };
+
+  const handleRemoveIngredient = (id) => {
+    setRecipeIngredients(prev => prev.filter(item => item.ingredient_product_id !== id));
+  };
 
   // ── Toast Alert State & Ref ───────────────────────────────────────────────
   const [toast, setToast] = useState(null); // { message, type }
@@ -371,9 +422,23 @@ export default memo(function Warehouse({ isActive }) {
         sell_price: formatPriceInput(existing.sell_price),
         unit: existing.unit,
         discount: existing.discount !== undefined ? String(existing.discount) : '',
+        category: existing.category || 'Boshqa',
+        type: existing.type || 'ready_dish',
         stock: '' // Clear stock so they can type the incoming quantity
       }));
       setExistingProductId(existing.id);
+
+      if (existing.type === 'ready_dish') {
+        window.api.getProductRecipe(existing.id).then(res => {
+          if (res && res.success) {
+            setRecipeIngredients(res.data);
+          } else {
+            setRecipeIngredients([]);
+          }
+        });
+      } else {
+        setRecipeIngredients([]);
+      }
       
       // Auto-focus the quantity input
       setTimeout(() => {
@@ -383,6 +448,7 @@ export default memo(function Warehouse({ isActive }) {
       // If it doesn't exist, just clear the existing product tracking
       if (existingProductId) {
         setExistingProductId(null);
+        setRecipeIngredients([]);
       }
     }
   }, [formData.barcode, globalProducts, editingId]);
@@ -404,20 +470,27 @@ export default memo(function Warehouse({ isActive }) {
         formattedName = trimmedName.charAt(0).toUpperCase() + trimmedName.slice(1).toLowerCase();
       }
 
+      const isReadyWithRecipe = formData.type === 'ready_dish' && recipeIngredients.length > 0;
       const productData = {
         name: formattedName,
         barcode: formData.barcode,
         buy_price: parseFloat(String(formData.buy_price).replace(/\s/g, '')) || 0,
         sell_price: parseFloat(String(formData.sell_price).replace(/\s/g, '')) || 0,
-        stock: parseFloat(formData.stock) || 0,
+        stock: isReadyWithRecipe ? 0 : (parseFloat(formData.stock) || 0),
         unit: formData.unit,
         discount: parseFloat(formData.discount) || 0,
+        category: formData.category || 'Boshqa',
+        type: formData.type || 'ready_dish',
         userName: currentUser?.name || 'Ombor',
       };
 
       let result;
       if (editingId) {
         result = await window.api.updateProduct({ id: editingId, data: productData });
+        if (result && result.success) {
+          const recipeToSave = formData.type === 'ready_dish' ? recipeIngredients : [];
+          await window.api.saveProductRecipe(editingId, recipeToSave);
+        }
       } else if (existingProductId) {
         result = await window.api.addStockToProduct({ id: existingProductId, data: productData });
         if (result && result.success && result.priceChanged) {
@@ -443,6 +516,10 @@ export default memo(function Warehouse({ isActive }) {
         }
       } else {
         result = await window.api.addProduct(productData);
+        if (result && result.success) {
+          const recipeToSave = formData.type === 'ready_dish' ? recipeIngredients : [];
+          await window.api.saveProductRecipe(result.id, recipeToSave);
+        }
       }
 
       if (result && result.success) {
@@ -475,7 +552,22 @@ export default memo(function Warehouse({ isActive }) {
       stock: '', // Clear stock so they can type the incoming quantity to add
       unit: product.unit,
       discount: product.discount !== undefined ? String(product.discount) : '',
+      category: product.category || 'Boshqa',
+      type: product.type || 'ready_dish',
     });
+
+    if (product.type === 'ready_dish') {
+      window.api.getProductRecipe(product.id).then(res => {
+        if (res && res.success) {
+          setRecipeIngredients(res.data);
+        } else {
+          setRecipeIngredients([]);
+        }
+      });
+    } else {
+      setRecipeIngredients([]);
+    }
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -483,6 +575,9 @@ export default memo(function Warehouse({ isActive }) {
     setEditingId(null);
     setExistingProductId(null);
     setFormData(EMPTY_FORM);
+    setRecipeIngredients([]);
+    setSelectedIngId('');
+    setIngQty('');
   };
 
   const confirmDelete = (id, name) => {
@@ -875,18 +970,48 @@ export default memo(function Warehouse({ isActive }) {
             </select>
           </div>
 
-          {/* Закуп */}
+          {/* Kategoriya */}
+          {businessType === 'restaurant' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                {lang === 'uz' ? 'Kategoriya' : 'Категория'} <span className="text-red-500">*</span>
+              </label>
+              <input
+                required={businessType === 'restaurant'} name="category" value={formData.category} onChange={handleInputChange}
+                type="text" placeholder="Напр. Ovqatlar" className={inputCls}
+              />
+            </div>
+          )}
+
+          {/* Turi */}
+          {businessType === 'restaurant' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                {lang === 'uz' ? 'Turi' : 'Тип'} <span className="text-red-500">*</span>
+              </label>
+              <select
+                required={businessType === 'restaurant'} name="type" value={formData.type} onChange={handleInputChange}
+                className={inputCls + ' cursor-pointer'}
+              >
+                <option value="ready_dish">{lang === 'uz' ? 'Tayyor taom' : 'Готовое блюдо'}</option>
+                <option value="raw_material">{lang === 'uz' ? 'Xom-ashyo (Ingredient)' : 'Сырье (Ингредиент)'}</option>
+              </select>
+            </div>
+          )}
+
+          {/* Zaqup (Tannarx) */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
               {t('buyPrice')} <span className="text-red-500">*</span>
             </label>
             <input
-              required name="buy_price" value={formData.buy_price} onChange={handleInputChange}
-              type="text" inputMode="decimal" placeholder="0.00" className={inputCls}
+              required name="buy_price" value={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? formatPriceInput(projectedCostPrice) : formData.buy_price} onChange={handleInputChange}
+              disabled={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0}
+              type="text" inputMode="decimal" placeholder="0.00" className={inputCls + (businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? ' opacity-60 bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' : '')}
             />
           </div>
 
-          {/* Продажа */}
+          {/* Sotuv narxi */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
               {t('sellPrice')} <span className="text-red-500">*</span>
@@ -900,12 +1025,21 @@ export default memo(function Warehouse({ isActive }) {
           {/* Kol-vo */}
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {(existingProductId || editingId) ? "Qo'shilayotgan soni" : t('quantity')} <span className="text-red-500">*</span>
+              {(existingProductId || editingId) ? "Qo'shilayotgan soni" : t('quantity')}{' '}
+              {!(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0) && <span className="text-red-500">*</span>}
             </label>
             <input
               ref={stockInputRef}
-              required name="stock" value={formData.stock} onChange={handleInputChange}
-              type="number" step="0.001" min="0" placeholder="0" className={inputCls}
+              required={!(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0)}
+              disabled={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0}
+              name="stock"
+              value={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? '' : formData.stock}
+              onChange={handleInputChange}
+              type="number"
+              step="0.001"
+              min="0"
+              placeholder={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? (lang === 'uz' ? 'Avtomatik' : 'Авто') : '0'}
+              className={inputCls + (businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? ' opacity-60 bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' : '')}
             />
           </div>
 
@@ -920,13 +1054,123 @@ export default memo(function Warehouse({ isActive }) {
             />
           </div>
 
+          {/* Taom tarkibi (Resept) section */}
+          {businessType === 'restaurant' && formData.type === 'ready_dish' && (
+            <div className="col-span-2 md:col-span-4 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700 mt-4">
+              <h4 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
+                🍳 {lang === 'uz' ? 'Taom tarkibi (Resept)' : 'Состав блюда (Рецепт)'}
+              </h4>
+              
+              {recipeIngredients.length > 0 ? (
+                <div className="space-y-2 mb-4">
+                  {recipeIngredients.map((ing) => (
+                    <div key={ing.ingredient_product_id} className="flex items-center justify-between bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm">
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">{ing.name}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            value={ing.quantity}
+                            onChange={(e) => {
+                              const newQty = parseFloat(e.target.value) || 0;
+                              setRecipeIngredients(prev => prev.map(item =>
+                                item.ingredient_product_id === ing.ingredient_product_id
+                                  ? { ...item, quantity: newQty }
+                                  : item
+                              ));
+                            }}
+                            className="w-20 px-2 py-1 text-center border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          <span className="text-gray-500 text-xs">{ing.unit}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveIngredient(ing.ingredient_product_id)}
+                          className="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Cost Price Projection info */}
+                  <div className="text-xs text-gray-500 dark:text-gray-400 text-right font-medium">
+                    {lang === 'uz' ? 'Resept bo\'yicha hisoblangan tannarx:' : 'Расчетная себестоимость по рецепту:'}{' '}
+                    <span className="font-bold text-gray-800 dark:text-gray-200">
+                      {formatCurrency(projectedCostPrice, lang)}
+                    </span>
+                  </div>
+                  
+                  {/* Notice about auto stock calculation */}
+                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 mt-2 font-medium">
+                    ⚠️ {lang === 'uz' 
+                      ? 'Ushbu tayyor taom tarkibiga ingredientlar qo\'shilganligi sababli uning qoldig\'i avtomatik ravishda ingredientlar zaxirasidan hisoblanadi.' 
+                      : 'Так как в состав этого готового блюда входят ингредиенты, его остаток рассчитывается автоматически на основе запасов ингредиентов.'}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 italic">
+                  {lang === 'uz' ? 'Hozircha tarkibiy ingredientlar qo\'shilmagan.' : 'Ингредиенты пока не добавлены.'}
+                </p>
+              )}
+              
+              {/* Add ingredient row */}
+              <div className="flex flex-col sm:flex-row gap-3 items-end bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex-1 w-full">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                    {lang === 'uz' ? 'Xom-ashyo tanlash' : 'Выбрать сырье'}
+                  </label>
+                  <select
+                    value={selectedIngId}
+                    onChange={(e) => setSelectedIngId(e.target.value)}
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none"
+                  >
+                    <option value="">{lang === 'uz' ? '-- Tanlang --' : '-- Выберите --'}</option>
+                    {rawMaterials.map(rm => (
+                      <option key={rm.id} value={rm.id}>
+                        {rm.name} ({rm.unit || 'dona'}) - {formatCurrency(rm.buy_price, lang)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="w-full sm:w-32">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                    {lang === 'uz' ? 'Miqdori' : 'Количество'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0.001"
+                    value={ingQty}
+                    onChange={(e) => setIngQty(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none"
+                  />
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={handleAddIngredient}
+                  disabled={!selectedIngId || !ingQty}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-md transition-colors h-9 shrink-0 flex items-center justify-center gap-1 w-full sm:w-auto cursor-pointer"
+                >
+                  <Plus size={14} /> {lang === 'uz' ? 'Qo\'shish' : 'Добавить'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Submit */}
           <div className="col-span-2 md:col-span-4 flex justify-end gap-2 mt-2">
             {(editingId || existingProductId || formData.barcode) && (
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors text-sm border border-gray-300 dark:border-gray-600"
+                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors text-sm border border-gray-300 dark:border-gray-600 cursor-pointer"
               >
                 <X size={15} />
                 Otmena
@@ -935,7 +1179,7 @@ export default memo(function Warehouse({ isActive }) {
             <button
               type="submit"
               disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 disabled:opacity-60 text-white font-medium py-2 px-6 rounded-md transition-colors text-sm shadow-sm"
+              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 disabled:opacity-60 text-white font-medium py-2 px-6 rounded-md transition-colors text-sm shadow-sm cursor-pointer"
             >
               {loading
                 ? (editingId ? 'Saqlanmoqda...' : "Qo'shilmoqda...")
@@ -998,12 +1242,30 @@ export default memo(function Warehouse({ isActive }) {
                     >
                       <td className="py-3 px-4 text-sm text-gray-400 dark:text-gray-500">{index + 1}</td>
                       <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-200">
-                        <div className="flex items-center gap-2">
-                          <span>{product.name}</span>
-                          {product.discount > 0 && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
-                              -{product.discount}%
-                            </span>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span>{product.name}</span>
+                            {product.discount > 0 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
+                                -{product.discount}%
+                              </span>
+                            )}
+                          </div>
+                          {businessType === 'restaurant' && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-normal">
+                                {product.category || 'Boshqa'}
+                              </span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-normal ${
+                                product.type === 'raw_material' 
+                                  ? 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-900/20' 
+                                  : 'text-indigo-700 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-900/20'
+                              }`}>
+                                {product.type === 'raw_material' 
+                                  ? (lang === 'uz' ? 'Xom-ashyo' : 'Сырье') 
+                                  : (lang === 'uz' ? 'Tayyor taom' : 'Блюдо')}
+                              </span>
+                            </div>
                           )}
                         </div>
                       </td>

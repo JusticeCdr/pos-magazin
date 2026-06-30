@@ -303,6 +303,7 @@ function initDB() {
       product_name TEXT NOT NULL,
       qty          REAL NOT NULL,
       price        REAL NOT NULL,
+      added_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(order_id) REFERENCES restaurant_orders(id),
       FOREIGN KEY(product_id) REFERENCES products(id)
     );
@@ -409,6 +410,7 @@ function initDB() {
   try { db.exec("UPDATE restaurant_tables SET locked_by = NULL"); } catch (_) {}
   try { db.exec("ALTER TABLE products ADD COLUMN type TEXT DEFAULT 'ready_dish'"); } catch (_) {}
   try { db.exec("ALTER TABLE products ADD COLUMN group_id INTEGER"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_order_items ADD COLUMN added_at DATETIME DEFAULT CURRENT_TIMESTAMP"); } catch (_) {}
 
   // Insert default cashiers if empty
   const cashierCount = db.prepare("SELECT COUNT(*) as count FROM cashiers").get().count;
@@ -468,10 +470,10 @@ function initDB() {
       WHERE created_at < datetime('now', '-30 days');
     `);
 
-    // Delete inventory logs older than 3 months (90 days)
+    // Delete inventory logs older than 30 days (1 month)
     db.exec(`
       DELETE FROM inventory_logs 
-      WHERE created_at < datetime('now', '-90 days');
+      WHERE created_at < datetime('now', '-30 days');
     `);
   } catch (err) {
   }
@@ -529,6 +531,99 @@ function checkBaseLoaded() {
   }
 }
 
+function loadRestaurantBase() {
+  try {
+    db.exec('BEGIN TRANSACTION');
+    
+    // 1. Raw materials list
+    const rawMaterials = [
+      { name: "Go'sht (Mol go'shti)", barcode: "90001", buy_price: 85000, sell_price: 0, stock: 50, unit: "kg", category: "Xom-ashyolar", type: "raw_material" },
+      { name: "Tovuq go'shti", barcode: "90002", buy_price: 45000, sell_price: 0, stock: 40, unit: "kg", category: "Xom-ashyolar", type: "raw_material" },
+      { name: "Pomidor", barcode: "90003", buy_price: 15000, sell_price: 0, stock: 35, unit: "kg", category: "Xom-ashyolar", type: "raw_material" },
+      { name: "Pishloq", barcode: "90004", buy_price: 70000, sell_price: 0, stock: 20, unit: "kg", category: "Xom-ashyolar", type: "raw_material" },
+      { name: "Lavash xamiri", barcode: "90005", buy_price: 1500, sell_price: 0, stock: 150, unit: "dona", category: "Xom-ashyolar", type: "raw_material" }
+    ];
+    
+    const insertProduct = db.prepare(`
+      INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, category, type, business_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'restaurant')
+    `);
+    
+    const rawIds = {};
+    for (const p of rawMaterials) {
+      const existing = db.prepare("SELECT id FROM products WHERE barcode = ?").get(p.barcode);
+      if (!existing) {
+        const info = insertProduct.run(p.name, p.barcode, p.buy_price, p.sell_price, p.stock, p.unit, p.category, p.type);
+        rawIds[p.name] = info.lastInsertRowid;
+      } else {
+        rawIds[p.name] = existing.id;
+      }
+    }
+    
+    // 2. Ready dishes list
+    const readyDishes = [
+      { 
+        name: "Mol go'shtli lavash", barcode: "90006", sell_price: 35000, category: "Lavashlar", type: "ready_dish",
+        ingredients: [
+          { name: "Go'sht (Mol go'shti)", qty: 0.1 },
+          { name: "Pomidor", qty: 0.05 },
+          { name: "Lavash xamiri", qty: 1 }
+        ]
+      },
+      { 
+        name: "Tovuqli lavash", barcode: "90007", sell_price: 30000, category: "Lavashlar", type: "ready_dish",
+        ingredients: [
+          { name: "Tovuq go'shti", qty: 0.1 },
+          { name: "Pomidor", qty: 0.05 },
+          { name: "Lavash xamiri", qty: 1 }
+        ]
+      },
+      { 
+        name: "Pishloqli lavash", barcode: "90008", sell_price: 32000, category: "Lavashlar", type: "ready_dish",
+        ingredients: [
+          { name: "Pishloq", qty: 0.08 },
+          { name: "Lavash xamiri", qty: 1 }
+        ]
+      }
+    ];
+    
+    for (const d of readyDishes) {
+      const existing = db.prepare("SELECT id FROM products WHERE barcode = ?").get(d.barcode);
+      let dishId;
+      if (!existing) {
+        const info = insertProduct.run(d.name, d.barcode, 0, d.sell_price, 0, 'dona', d.category, d.type);
+        dishId = info.lastInsertRowid;
+      } else {
+        dishId = existing.id;
+      }
+      
+      db.prepare("DELETE FROM product_ingredients WHERE parent_product_id = ?").run(dishId);
+      
+      let calculatedCost = 0;
+      const insertIng = db.prepare("INSERT INTO product_ingredients (parent_product_id, ingredient_product_id, quantity) VALUES (?, ?, ?)");
+      for (const ing of d.ingredients) {
+        const ingId = rawIds[ing.name];
+        if (ingId) {
+          insertIng.run(dishId, ingId, ing.qty);
+          const ingProduct = db.prepare("SELECT buy_price FROM products WHERE id = ?").get(ingId);
+          if (ingProduct) {
+            calculatedCost += (ingProduct.buy_price * ing.qty);
+          }
+        }
+      }
+      db.prepare("UPDATE products SET buy_price = ?, cost_price = ? WHERE id = ?").run(calculatedCost, calculatedCost, dishId);
+      calculateAvailablePortions(dishId);
+    }
+    
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run('is_base_loaded', 'true');
+    db.exec('COMMIT');
+    return { success: true };
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch(_) {}
+    return { success: false, error: err.message };
+  }
+}
+
 function loadInitialBase(type) {
   try {
     const check = checkBaseLoaded();
@@ -538,8 +633,12 @@ function loadInitialBase(type) {
       return { success: true, alreadyLoaded: true };
     }
 
-    if (type !== 'grocery') {
+    if (type !== 'grocery' && type !== 'restaurant') {
       return { success: false, error: 'Invalid base type' };
+    }
+
+    if (type === 'restaurant') {
+      return loadRestaurantBase();
     }
 
     const products = [
@@ -570,7 +669,7 @@ function loadInitialBase(type) {
 
     return { success: true };
   } catch (err) {
-    if (db.inTransaction) db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
   }
 }
@@ -969,7 +1068,7 @@ function addStockToProduct(id, product) {
       newSellPrice
     };
   } catch (err) {
-    if (db.inTransaction) db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
   }
 }
@@ -1371,8 +1470,20 @@ function payDebt(customerId, amount, cashierName = '') {
     db.exec('COMMIT');
     return { success: true };
   } catch (err) {
-    if (db.inTransaction) db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
+  }
+}
+
+function getLocalDateString(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch (_) {
+    return isoStr.substring(0, 10);
   }
 }
 
@@ -1494,8 +1605,8 @@ function getReports(startDateISO, endDateISO) {
       SELECT id, name, percentage, salary FROM waiters
     `).all();
 
-    const startDay = startDateISO.substring(0, 10);
-    const endDay = endDateISO.substring(0, 10);
+    const startDay = getLocalDateString(startDateISO);
+    const endDay = getLocalDateString(endDateISO);
 
     const cashierAttendance = db.prepare(`
       SELECT employee_id, COUNT(*) as present_days
@@ -1610,7 +1721,9 @@ function clearTestData() {
     db.exec('DELETE FROM write_offs');
     db.exec('DELETE FROM shifts_history');
     db.exec('DELETE FROM debt_payments');
+    db.exec('DELETE FROM restaurant_order_items');
     db.exec('DELETE FROM restaurant_orders');
+    db.exec('DELETE FROM attendance');
 
     // Reset customer debts
     db.exec('UPDATE customers SET total_debt = 0');
@@ -1619,13 +1732,30 @@ function clearTestData() {
     db.exec("UPDATE restaurant_tables SET status = 'free', locked_by = NULL, is_printed = 0, opened_at = NULL");
 
     // Reset auto-increment counters for sales & history tables
-    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('sale_items', 'sales', 'inventory_logs', 'expenses', 'write_offs', 'shifts_history', 'debt_payments', 'restaurant_orders')");
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('sale_items', 'sales', 'inventory_logs', 'expenses', 'write_offs', 'shifts_history', 'debt_payments', 'restaurant_order_items', 'restaurant_orders', 'attendance')");
 
     db.exec('COMMIT');
     return { success: true };
   } catch (err) {
-    if (db.inTransaction) db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
+  }
+}
+function clearWarehouse() {
+  try {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN TRANSACTION');
+    // Clear dependent child rows first so FK constraints don't fire
+    db.exec('DELETE FROM product_ingredients');
+    db.exec('DELETE FROM products');
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('products', 'product_ingredients')");
+    db.exec('COMMIT');
+    return { success: true };
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    return { success: false, error: err.message };
+  } finally {
+    try { db.exec('PRAGMA foreign_keys = ON'); } catch (_) {}
   }
 }
 
@@ -1633,7 +1763,10 @@ function resetFactoryData() {
   try {
     db.exec('BEGIN TRANSACTION');
 
-    // 1. Delete all tables
+    // 1. Delete all tables in correct dependency order
+    db.exec('DELETE FROM product_ingredients');
+    db.exec('DELETE FROM restaurant_order_items');
+    db.exec('DELETE FROM restaurant_orders');
     db.exec('DELETE FROM sale_items');
     db.exec('DELETE FROM sales');
     db.exec('DELETE FROM inventory_logs');
@@ -1643,12 +1776,11 @@ function resetFactoryData() {
     db.exec('DELETE FROM debt_payments');
     db.exec('DELETE FROM customers');
     db.exec('DELETE FROM products');
-    db.exec('DELETE FROM product_ingredients');
-    db.exec('DELETE FROM restaurant_orders');
     db.exec('DELETE FROM settings');
     db.exec('DELETE FROM waiters');
     db.exec('DELETE FROM cashiers');
     db.exec('DELETE FROM restaurant_tables');
+    db.exec('DELETE FROM attendance');
 
     // 2. Reset sequence
     db.exec("DELETE FROM sqlite_sequence");
@@ -1686,7 +1818,7 @@ function resetFactoryData() {
     db.exec('COMMIT');
     return { success: true };
   } catch (err) {
-    if (db.inTransaction) db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
   }
 }
@@ -1892,6 +2024,24 @@ function getCurrentShiftStats() {
     
     const expRow = db.prepare('SELECT SUM(amount) as total_expenses FROM expenses WHERE is_closed = 0').get();
     
+    // 1. Shift Number
+    const countRow = db.prepare('SELECT COUNT(*) as cnt FROM shifts_history').get();
+    const shift_number = (countRow?.cnt || 0) + 1;
+
+    // 2. Discounts
+    const discountRow = db.prepare("SELECT SUM(discount_amount) as total_discounts FROM sales WHERE is_closed = 0 AND status != 'refunded'").get();
+    const total_discounts = discountRow?.total_discounts || 0;
+
+    // 3. Refunds / Voids
+    const refundRow = db.prepare("SELECT COUNT(id) as cnt, SUM(total_amount) as total_refunds FROM sales WHERE is_closed = 0 AND status = 'refunded'").get();
+    const refunds_count = refundRow?.cnt || 0;
+    const total_refunds = refundRow?.total_refunds || 0;
+
+    // 4. Expected Cash
+    const cash_sales = row.cash_sales || 0;
+    const total_expenses = expRow.total_expenses || 0;
+    const expected_cash = cash_sales - total_expenses;
+
     const firstSale = db.prepare('SELECT cashier_name FROM sales WHERE is_closed = 0 LIMIT 1').get();
     const opened_by = firstSale ? firstSale.cashier_name : 'Noma\'lum';
 
@@ -1922,12 +2072,17 @@ function getCurrentShiftStats() {
     return {
       success: true,
       data: {
+        shift_number,
         total_sales: row.total_sales || 0,
-        cash_sales: row.cash_sales || 0,
+        cash_sales,
         card_sales: row.card_sales || 0,
         debt_sales: row.debt_sales || 0,
-        total_expenses: expRow.total_expenses || 0,
+        total_expenses,
         receipts_count: row.receipts_count || 0,
+        total_discounts,
+        refunds_count,
+        total_refunds,
+        expected_cash,
         opened_by: opened_by,
         opened_at: opened_at
       }
@@ -2157,7 +2312,7 @@ function deleteCustomer(customerId, cashierName = '') {
     db.exec('COMMIT');
     return { success: true };
   } catch (err) {
-    if (db.inTransaction) db.exec('ROLLBACK');
+    try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
   }
 }
@@ -2729,7 +2884,7 @@ function getActiveOrderForTable(tableId) {
       return { success: true, data: null };
     }
     const items = db.prepare(`
-      SELECT item.product_id as id, item.product_name as name, item.qty, item.price, p.unit, p.category 
+      SELECT item.product_id as id, item.product_name as name, item.qty, item.price, p.unit, p.category, item.added_at 
       FROM restaurant_order_items item
       LEFT JOIN products p ON p.id = item.product_id
       WHERE item.order_id = ?
@@ -2779,9 +2934,10 @@ function saveRestaurantOrder(tableId, waiterId, cartItems) {
     }
     
     // Insert items
-    const insertItem = db.prepare("INSERT INTO restaurant_order_items (order_id, product_id, product_name, qty, price) VALUES (?, ?, ?, ?, ?)");
+    const insertItem = db.prepare("INSERT INTO restaurant_order_items (order_id, product_id, product_name, qty, price, added_at) VALUES (?, ?, ?, ?, ?, ?)");
     for (const item of cartItems) {
-      insertItem.run(orderId, item.id, item.name, item.qty, item.price);
+      const addedAt = item.added_at || new Date().toISOString().replace('T', ' ').substring(0, 19);
+      insertItem.run(orderId, item.id, item.name, item.qty, item.price, addedAt);
     }
     
     // Update table status and opened_at if not set
@@ -3422,5 +3578,6 @@ module.exports = {
   unlockTable,
   setTablePrePrinted,
   getWaitersReport,
-  getRestaurantOnlyProducts
+  getRestaurantOnlyProducts,
+  clearWarehouse
 };

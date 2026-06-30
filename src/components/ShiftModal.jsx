@@ -91,7 +91,7 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
         <div className="bg-gray-50 dark:bg-gray-700/50 px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
           <div className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
             <Lock size={20} className="text-orange-500" />
-            <h2 className="text-lg font-bold">Smenani yopish (Z-Hisobot)</h2>
+            <h2 className="text-lg font-bold">Smenani yopish (Z-Hisobot {stats?.shift_number ? `№${stats.shift_number}` : ''})</h2>
           </div>
           <button 
             onClick={onClose}
@@ -156,6 +156,20 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
                   <span className="font-bold text-gray-800 dark:text-gray-200">{formatCurrency(stats.debt_sales, lang)}</span>
                 </div>
                 
+                {stats.total_discounts > 0 && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">Jami chegirmalar</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400">-{formatCurrency(stats.total_discounts, lang)}</span>
+                  </div>
+                )}
+
+                {stats.total_refunds > 0 && (
+                  <div className="flex justify-between items-center text-sm text-red-500">
+                    <span>Qaytarilgan cheklar ({stats.refunds_count} ta)</span>
+                    <span className="font-bold">-{formatCurrency(stats.total_refunds, lang)}</span>
+                  </div>
+                )}
+
                 {stats.total_expenses > 0 && (
                   <div className="flex justify-between items-center text-sm pt-2 mt-2 border-t border-gray-200 dark:border-gray-700/50 text-red-500">
                     <span className="font-medium">Chiqim (Rasxod)</span>
@@ -163,8 +177,13 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
                   </div>
                 )}
                 
-                <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-200 dark:border-gray-700/50">
-                  <span className="text-gray-500 dark:text-gray-400">Cheklar soni</span>
+                <div className="flex justify-between items-center text-sm pt-2 mt-2 border-t border-gray-200 dark:border-gray-700/50 font-bold text-emerald-600 dark:text-emerald-400">
+                  <span>Kassadagi naqd pul</span>
+                  <span>{formatCurrency(stats.expected_cash, lang)}</span>
+                </div>
+
+                <div className="flex justify-between items-center text-sm pt-2 mt-2 border-t border-gray-200 dark:border-gray-700/30 text-gray-500 dark:text-gray-400">
+                  <span>Cheklar soni</span>
                   <span className="font-bold text-gray-800 dark:text-gray-200">{stats.receipts_count} ta</span>
                 </div>
               </div>

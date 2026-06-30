@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('api', {
   getSalesForExcel: (dates)=> ipcRenderer.invoke('get-sales-for-excel', dates),
   getLowStock:   (limit)   => ipcRenderer.invoke('get-low-stock', limit),
   clearTestData: ()        => ipcRenderer.invoke('clear-test-data'),
+  clearWarehouse: ()       => ipcRenderer.invoke('clear-warehouse'),
   resetFactoryData: ()     => ipcRenderer.invoke('reset-factory-data'),
   getCurrentShiftStats: () => ipcRenderer.invoke('get-current-shift-stats'),
   closeShift: (stats)      => ipcRenderer.invoke('close-shift', stats),

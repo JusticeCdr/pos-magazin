@@ -89,17 +89,13 @@ export default memo(function InventoryHistory({ isActive }) {
   };
 
   useEffect(() => {
-    if (isActive) {
-      lastFiltersRef.current = { startDate, endDate, actionType, productSearch };
-      fetchLogs(1, false, false);
-    }
-  }, [isActive, startDate, endDate, actionType, productSearch]);
+    lastFiltersRef.current = { startDate, endDate, actionType, productSearch };
+    fetchLogs(1, false, false);
+  }, [startDate, endDate, actionType, productSearch]);
 
   useEffect(() => {
     const handleRefreshLogs = () => {
-      if (isActive) {
-        fetchLogs(1, false, false);
-      }
+      fetchLogs(1, false, false);
     };
     window.addEventListener('products-updated', handleRefreshLogs);
     window.addEventListener('sales-updated', handleRefreshLogs);
@@ -107,7 +103,7 @@ export default memo(function InventoryHistory({ isActive }) {
       window.removeEventListener('products-updated', handleRefreshLogs);
       window.removeEventListener('sales-updated', handleRefreshLogs);
     };
-  }, [isActive, startDate, endDate, actionType, productSearch]);
+  }, [startDate, endDate, actionType, productSearch]);
 
   // ── Logs are fetched server-side including search keyword ──────────────────
   const filteredLogs = logs;
@@ -147,7 +143,7 @@ export default memo(function InventoryHistory({ isActive }) {
             Omboringizning to'liq kirim-chiqim tarixi
           </p>
           <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/20 px-3 py-1 rounded-md border border-orange-100 dark:border-orange-900/30 w-fit shrink-0">
-            * Tizimda yozuvlar 3 oy (90 kun) davomida saqlanadi va undan keyin avtomatik tarzda o'chib ketadi.
+            * Tizimda yozuvlar 1 oy (30 kun) davomida saqlanadi va undan keyin avtomatik tarzda o'chib ketadi.
           </span>
         </div>
       </div>

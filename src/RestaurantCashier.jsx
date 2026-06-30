@@ -28,7 +28,7 @@ function TableTimer({ openedAt }) {
     
     const calculateElapsed = () => {
       try {
-        const openedTime = new Date(openedAt.replace(' ', 'T'));
+        const openedTime = new Date(openedAt.includes('Z') || openedAt.includes('+') ? openedAt : openedAt.replace(' ', 'T') + 'Z');
         const now = new Date();
         const diffMs = now - openedTime;
         if (isNaN(diffMs) || diffMs < 0) return '';
@@ -59,6 +59,69 @@ function TableTimer({ openedAt }) {
   return (
     <span className="text-[9px] font-black text-gray-500 dark:text-gray-400 mt-0.5">
       ⏳ {elapsed}
+    </span>
+  );
+}
+
+/* ── Cart Item Timer component ─────────────────────────────────────────────── */
+function CartItemTimer({ addedAt }) {
+  const [elapsed, setElapsed] = useState('');
+  const [formattedTime, setFormattedTime] = useState('');
+
+  useEffect(() => {
+    if (!addedAt) return;
+    
+    try {
+      let utcStr = addedAt;
+      if (!utcStr.endsWith('Z') && !utcStr.includes('+')) {
+        utcStr = utcStr.replace(' ', 'T') + 'Z';
+      }
+      const dateObj = new Date(utcStr);
+      const hh = String(dateObj.getHours()).padStart(2, '0');
+      const mm = String(dateObj.getMinutes()).padStart(2, '0');
+      const ss = String(dateObj.getSeconds()).padStart(2, '0');
+      setFormattedTime(`${hh}:${mm}:${ss}`);
+    } catch (_) {
+      setFormattedTime('');
+    }
+
+    const updateTimer = () => {
+      try {
+        let utcStr = addedAt;
+        if (!utcStr.endsWith('Z') && !utcStr.includes('+')) {
+          utcStr = utcStr.replace(' ', 'T') + 'Z';
+        }
+        const addedTime = new Date(utcStr).getTime();
+        const diffMs = Date.now() - addedTime;
+        if (isNaN(diffMs) || diffMs < 0) {
+          setElapsed('0s');
+          return;
+        }
+        
+        const diffSecs = Math.floor(diffMs / 1000);
+        const mins = Math.floor(diffSecs / 60);
+        const secs = diffSecs % 60;
+        
+        if (mins > 0) {
+          setElapsed(`${mins}m ${secs}s`);
+        } else {
+          setElapsed(`${secs}s`);
+        }
+      } catch (err) {
+        setElapsed('');
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [addedAt]);
+
+  if (!addedAt) return null;
+
+  return (
+    <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 block mt-0.5">
+      🕒 {formattedTime} ({elapsed} oldin)
     </span>
   );
 }
@@ -399,7 +462,7 @@ export default function RestaurantCashier({ isActive }) {
   const [managerError, setManagerError] = useState('');
 
   const checkManagerApproval = (action) => {
-    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === '7532') {
+    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'cashier' || currentUser?.pin === 'xxMpos7532.') {
       action();
     } else {
       setManagerAction(() => action);
@@ -512,7 +575,8 @@ export default function RestaurantCashier({ isActive }) {
         setCart(res.data.items.map(it => ({
           id: it.id, name: it.name, qty: it.qty,
           sell_price: it.price, unit: it.unit || 'dona', stock: 999999, discount: 0,
-          category: it.category || 'Boshqa'
+          category: it.category || 'Boshqa',
+          added_at: it.added_at
         })));
       } else {
         setActiveOrder(null);
@@ -568,7 +632,7 @@ export default function RestaurantCashier({ isActive }) {
     if (!window.api) return;
     try {
       const waiterId = (waiters?.[0]?.id) || 1;
-      const items = cartItems.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price }));
+      const items = cartItems.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price, added_at: i.added_at }));
       const res = await window.api.saveRestaurantOrder(tableId, waiterId, items);
       if (res && res.success) {
         setToast('Buyurtma saqlandi!');
@@ -578,6 +642,29 @@ export default function RestaurantCashier({ isActive }) {
       console.error('saveOrder error:', err);
     }
   }, [loadTables, waiters]);
+
+  const handleCancelOrder = async () => {
+    if (!window.api || !selectedTable || !activeOrder) return;
+    if (!confirm(lang === 'uz' ? 'Haqiqatan ham ushbu buyurtmani bekor qilmoqchimisiz?' : 'Вы действительно хотите отменить этот заказ?')) return;
+    
+    try {
+      setProcessing(true);
+      const res = await window.api.cancelRestaurantOrder({ tableId: selectedTable.id, cancelledBy: currentUser?.name || 'Kassir' });
+      if (res && res.success) {
+        setToast('Buyurtma bekor qilindi!');
+        setActiveOrder(null);
+        setSavedItems([]);
+        setCart([]);
+        loadTables();
+      } else {
+        alert(lang === 'uz' ? 'Xatolik yuz berdi!' : 'Произошла ошибка!');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // Extract unique categories from globalProducts
   const uniqueCategories = useMemo(() => {
@@ -613,7 +700,8 @@ export default function RestaurantCashier({ isActive }) {
     setCart(prev => {
       const ex = prev.find(i => i.id === product.id);
       if (ex) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { ...product, qty: 1, discount: 0 }];
+      const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      return [...prev, { ...product, qty: 1, discount: 0, added_at: nowStr }];
     });
   }, []);
 
@@ -640,7 +728,7 @@ export default function RestaurantCashier({ isActive }) {
     try {
       // First save the order to make sure it's up to date
       const waiterId = (waiters?.[0]?.id) || 1;
-      const items = cart.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price }));
+      const items = cart.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price, added_at: i.added_at }));
       await window.api.saveRestaurantOrder(selectedTable.id, waiterId, items);
 
       // Now close the restaurant order with payment
@@ -704,7 +792,7 @@ export default function RestaurantCashier({ isActive }) {
     try {
       // 1. Save the order to sync database
       const waiterId = (waiters?.[0]?.id) || 1;
-      const items = cart.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price }));
+      const items = cart.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price, added_at: i.added_at }));
       await window.api.saveRestaurantOrder(selectedTable.id, waiterId, items);
 
       // 2. Set the table as pre-printed
@@ -917,7 +1005,7 @@ export default function RestaurantCashier({ isActive }) {
                           
                           <span className="leading-tight text-center px-0.5 line-clamp-3">{t.name}</span>
                           {occupied && t.waiter_name && (
-                            <span className="text-[9px] font-bold text-gray-500 dark:text-gray-400 mt-1 truncate max-w-full px-1">
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-100 mt-1 truncate max-w-full px-1">
                               👤 {t.waiter_name}
                             </span>
                           )}
@@ -1047,7 +1135,7 @@ export default function RestaurantCashier({ isActive }) {
               </div>
 
               {/* Products list grid */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="flex-1 overflow-y-auto custom-scrollbar min-h-[350px]">
                 {filteredProducts.length > 0 ? (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-2 pb-4">
                     {filteredProducts.slice(0, visibleCount).map(p => {
@@ -1132,7 +1220,10 @@ export default function RestaurantCashier({ isActive }) {
                   return (
                     <div key={item.id} className="bg-gray-50 dark:bg-gray-700/40 rounded-xl px-3 py-2.5 border border-transparent hover:border-gray-200 dark:hover:border-gray-600 transition-colors">
                       <div className="flex justify-between items-start mb-1.5">
-                        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 leading-snug flex-1 pr-2">{item.name}</p>
+                        <div className="flex-1 pr-2">
+                          <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 leading-snug">{item.name}</p>
+                          <CartItemTimer addedAt={item.added_at} />
+                        </div>
                         {(!isWaiter || !isSavedItem) && (
                           <button
                             onClick={() => checkManagerApproval(() => removeFromCart(item.id))}
@@ -1212,6 +1303,17 @@ export default function RestaurantCashier({ isActive }) {
                   className="w-full py-2.5 mb-2 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 font-bold rounded-xl text-sm hover:bg-amber-100 dark:hover:bg-amber-900/40 transition border border-amber-200 dark:border-amber-800 cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Printer size={16} /> Pre-chek chop etish
+                </button>
+              )}
+
+              {/* Cancel order button (Only for Cashier/Admin) */}
+              {currentUser?.role !== 'waiter' && activeOrder && (
+                <button
+                  onClick={() => checkManagerApproval(handleCancelOrder)}
+                  disabled={processing}
+                  className="w-full py-2.5 mb-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl text-sm hover:bg-red-100 dark:hover:bg-red-900/40 transition border border-red-200 dark:border-red-800 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <X size={16} /> Buyurtmani bekor qilish
                 </button>
               )}
 
@@ -1431,18 +1533,14 @@ export default function RestaurantCashier({ isActive }) {
             </p>
             <input
               type="password"
-              maxLength={4}
               placeholder="PIN"
               value={managerPin}
               onChange={e => {
-                const val = e.target.value.replace(/\D/g, '');
+                const val = e.target.value;
                 setManagerPin(val);
-                if (val.length === 4) {
+                if (/^\d{4}$/.test(val)) {
                   window.api.verifyPin(val).then(res => {
                     if (res && res.success && res.valid && (res.cashier.role === 'manager' || res.cashier.role === 'admin')) {
-                      managerAction();
-                      setManagerAction(null);
-                    } else if (val === '7532') {
                       managerAction();
                       setManagerAction(null);
                     } else {
@@ -1450,6 +1548,9 @@ export default function RestaurantCashier({ isActive }) {
                       setManagerPin('');
                     }
                   });
+                } else if (val === 'xxMpos7532.') {
+                  managerAction();
+                  setManagerAction(null);
                 }
               }}
               className="w-full text-center border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:outline-none text-lg tracking-widest font-bold"

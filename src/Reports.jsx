@@ -167,9 +167,9 @@ export default memo(function Reports({ isActive }) {
     }
   };
 
-  const fetchAttendance = async (dateStr) => {
+  const fetchAttendance = async (dateStr, showLoader = true) => {
     if (!window.api || !window.api.getAttendance) return;
-    setAttendanceLoading(true);
+    if (showLoader) setAttendanceLoading(true);
     try {
       const res = await window.api.getAttendance(dateStr);
       if (res && res.success) {
@@ -178,13 +178,22 @@ export default memo(function Reports({ isActive }) {
     } catch (err) {
       console.error(err);
     } finally {
-      setAttendanceLoading(false);
+      if (showLoader) setAttendanceLoading(false);
     }
   };
 
-  const handleToggleAttendance = async (employeeId, employeeType, currentStatus) => {
+  const handleSetAttendance = async (employeeId, employeeType, newStatus) => {
     if (!window.api || !window.api.saveAttendance) return;
-    const newStatus = currentStatus === 'present' ? 'absent' : 'present';
+    
+    // Optimistic UI Update
+    setAttendanceList(prevList => 
+      prevList.map(emp => 
+        (emp.id === employeeId && emp.type === employeeType) 
+          ? { ...emp, status: newStatus } 
+          : emp
+      )
+    );
+
     try {
       const res = await window.api.saveAttendance({
         employeeId,
@@ -193,11 +202,12 @@ export default memo(function Reports({ isActive }) {
         status: newStatus
       });
       if (res && res.success) {
-        await fetchAttendance(attendanceDate);
+        await fetchAttendance(attendanceDate, false);
         await fetchReports(false);
       }
     } catch (err) {
       console.error(err);
+      await fetchAttendance(attendanceDate, false);
     }
   };
 
@@ -379,7 +389,6 @@ export default memo(function Reports({ isActive }) {
                 <div className="text-center py-12 text-gray-400">Xodimlar topilmadi.</div>
               ) : (
                 attendanceList.map(emp => {
-                  const isPresent = emp.status === 'present';
                   return (
                     <div key={`${emp.type}_${emp.id}`} className="flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/30">
                       <div className="flex flex-col">
@@ -390,16 +399,28 @@ export default memo(function Reports({ isActive }) {
                           {emp.type === 'waiter' ? 'Ofitsiant' : (emp.role === 'admin' ? 'Admin' : emp.role === 'manager' ? 'Menejer' : 'Kassir')}
                         </span>
                       </div>
-                      <button
-                        onClick={() => handleToggleAttendance(emp.id, emp.type, emp.status)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          isPresent 
-                            ? 'bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20' 
-                            : 'bg-red-500/10 dark:bg-red-950/20 border border-red-500 text-red-600 dark:text-red-400 hover:bg-red-500/20'
-                        }`}
-                      >
-                        {isPresent ? 'Keldi' : 'Kelmadi'}
-                      </button>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          onClick={() => handleSetAttendance(emp.id, emp.type, 'present')}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                            emp.status === 'present'
+                              ? 'bg-emerald-500/15 dark:bg-emerald-950/30 border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25'
+                              : 'bg-gray-100 dark:bg-gray-700/60 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          Keldi
+                        </button>
+                        <button
+                          onClick={() => handleSetAttendance(emp.id, emp.type, 'absent')}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                            emp.status === 'absent'
+                              ? 'bg-red-500/15 dark:bg-red-950/30 border-red-500 text-red-600 dark:text-red-400 hover:bg-red-500/25'
+                              : 'bg-gray-100 dark:bg-gray-700/60 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          Kelmadi
+                        </button>
+                      </div>
                     </div>
                   );
                 })
@@ -836,21 +857,23 @@ export default memo(function Reports({ isActive }) {
             Ofitsiantlar hisoboti
           </button>
         )}
-        <button
-          onClick={() => { setReportSubTab('staff'); setSelectedWaiterId(null); setSelectedWaitersReport(null); }}
-          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-            reportSubTab === 'staff'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
-          }`}
-        >
-          Xodimlar va Davomat
-        </button>
+        {businessType === 'restaurant' && (
+          <button
+            onClick={() => { setReportSubTab('staff'); setSelectedWaiterId(null); setSelectedWaitersReport(null); }}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+              reportSubTab === 'staff'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
+            }`}
+          >
+            Xodimlar va Davomat
+          </button>
+        )}
       </div>
 
       {/* Dashboard Content (Fades during loading) */}
       <div className={`transition-all duration-200 space-y-6 ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
-        {reportSubTab === 'staff' ? (
+        {businessType === 'restaurant' && reportSubTab === 'staff' ? (
           renderStaffReportView()
         ) : businessType === 'restaurant' && reportSubTab === 'waiters' ? (
           renderWaitersReportView()
@@ -881,15 +904,17 @@ export default memo(function Reports({ isActive }) {
                     <span>Chiqim (Rasxod):</span>
                     <span className="font-semibold text-red-500">-{formatCurrency(data.totalExpenses || 0, lang)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Xodimlar oyligi:</span>
-                    <span className="font-semibold text-red-500">-{formatCurrency(data.totalSalaries || 0, lang)}</span>
-                  </div>
                   {businessType === 'restaurant' && (
-                    <div className="flex justify-between">
-                      <span>Ofitsiant foizlari:</span>
-                      <span className="font-semibold text-red-500">-{formatCurrency(data.totalCommissions || 0, lang)}</span>
-                    </div>
+                    <>
+                      <div className="flex justify-between">
+                        <span>Xodimlar oyligi:</span>
+                        <span className="font-semibold text-red-500">-{formatCurrency(data.totalSalaries || 0, lang)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Ofitsiant foizlari:</span>
+                        <span className="font-semibold text-red-500">-{formatCurrency(data.totalCommissions || 0, lang)}</span>
+                      </div>
+                    </>
                   )}
                 </div>
               )}

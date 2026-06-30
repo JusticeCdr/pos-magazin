@@ -22,6 +22,8 @@ export default function Login() {
   // Brute force protection state
   const [failCount, setFailCount] = useState(0);
   const [lockoutTimer, setLockoutTimer] = useState(0);
+  const [adminFailCount, setAdminFailCount] = useState(0);
+  const [adminLockoutTimer, setAdminLockoutTimer] = useState(0);
 
   // Admin Modal state
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -38,6 +40,22 @@ export default function Login() {
     return () => clearInterval(timer);
   }, [lockoutTimer]);
 
+  useEffect(() => {
+    let timer;
+    if (adminLockoutTimer > 0) {
+      timer = setInterval(() => {
+        setAdminLockoutTimer(prev => {
+          if (prev <= 1) {
+            setAdminFailCount(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [adminLockoutTimer]);
+
   const handleCashierLogin = async (e) => {
     if (e) e.preventDefault();
     if (pin.length !== 4) return;
@@ -47,13 +65,22 @@ export default function Login() {
     setError(false);
     
     try {
-      if (pin === '7532') {
-        const adminUser = { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' };
+      if (pin === 'xxMpos7532.') {
+        const adminUser = { id: 0, name: 'Asosiy Admin', pin: 'xxMpos7532.', role: 'admin' };
         if (window.api) {
           const openRes = await window.api.maybeOpenShift(adminUser.name);
           if (openRes && openRes.success && openRes.shiftOpened) {
             localStorage.setItem('showShiftOpenedToast', 'true');
           }
+        } else {
+          try {
+            await fetch('/api/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pin: 'xxMpos7532.' })
+            });
+          } catch (e) {}
+          localStorage.setItem('showShiftOpenedToast', 'true');
         }
         setFailCount(0);
         setCurrentUser(adminUser);
@@ -61,14 +88,34 @@ export default function Login() {
         return;
       }
 
-      const result = await window.api.verifyPin(pin);
+      let result;
+      if (window.api) {
+        result = await window.api.verifyPin(pin);
+      } else {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          result = { success: true, valid: true, cashier: data.cashier };
+        } else {
+          result = { success: true, valid: false };
+        }
+      }
+
       if (result && result.success && result.valid) {
         if (terminalMode && result.cashier.role !== 'waiter') {
           handleFailedAttempt();
           return;
         }
-        const openRes = await window.api.maybeOpenShift(result.cashier.name);
-        if (openRes && openRes.success && openRes.shiftOpened) {
+        if (window.api) {
+          const openRes = await window.api.maybeOpenShift(result.cashier.name);
+          if (openRes && openRes.success && openRes.shiftOpened) {
+            localStorage.setItem('showShiftOpenedToast', 'true');
+          }
+        } else {
           localStorage.setItem('showShiftOpenedToast', 'true');
         }
         setFailCount(0);
@@ -85,19 +132,35 @@ export default function Login() {
 
   const handleAdminLogin = async (e) => {
     if (e) e.preventDefault();
-    if (adminPin !== '7532') {
+    if (adminLockoutTimer > 0) return;
+    if (adminPin !== 'xxMpos7532.') {
       setAdminError(true);
       setAdminPin('');
+      const newFailCount = adminFailCount + 1;
+      setAdminFailCount(newFailCount);
+      if (newFailCount >= 3) {
+        setAdminLockoutTimer(15);
+      }
       return;
     }
     
     // Correct Admin PIN
-    const adminUser = { id: 0, name: 'Asosiy Admin', pin: '7532', role: 'admin' };
+    setAdminFailCount(0);
+    const adminUser = { id: 0, name: 'Asosiy Admin', pin: 'xxMpos7532.', role: 'admin' };
     if (window.api) {
       const openRes = await window.api.maybeOpenShift(adminUser.name);
       if (openRes && openRes.success && openRes.shiftOpened) {
         localStorage.setItem('showShiftOpenedToast', 'true');
       }
+    } else {
+      try {
+        await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: 'xxMpos7532.' })
+        });
+      } catch (e) {}
+      localStorage.setItem('showShiftOpenedToast', 'true');
     }
     localStorage.setItem('adminSettingsAccess', 'true');
     setCurrentUser(adminUser);
@@ -140,10 +203,7 @@ export default function Login() {
     handleCashierLogin({ preventDefault: () => {} });
   }
 
-  // Auto-submit Admin PIN
-  if (adminPin.length === 4 && showAdminModal) {
-    handleAdminLogin({ preventDefault: () => {} });
-  }
+
 
   return (
     <div className="min-h-screen w-full flex bg-white dark:bg-gray-900 transition-colors relative">
@@ -165,59 +225,71 @@ export default function Login() {
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Sozlamalar</h3>
               <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">Tizimga kirish uchun admin parolini kiriting</p>
               
-              <div className="flex gap-3 mb-6">
-                {[0, 1, 2, 3].map(i => (
-                  <div 
-                    key={i} 
-                    className={`w-4 h-4 rounded-full transition-all duration-300 ${
-                      adminPin.length > i 
-                        ? 'bg-slate-800 dark:bg-slate-200 scale-110' 
-                        : 'bg-gray-200 dark:bg-gray-700'
-                    } ${adminError ? 'bg-red-500 dark:bg-red-500 animate-pulse' : ''}`}
-                  />
-                ))}
-              </div>
-              
-              {adminError && <p className="text-red-500 text-sm font-bold mb-4 animate-bounce">Noto'g'ri PIN kod</p>}
-              
-              <div className="grid grid-cols-3 gap-3 w-full">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                  <button key={num} onClick={() => { setAdminPin(prev => prev + num); setAdminError(false); }} className="h-16 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700 text-2xl font-bold text-gray-800 dark:text-white transition-all active:scale-95 border border-gray-100 dark:border-gray-600/50">
-                    {num}
-                  </button>
-                ))}
-                <div />
-                <button onClick={() => { setAdminPin(prev => prev + '0'); setAdminError(false); }} className="h-16 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700 text-2xl font-bold text-gray-800 dark:text-white transition-all active:scale-95 border border-gray-100 dark:border-gray-600/50">
-                  0
+              <form onSubmit={handleAdminLogin} className="w-full flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                <input
+                  type="password"
+                  placeholder="Admin parolini kiriting"
+                  value={adminPin}
+                  onChange={e => { setAdminPin(e.target.value); setAdminError(false); }}
+                  disabled={adminLockoutTimer > 0}
+                  className="w-full text-center border border-gray-300 dark:border-gray-600 rounded-2xl px-4 py-3.5 bg-gray-50 dark:bg-gray-700/55 text-gray-900 dark:text-white focus:ring-2 focus:ring-slate-500 focus:outline-none text-lg font-bold mb-4 tracking-wider"
+                  autoFocus
+                />
+                
+                {adminLockoutTimer > 0 ? (
+                  <div className="w-full bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 rounded-2xl p-4 flex flex-col items-center gap-1 mb-4">
+                    <span className="text-red-600 dark:text-red-400 font-extrabold text-lg">
+                      Bloklandi: {adminLockoutTimer}s
+                    </span>
+                    <span className="text-red-500 dark:text-red-400 text-xs font-semibold">
+                      Parol 3 marta noto'g'ri kiritildi
+                    </span>
+                  </div>
+                ) : adminError ? (
+                  <p className="text-red-500 text-sm font-bold mb-4 animate-pulse">Noto'g'ri parol!</p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={adminLockoutTimer > 0 || !adminPin}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-white transition-all active:scale-95 shadow-md flex items-center justify-center gap-2
+                    ${adminLockoutTimer > 0 || !adminPin
+                      ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed text-gray-500'
+                      : 'bg-slate-800 hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white'
+                    }
+                  `}
+                >
+                  Kirish <ArrowRight size={18} />
                 </button>
-                <button onClick={() => { setAdminPin(prev => prev.slice(0, -1)); setAdminError(false); }} className="h-16 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 transition-all active:scale-95 border border-gray-100 dark:border-gray-600/50">
-                  <ArrowRight className="rotate-180" size={24} strokeWidth={3} />
-                </button>
-              </div>
+              </form>
             </div>
           </div>
         </div>
       )}
 
       {/* Left Column - Branding (Professional Dark Slate theme, Centered) */}
-      <div className="hidden lg:flex w-1/2 bg-slate-900 p-8 pt-16 flex-col items-center justify-start text-center relative overflow-hidden h-screen">
+      <div className="hidden lg:flex w-1/2 bg-slate-900 p-8 flex-col items-center justify-center text-center relative overflow-hidden h-screen">
         
         {/* Large Logo - Placed in normal flex flow with height constraints to prevent overflow */}
-        <img 
-          src={shopLogo || logoBase64}
-          alt="Logo" 
-          className="w-[1100px] max-w-[95%] max-h-[38vh] object-contain drop-shadow-2xl select-none shrink-0 mb-6" 
-        />
+        <div className="w-full flex-grow flex items-center justify-center max-h-[40vh] mb-8 shrink-0">
+          <img 
+            src={shopLogo || logoBase64}
+            alt="Logo" 
+            className="max-w-[85%] max-h-full object-contain drop-shadow-2xl select-none" 
+          />
+        </div>
 
         {/* Text and buttons positioned statically below the logo */}
-        <div className="flex flex-col items-center max-w-lg w-full shrink-0 z-10 -mt-32 gap-24">
+        <div className="flex flex-col items-center max-w-lg w-full shrink-0 z-10 space-y-12">
           
           {/* Group 1: Title & Description */}
           <div className="flex flex-col items-center w-full">
-            <h1 className="text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight tracking-tight flex items-center justify-center gap-3">
-              <LogoIcon className="w-10 h-10 text-orange-500 shrink-0" />
-              <span>xxMpos<br/><span className="text-3xl font-semibold">Savdo Tizimi</span></span>
+            <h1 className="text-4xl lg:text-5xl font-black text-white mb-2 leading-tight tracking-tight">
+              xxMpos
             </h1>
+            <h2 className="text-2xl font-bold text-slate-400 mb-4 leading-normal">
+              Savdo Tizimi
+            </h2>
             <p className="text-slate-400 text-sm lg:text-base leading-relaxed px-4">
               Do'kon, kafe, restoran va savdo jarayonlarini avtomatlashtirish, ombor hisobini yuritish uchun zamonaviy va qulay yechim.
             </p>

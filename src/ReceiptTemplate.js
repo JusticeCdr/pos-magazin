@@ -90,8 +90,11 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
   let telegramQr = '';
   let instagramQr = '';
   try {
+    const customReceiptLogo = localStorage.getItem('receiptLogoBase64');
     const customLogo = localStorage.getItem('shopLogoBase64');
-    if (customLogo) {
+    if (customReceiptLogo) {
+      shopLogo = customReceiptLogo;
+    } else if (customLogo) {
       shopLogo = customLogo;
     }
     printerWidth = localStorage.getItem('printer_width') || '58';
@@ -438,8 +441,11 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
   let shopLogo = logoBase64;
   let printerWidth = '58';
   try {
+    const customReceiptLogo = localStorage.getItem('receiptLogoBase64');
     const customLogo = localStorage.getItem('shopLogoBase64');
-    if (customLogo) {
+    if (customReceiptLogo) {
+      shopLogo = customReceiptLogo;
+    } else if (customLogo) {
       shopLogo = customLogo;
     }
     printerWidth = localStorage.getItem('printer_width') || '58';
@@ -545,7 +551,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         <div class="header">
           <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 10px auto 10px auto;" />
           <h2>${storeName || "Do'kon"}</h2>
-          <p style="font-weight: bold; font-size: 14px; margin-top: 5px;">Z-HISOBOT</p>
+          <p style="font-weight: bold; font-size: 14px; margin-top: 5px;">Z-HISOBOT ${stats.shift_number ? `№${stats.shift_number}` : ''}</p>
           <p>Smena yopilishi</p>
         </div>
         
@@ -590,6 +596,20 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
           <span>${formatNumber(stats.debt_sales)} so'm</span>
         </div>
         
+        ${stats.total_discounts > 0 ? `
+        <div class="sub-row">
+          <span>Chegirmalar:</span>
+          <span>-${formatNumber(stats.total_discounts)} so'm</span>
+        </div>
+        ` : ''}
+
+        ${stats.total_refunds > 0 ? `
+        <div class="sub-row">
+          <span>Qaytarilgan cheklar (${stats.refunds_count} ta):</span>
+          <span>-${formatNumber(stats.total_refunds)} so'm</span>
+        </div>
+        ` : ''}
+
         ${stats.total_expenses > 0 ? `
         <div class="divider"></div>
         <div class="sub-row" style="color: #000; font-weight: bold;">
@@ -597,6 +617,13 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
           <span>-${formatNumber(stats.total_expenses)} so'm</span>
         </div>
         ` : ''}
+
+        <div class="divider"></div>
+
+        <div class="total-row">
+          <span>KASSADAGI NAQD PUL:</span>
+          <span>${formatNumber(stats.expected_cash)} so'm</span>
+        </div>
 
         <div class="divider"></div>
         

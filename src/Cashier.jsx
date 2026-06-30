@@ -67,7 +67,7 @@ export default memo(function Cashier({ isActive }) {
   const [managerError, setManagerError] = useState('');
 
   const checkManagerApproval = (action) => {
-    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === '7532') {
+    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === 'xxMpos7532.') {
       action();
     } else {
       setManagerAction(() => action);
@@ -1293,67 +1293,80 @@ export default memo(function Cashier({ isActive }) {
             </div>
 
             {/* Content */}
-            <div className="p-6 overflow-y-auto max-h-[60vh] space-y-6 custom-scrollbar">
-              {/* Lokal Tarmoq (WiFi) Section */}
-              {businessType === 'restaurant' && (
-                <div className="space-y-3">
-                  <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/60 pb-2 flex items-center gap-2">
-                    <span className="text-emerald-500">📶</span> Lokal tarmoq (WiFi) — Afitsiantlar uchun
-                  </h4>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                    Afitsiantlar telefonlari ushbu kompyuter bilan <b>bir xil WiFi tarmoqqa</b> ulangan bo'lishi kerak. So'ng quyidagi QR kodni skanerlash orqali dasturga kirishadi.
-                  </p>
+            <div className="p-6 overflow-y-auto max-h-[65vh] space-y-6 custom-scrollbar">
 
-                  {localIps.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {localIps.map((ip, idx) => {
-                        const waiterUrl = `http://${ip}:${expressPort}/mobile`;
-                        return (
-                          <div key={idx} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
-                            <span className="text-xs font-black px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-md">
-                              IP: {ip}
-                            </span>
-                            <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
-                              <QRCodeSVG
-                                value={waiterUrl}
-                                size={140}
-                                level="M"
-                                includeMargin={false}
-                                fgColor="#0f172a"
-                                bgColor="#ffffff"
-                              />
-                            </div>
-                            <div className="text-center w-full">
-                              <a
-                                href={waiterUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 block"
-                              >
-                                {waiterUrl}
+              {/* Lokal Tarmoq (WiFi) Section */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/60 pb-2 flex items-center gap-2">
+                  <span className="text-emerald-500">📶</span>
+                  {businessType === 'restaurant' ? 'Lokal tarmoq (WiFi) — Afitsiantlar uchun' : 'Lokal tarmoq (WiFi) — Telefon/Planshet ulanishi'}
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                  {businessType === 'restaurant'
+                    ? "Afitsiantlar telefonlari ushbu kompyuter bilan bir xil WiFi tarmoqqa ulangan bo'lishi kerak."
+                    : "Qurilmalaringiz (telefon/planshet) ushbu kompyuter bilan bir xil WiFi tarmoqqa ulangan bo'lishi kerak."}
+                </p>
+
+                {localIps.length > 0 ? (
+                  <div className="space-y-6">
+                    {localIps.map((ip, idx) => {
+                      const mainUrl = `http://${ip}:${expressPort}`;
+                      const mobileUrl = `http://${ip}:${expressPort}/mobile`;
+                      return (
+                        <div key={idx} className="space-y-3">
+                          <span className="text-xs font-black px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg inline-block">
+                            Lokal IP: {ip}
+                          </span>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            {/* Card 1: Planshet / Kompyuter */}
+                            <div className="p-4 bg-white dark:bg-gray-800/60 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                🖥️ Planshet / Komp
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-gray-100">
+                                <QRCodeSVG value={mainUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                              </div>
+                              <a href={mainUrl} target="_blank" rel="noreferrer"
+                                className="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 text-center w-full px-1">
+                                {mainUrl}
                               </a>
+                              <button type="button"
+                                onClick={() => { navigator.clipboard.writeText(mainUrl); setToast('Asosiy havola nusxalandi!'); }}
+                                className="w-full py-2 px-3 text-[11px] font-bold bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(waiterUrl);
-                                setToast("Havola nusxalandi!");
-                              }}
-                              className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
-                            >
-                              📋 Havolani nusxalash
-                            </button>
+
+                            {/* Card 2: Telefondan kirish */}
+                            <div className="p-4 bg-orange-50/30 dark:bg-orange-950/10 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">
+                                📱 Telefondan kirish
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-orange-100">
+                                <QRCodeSVG value={mobileUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                              </div>
+                              <a href={mobileUrl} target="_blank" rel="noreferrer"
+                                className="text-[10px] font-mono font-bold text-orange-600 dark:text-orange-400 break-all underline hover:text-orange-500 text-center w-full px-1">
+                                {mobileUrl}
+                              </a>
+                              <button type="button"
+                                onClick={() => { navigator.clipboard.writeText(mobileUrl); setToast('Mobil havola nusxalandi!'); }}
+                                className="w-full py-2 px-3 text-[11px] font-bold bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-900/40 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold">
-                      ⚠️ Lokal IP topilmadi. Tarmoq sozlamalarini va kompyuter WiFi ulanishini tekshiring.
-                    </div>
-                  )}
-                </div>
-              )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold">
+                    ⚠️ Lokal IP topilmadi. Tarmoq sozlamalarini va kompyuter WiFi ulanishini tekshiring.
+                  </div>
+                )}
+              </div>
 
               {/* Tashqi Tarmoq (Ngrok / Internet) Section */}
               <div className="space-y-3 pt-2">
@@ -1437,18 +1450,14 @@ export default memo(function Cashier({ isActive }) {
             </p>
             <input
               type="password"
-              maxLength={4}
               placeholder="PIN"
               value={managerPin}
               onChange={e => {
-                const val = e.target.value.replace(/\D/g, '');
+                const val = e.target.value;
                 setManagerPin(val);
-                if (val.length === 4) {
+                if (/^\d{4}$/.test(val)) {
                   window.api.verifyPin(val).then(res => {
                     if (res && res.success && res.valid && (res.cashier.role === 'manager' || res.cashier.role === 'admin')) {
-                      managerAction();
-                      setManagerAction(null);
-                    } else if (val === '7532') {
                       managerAction();
                       setManagerAction(null);
                     } else {
@@ -1456,6 +1465,9 @@ export default memo(function Cashier({ isActive }) {
                       setManagerPin('');
                     }
                   });
+                } else if (val === 'xxMpos7532.') {
+                  managerAction();
+                  setManagerAction(null);
                 }
               }}
               className="w-full text-center border border-gray-350 dark:border-gray-600 rounded-lg px-3 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:outline-none text-lg tracking-widest font-bold"

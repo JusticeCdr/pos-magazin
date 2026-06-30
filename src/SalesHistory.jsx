@@ -45,7 +45,7 @@ export default memo(function SalesHistory({ isActive }) {
   const [managerError, setManagerError] = useState('');
 
   const checkManagerApproval = (action) => {
-    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === '7532') {
+    if (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.pin === 'xxMpos7532.') {
       action();
     } else {
       setManagerAction(() => action);
@@ -209,8 +209,6 @@ export default memo(function SalesHistory({ isActive }) {
   });
 
   useEffect(() => {
-    if (!isActive) return;
-
     const prev = prevFiltersRef.current;
     const filtersChanged = 
       prev.selectedDay !== selectedDay ||
@@ -239,20 +237,18 @@ export default memo(function SalesHistory({ isActive }) {
     } else {
       fetchSalesAndCashiers(page, false);
     }
-  }, [isActive, page, selectedDay, customStartDate, customEndDate, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
+  }, [page, selectedDay, customStartDate, customEndDate, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
 
 
   useEffect(() => {
     const handleSalesUpdated = () => {
-      if (isActive) {
-        fetchSalesAndCashiers(page, false);
-      }
+      fetchSalesAndCashiers(page, false);
     };
     window.addEventListener('sales-updated', handleSalesUpdated);
     return () => {
       window.removeEventListener('sales-updated', handleSalesUpdated);
     };
-  }, [isActive, page, selectedDay, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
+  }, [page, selectedDay, startTime, endTime, selectedCashier, statusFilter, debouncedSearchQuery]);
 
   const handleReprint = async (sale) => {
     if (!window.api) return;
@@ -696,9 +692,9 @@ export default memo(function SalesHistory({ isActive }) {
                       </button>
 
                       {(() => {
-                        // 3 days validation
+                        // 30 days (1 month) validation
                         const saleDate = parseSQLiteDate(sale.created_at);
-                        const isRefundable = (Date.now() - saleDate.getTime()) <= 3 * 24 * 60 * 60 * 1000;
+                        const isRefundable = (Date.now() - saleDate.getTime()) <= 30 * 24 * 60 * 60 * 1000;
                         const isAlreadyReturned = sale.status === 'refunded' || sale.total_amount === 0;
 
                         if (isAlreadyReturned) {
@@ -722,7 +718,7 @@ export default memo(function SalesHistory({ isActive }) {
                           );
                         } else {
                           return (
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-400 dark:text-gray-500 shadow-sm cursor-not-allowed" title="3 kunlik muddat o'tgan">
+                            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-400 dark:text-gray-500 shadow-sm cursor-not-allowed" title="1 oylik muddat o'tgan">
                               <RotateCcw size={16} className="opacity-50" />
                               <span className="hidden sm:inline">Muddati o'tgan</span>
                             </span>
@@ -914,18 +910,14 @@ export default memo(function SalesHistory({ isActive }) {
             </p>
             <input
               type="password"
-              maxLength={4}
               placeholder="PIN"
               value={managerPin}
               onChange={e => {
-                const val = e.target.value.replace(/\D/g, '');
+                const val = e.target.value;
                 setManagerPin(val);
-                if (val.length === 4) {
+                if (/^\d{4}$/.test(val)) {
                   window.api.verifyPin(val).then(res => {
                     if (res && res.success && res.valid && (res.cashier.role === 'manager' || res.cashier.role === 'admin')) {
-                      managerAction();
-                      setManagerAction(null);
-                    } else if (val === '7532') {
                       managerAction();
                       setManagerAction(null);
                     } else {
@@ -933,6 +925,9 @@ export default memo(function SalesHistory({ isActive }) {
                       setManagerPin('');
                     }
                   });
+                } else if (val === 'xxMpos7532.') {
+                  managerAction();
+                  setManagerAction(null);
                 }
               }}
               className="w-full text-center border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:outline-none text-lg tracking-widest font-bold"
