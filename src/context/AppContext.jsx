@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { TRANSLATIONS } from '../translations';
 import { io } from 'socket.io-client';
 
@@ -11,7 +11,7 @@ export function AppProvider({ children }) {
 
   const cart = carts[activeCartId] || [];
 
-  const setCart = (updater) => {
+  const setCart = useCallback((updater) => {
     setCarts(prev => {
       const currentCart = prev[activeCartId] || [];
       const nextCart = typeof updater === 'function' ? updater(currentCart) : updater;
@@ -20,13 +20,13 @@ export function AppProvider({ children }) {
         [activeCartId]: nextCart
       };
     });
-  };
+  }, [activeCartId]);
 
   // ── Global Products Cache ──────────────────────────────────────────────────
   const [globalProducts, setGlobalProducts] = useState([]);
   const [productsLoaded, setProductsLoaded] = useState(false);
 
-  const fetchGlobalProducts = async () => {
+  const fetchGlobalProducts = useCallback(async () => {
     if (!window.api) return;
     try {
       const data = await window.api.getProducts();
@@ -34,11 +34,11 @@ export function AppProvider({ children }) {
       setProductsLoaded(true);
     } catch (err) {
     }
-  };
+  }, [setGlobalProducts, setProductsLoaded]);
 
   useEffect(() => {
     fetchGlobalProducts();
-  }, []);
+  }, [fetchGlobalProducts]);
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [theme, setTheme] = useState(() => {
@@ -118,7 +118,7 @@ export function AppProvider({ children }) {
   const [globalCustomers, setGlobalCustomers] = useState([]);
   const [customersLoaded, setCustomersLoaded] = useState(false);
 
-  const fetchGlobalCustomers = async () => {
+  const fetchGlobalCustomers = useCallback(async () => {
     if (!window.api) return;
     try {
       const data = await window.api.getCustomers();
@@ -126,7 +126,7 @@ export function AppProvider({ children }) {
       setCustomersLoaded(true);
     } catch (err) {
     }
-  };
+  }, [setGlobalCustomers, setCustomersLoaded]);
 
   useEffect(() => {
     // Fetch initial settings and customers
@@ -162,7 +162,7 @@ export function AppProvider({ children }) {
       }).catch(() => {});
       fetchGlobalCustomers();
     }
-  }, []);
+  }, [fetchGlobalCustomers]);
 
   useEffect(() => {
     let socket;

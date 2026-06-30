@@ -57,6 +57,12 @@ export function useBarcodeScanner(onScan, active = true) {
         // Never intercept control shortcuts
         if (e.ctrlKey || e.altKey || e.metaKey) return;
 
+        // If target is an input or textarea, let the browser handle it natively (no lag)
+        const target = e.target;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+          return;
+        }
+
         const now  = Date.now();
         const diff = now - lastKeyTime;
         lastKeyTime = now;
@@ -65,21 +71,8 @@ export function useBarcodeScanner(onScan, active = true) {
           if (diff > 40) {
             // ── Slow keystroke — likely a human typing ───────────────────
             flushPending();
-
-            const target  = e.target;
-            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
-
-            if (isInput) {
-              // Hold the char for 40 ms; inject it back if no scanner char follows
-              e.preventDefault();
-              e.stopPropagation();
-
-              pendingChar  = { key: e.key, target };
-              pendingTimer = setTimeout(flushPending, 40);
-            } else {
-              // Not in an input — treat as potential first char of a barcode
-              buffer = e.key;
-            }
+            // Not in an input — treat as potential first char of a barcode
+            buffer = e.key;
           } else {
             // ── Fast keystroke — scanner speed ───────────────────────────
             e.preventDefault();
