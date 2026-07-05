@@ -15,7 +15,7 @@ const getLocalDateString = (offsetDays = 0) => {
 };
 
 export default memo(function SalesHistory({ isActive }) {
-  const { lang, storeName, fetchGlobalProducts, currentUser } = useApp();
+  const { lang, storeName, fetchGlobalProducts, currentUser, businessType } = useApp();
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -150,7 +150,7 @@ export default memo(function SalesHistory({ isActive }) {
 
   const executeFullReturn = async () => {
     if (!window.api || !confirmReturn) return;
-    checkManagerApproval(async () => {
+    const action = async () => {
       try {
         const res = await window.api.processFullReturn(confirmReturn.id);
         if (res && res.success) {
@@ -165,7 +165,13 @@ export default memo(function SalesHistory({ isActive }) {
       } finally {
         setConfirmReturn(null);
       }
-    });
+    };
+
+    if (businessType === 'retail') {
+      action();
+    } else {
+      checkManagerApproval(action);
+    }
   };
 
   const executePartialReturn = async () => {
@@ -176,7 +182,7 @@ export default memo(function SalesHistory({ isActive }) {
       return;
     }
     
-    checkManagerApproval(async () => {
+    const action = async () => {
       try {
         const res = await window.api.processReturn({ saleItemId: partialReturnItem.id, returnQty: qty });
         if (res && res.success) {
@@ -192,7 +198,13 @@ export default memo(function SalesHistory({ isActive }) {
         setPartialReturnItem(null);
         setPartialReturnQty('');
       }
-    });
+    };
+
+    if (businessType === 'retail') {
+      action();
+    } else {
+      checkManagerApproval(action);
+    }
   };
 
   // Sync state filter changes and trigger paginated backend query.
