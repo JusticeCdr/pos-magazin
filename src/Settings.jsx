@@ -183,6 +183,16 @@ export default memo(function Settings() {
   const [selectedKitchenPrinter, setSelectedKitchenPrinter] = useState('');
   const [selectedBarPrinter, setSelectedBarPrinter] = useState('');
   const [selectedColdPrinter, setSelectedColdPrinter] = useState('');
+  const [oshxona1Printer, setOshxona1Printer] = useState('');
+  const [oshxona2Printer, setOshxona2Printer] = useState('');
+  const [oshxona3Printer, setOshxona3Printer] = useState('');
+  const [bar1Printer, setBar1Printer] = useState('');
+  const [bar2Printer, setBar2Printer] = useState('');
+  const [bar3Printer, setBar3Printer] = useState('');
+  const [xolodniy1Printer, setXolodniy1Printer] = useState('');
+  const [xolodniy2Printer, setXolodniy2Printer] = useState('');
+  const [xolodniy3Printer, setXolodniy3Printer] = useState('');
+  const [receiptLang, setReceiptLang] = useState('uz');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetPin, setResetPin] = useState('');
   const [isResetting, setIsResetting] = useState(false);
@@ -406,6 +416,37 @@ export default memo(function Settings() {
         if (res.data.cold_printer_name) {
           setSelectedColdPrinter(res.data.cold_printer_name);
         }
+        if (res.data.oshxona_1_printer) {
+          setOshxona1Printer(res.data.oshxona_1_printer);
+        }
+        if (res.data.oshxona_2_printer) {
+          setOshxona2Printer(res.data.oshxona_2_printer);
+        }
+        if (res.data.oshxona_3_printer) {
+          setOshxona3Printer(res.data.oshxona_3_printer);
+        }
+        if (res.data.bar_1_printer) {
+          setBar1Printer(res.data.bar_1_printer);
+        }
+        if (res.data.bar_2_printer) {
+          setBar2Printer(res.data.bar_2_printer);
+        }
+        if (res.data.bar_3_printer) {
+          setBar3Printer(res.data.bar_3_printer);
+        }
+        if (res.data.xolodniy_1_printer) {
+          setXolodniy1Printer(res.data.xolodniy_1_printer);
+        }
+        if (res.data.xolodniy_2_printer) {
+          setXolodniy2Printer(res.data.xolodniy_2_printer);
+        }
+        if (res.data.xolodniy_3_printer) {
+          setXolodniy3Printer(res.data.xolodniy_3_printer);
+        }
+        if (res.data.receipt_lang) {
+          setReceiptLang(res.data.receipt_lang);
+          localStorage.setItem('receipt_lang', res.data.receipt_lang);
+        }
         if (res.data.shop_logo) {
           setShopLogo(res.data.shop_logo);
         }
@@ -436,12 +477,23 @@ export default memo(function Settings() {
     localStorage.setItem('labelPrinterName', selectedLabelPrinter);
     localStorage.setItem('label_width', labelWidth);
     localStorage.setItem('label_height', labelHeight);
+    localStorage.setItem('receipt_lang', receiptLang);
     if (window.api) {
       await window.api.updateSetting({ key: 'receipt_printer_name', value: selectedPrinter });
       await window.api.updateSetting({ key: 'label_printer_name', value: selectedLabelPrinter });
       await window.api.updateSetting({ key: 'kitchen_printer_name', value: selectedKitchenPrinter });
       await window.api.updateSetting({ key: 'bar_printer_name', value: selectedBarPrinter });
       await window.api.updateSetting({ key: 'cold_printer_name', value: selectedColdPrinter });
+      await window.api.updateSetting({ key: 'oshxona_1_printer', value: oshxona1Printer });
+      await window.api.updateSetting({ key: 'oshxona_2_printer', value: oshxona2Printer });
+      await window.api.updateSetting({ key: 'oshxona_3_printer', value: oshxona3Printer });
+      await window.api.updateSetting({ key: 'bar_1_printer', value: bar1Printer });
+      await window.api.updateSetting({ key: 'bar_2_printer', value: bar2Printer });
+      await window.api.updateSetting({ key: 'bar_3_printer', value: bar3Printer });
+      await window.api.updateSetting({ key: 'xolodniy_1_printer', value: xolodniy1Printer });
+      await window.api.updateSetting({ key: 'xolodniy_2_printer', value: xolodniy2Printer });
+      await window.api.updateSetting({ key: 'xolodniy_3_printer', value: xolodniy3Printer });
+      await window.api.updateSetting({ key: 'receipt_lang', value: receiptLang });
       await window.api.updateSetting({ key: 'label_width', value: labelWidth });
       await window.api.updateSetting({ key: 'label_height', value: labelHeight });
     }
@@ -1191,7 +1243,8 @@ export default memo(function Settings() {
                   Chek qog'ozi kengligi
                 </label>
                 <select
-                  value={printerWidth}
+                  disabled={businessType === 'restaurant'}
+                  value={businessType === 'restaurant' ? '80' : printerWidth}
                   onChange={async (e) => {
                     const val = e.target.value;
                     setPrinterWidth(val);
@@ -1200,10 +1253,29 @@ export default memo(function Settings() {
                       await window.api.updateSetting({ key: 'printer_width', value: val });
                     }
                   }}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors disabled:opacity-75 disabled:bg-gray-100 dark:disabled:bg-gray-800"
                 >
                   <option value="58">Kichik (58mm)</option>
                   <option value="80">Katta (80mm)</option>
+                </select>
+                {businessType === 'restaurant' && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 font-semibold">
+                    * Kafe rejimi uchun chek qog'ozi o'lchami 80mm ga qulflangan.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Chek chop etish tili
+                </label>
+                <select
+                  value={receiptLang}
+                  onChange={(e) => setReceiptLang(e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                >
+                  <option value="uz">O'zbekcha</option>
+                  <option value="ru">Русский</option>
                 </select>
               </div>
 
@@ -1274,53 +1346,83 @@ export default memo(function Settings() {
                       Oshxona, Bar va Xolodniy bo'limlari uchun alohida printerlarni tanlang:
                     </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                          Oshxona printeri (Kitchen)
-                        </label>
-                        <select
-                          value={selectedKitchenPrinter}
-                          onChange={(e) => setSelectedKitchenPrinter(e.target.value)}
-                          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                        >
-                          <option value="">-- {t('none') || 'Не печатать'} --</option>
-                          {printers.map((p, idx) => (
-                            <option key={idx} value={p.name}>{p.name}</option>
-                          ))}
-                        </select>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Oshxona Printerlari */}
+                      <div className="space-y-3 bg-gray-50/50 dark:bg-gray-800/40 p-4 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                        <h5 className="font-bold text-xs uppercase tracking-wider text-gray-600 dark:text-gray-400 border-b pb-1">Oshxona bo'limi</h5>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Oshxona-1 printeri</label>
+                          <select value={oshxona1Printer} onChange={(e) => setOshxona1Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Oshxona-2 printeri</label>
+                          <select value={oshxona2Printer} onChange={(e) => setOshxona2Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Oshxona-3 printeri</label>
+                          <select value={oshxona3Printer} onChange={(e) => setOshxona3Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                          Bar printeri (Bar)
-                        </label>
-                        <select
-                          value={selectedBarPrinter}
-                          onChange={(e) => setSelectedBarPrinter(e.target.value)}
-                          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                        >
-                          <option value="">-- {t('none') || 'Не печатать'} --</option>
-                          {printers.map((p, idx) => (
-                            <option key={idx} value={p.name}>{p.name}</option>
-                          ))}
-                        </select>
+                      {/* Bar Printerlari */}
+                      <div className="space-y-3 bg-gray-50/50 dark:bg-gray-800/40 p-4 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                        <h5 className="font-bold text-xs uppercase tracking-wider text-gray-600 dark:text-gray-400 border-b pb-1">Bar bo'limi</h5>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Bar-1 printeri</label>
+                          <select value={bar1Printer} onChange={(e) => setBar1Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Bar-2 printeri</label>
+                          <select value={bar2Printer} onChange={(e) => setBar2Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Bar-3 printeri</label>
+                          <select value={bar3Printer} onChange={(e) => setBar3Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                          Xolodniy printeri (Cold)
-                        </label>
-                        <select
-                          value={selectedColdPrinter}
-                          onChange={(e) => setSelectedColdPrinter(e.target.value)}
-                          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                        >
-                          <option value="">-- {t('none') || 'Не печатать'} --</option>
-                          {printers.map((p, idx) => (
-                            <option key={idx} value={p.name}>{p.name}</option>
-                          ))}
-                        </select>
+                      {/* Xolodniy Printerlari */}
+                      <div className="space-y-3 bg-gray-50/50 dark:bg-gray-800/40 p-4 rounded-2xl border border-gray-200/50 dark:border-gray-700/50">
+                        <h5 className="font-bold text-xs uppercase tracking-wider text-gray-600 dark:text-gray-400 border-b pb-1">Xolodniy bo'limi</h5>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Xolodniy-1 printeri</label>
+                          <select value={xolodniy1Printer} onChange={(e) => setXolodniy1Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Xolodniy-2 printeri</label>
+                          <select value={xolodniy2Printer} onChange={(e) => setXolodniy2Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Xolodniy-3 printeri</label>
+                          <select value={xolodniy3Printer} onChange={(e) => setXolodniy3Printer(e.target.value)} className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                            <option value="">-- {t('none') || 'Не печатать'} --</option>
+                            {printers.map((p, idx) => <option key={idx} value={p.name}>{p.name}</option>)}
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>

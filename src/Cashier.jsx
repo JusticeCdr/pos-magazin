@@ -6,7 +6,7 @@ import {
   ShieldAlert, Banknote, Users, PackageOpen, AlertCircle
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useApp } from './context/AppContext';
+import { useApp, useCart } from './context/AppContext';
 import { formatCurrency, formatThousands } from './utils';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 import { generateReceiptHTML } from './ReceiptTemplate';
@@ -47,8 +47,9 @@ function formatPhoneNumber(value) {
 }
 
 export default memo(function Cashier({ isActive }) {
+  const { cart, setCart, carts, activeCartId, setActiveCartId } = useCart();
   const { 
-    cart, setCart, carts, activeCartId, setActiveCartId, t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts,
+    t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts,
     globalCustomers: customers, fetchGlobalCustomers, businessType
   } = useApp();
   const [debtForm, setDebtForm] = useState({ id: '', name: '', phone: '' });

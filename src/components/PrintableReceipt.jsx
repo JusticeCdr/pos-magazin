@@ -2,12 +2,54 @@ import { forwardRef, useState, useEffect } from 'react';
 import { logoBase64 } from '../logoBase64';
 import { useApp } from '../context/AppContext';
 
+const receiptTranslations = {
+  uz: {
+    murojaat: "Murojaat uchun:",
+    manzil: "Manzil:",
+    qaytaChek: "Qayta chiqarilgan chek",
+    stolHisobi: "STOL HISOBI (PRE-CHEK)",
+    chekN: "Chek N:",
+    sana: "Sana:",
+    kassir: "Kassir:",
+    jami: "JAMI:",
+    savdoSummasi: "Savdo summasi:",
+    chegirma: "Chegirma",
+    tolovTuri: "To'lov turi:",
+    izoh: "Izoh:",
+    rahmat: "Xaridingiz uchun rahmat!",
+    disclaimer: "Ushbu chek ichki hisob-kitob uchun.<br />Fiskal (soliq) cheki hisoblanmaydi!<br />Iltimos, kassirdan rasmiy fiskal chek talab qiling.",
+    naqd: "Naqd pul",
+    card: "Plastik karta",
+    debt: "Qarzga"
+  },
+  ru: {
+    murojaat: "Для справок:",
+    manzil: "Адрес:",
+    qaytaChek: "Повторно распечатанный чек",
+    stolHisobi: "СЧЕТ СТОЛА (ПРЕ-ЧЕК)",
+    chekN: "Чек №:",
+    sana: "Дата:",
+    kassir: "Кассир:",
+    jami: "ИТОГО:",
+    savdoSummasi: "Сумма продажи:",
+    chegirma: "Скидка",
+    tolovTuri: "Тип оплаты:",
+    izoh: "Примечание:",
+    rahmat: "Спасибо за покупку!",
+    disclaimer: "Этот чек предназначен для внутреннего учета.<br />Не является фискальным чеком!<br />Пожалуйста, требуйте официальный фискальный чек у кассира.",
+    naqd: "Наличные",
+    card: "Пластиковая карта",
+    debt: "В долг"
+  }
+};
+
 export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, isReprint = false }, ref) => {
   const { shopLogo } = useApp();
   const [phones, setPhones] = useState({ phone_1: '', phone_2: '', phone_3: '' });
+  const [receiptLang, setReceiptLang] = useState('uz');
 
   useEffect(() => {
-    const fetchPhones = async () => {
+    const fetchSettings = async () => {
       if (window.api) {
         try {
           const res = await window.api.getSettings();
@@ -17,12 +59,16 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
               phone_2: res.data.phone_2 || '',
               phone_3: res.data.phone_3 || '',
             });
+            if (res.data.receipt_lang) {
+              setReceiptLang(res.data.receipt_lang);
+              localStorage.setItem('receipt_lang', res.data.receipt_lang);
+            }
           }
         } catch (err) {
         }
       }
     };
-    fetchPhones();
+    fetchSettings();
   }, [saleData]);
 
   if (!saleData) return null;
@@ -51,22 +97,31 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
     return Number(num).toLocaleString('ru-RU');
   };
 
-  let paymentMethodLabel = 'Naqd pul';
-  if (paymentMethod === 'card') paymentMethodLabel = 'Plastik karta';
-  if (paymentMethod === 'debt') paymentMethodLabel = 'Qarzga';
+  const activeLang = localStorage.getItem('receipt_lang') || receiptLang || 'uz';
+  const labels = receiptTranslations[activeLang] || receiptTranslations.uz;
+
+  let paymentMethodLabel = labels.naqd;
+  if (paymentMethod === 'card') paymentMethodLabel = labels.card;
+  if (paymentMethod === 'debt') paymentMethodLabel = labels.debt;
+
+  const isKatta = localStorage.getItem('printer_width') === '80';
+  const receiptWidth = isKatta ? '100%' : '280px';
+  const receiptMaxWidth = isKatta ? '80mm' : 'auto';
+  const receiptFontSize = isKatta ? '14px' : '12px';
 
   return (
     <div 
       ref={ref} 
       style={{
-        width: '280px',
-        margin: '0', // Set margin to 0 to prevent cutting off the store name header
-        padding: '0 10px 10px 10px', // Set top padding to 0 to eliminate top whitespace
+        width: receiptWidth,
+        maxWidth: receiptMaxWidth,
+        margin: '0',
+        padding: '0 10px 10px 10px',
         backgroundColor: 'white',
         color: '#000000',
         fontFamily: "'Courier New', Courier, monospace",
         fontWeight: '700',
-        fontSize: '12px',
+        fontSize: receiptFontSize,
         lineHeight: '1.2',
         textAlign: 'left',
         boxSizing: 'border-box',
@@ -78,7 +133,11 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
       id="printable-receipt"
     >
       <div style={{ textAlign: 'center', marginBottom: '5px', marginTop: '0', paddingTop: '0' }}>
-        <img src={shopLogo || logoBase64} alt="Logo" style={{ width: '200px', height: 'auto', display: 'block', margin: '0 auto 3px auto' }} />
+        {/* Hide shop logo on pre-check */}
+        {!isPreCheck && (shopLogo || logoBase64) && (
+          <img src={shopLogo || logoBase64} alt="Logo" style={{ width: '200px', height: 'auto', display: 'block', margin: '0 auto 3px auto' }} />
+        )}
+        
         {(() => {
           const phoneList = [phones.phone_1, phones.phone_2, phones.phone_3].filter(p => p && p.trim() !== '');
           if (phoneList.length === 0) return null;
@@ -89,14 +148,14 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
               justifyContent: 'center',
               alignItems: 'center',
               gap: '6px',
-              fontSize: '15px',
+              fontSize: isKatta ? '16px' : '15px',
               fontWeight: 'bold',
               marginTop: '4px',
               marginBottom: '2px',
               textAlign: 'center',
               width: '100%'
             }}>
-              <span className="receipt-phone-label" style={{ whiteSpace: 'nowrap' }}>Murojaat uchun:</span>
+              <span className="receipt-phone-label" style={{ whiteSpace: 'nowrap' }}>{labels.murojaat}</span>
               {phoneList.map((p, idx) => (
                 <span key={idx} className="receipt-phone-val" style={{ whiteSpace: 'nowrap' }}>{p}</span>
               ))}
@@ -104,34 +163,34 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
           );
         })()}
         {localStorage.getItem('shopLocation') && (
-          <span className="receipt-location" style={{ display: 'block', fontSize: '12px', color: '#333', marginBottom: '6px', textAlign: 'center' }}>
-            Manzil: {localStorage.getItem('shopLocation')}
+          <span className="receipt-location" style={{ display: 'block', fontSize: isKatta ? '13px' : '12px', color: '#333', marginBottom: '6px', textAlign: 'center' }}>
+            {labels.manzil} {localStorage.getItem('shopLocation')}
           </span>
         )}
         <hr className="receipt-divider" style={{ border: 'none', borderTop: '1px dashed #000', margin: '8px 0' }} />
         {isReprint && (
-          <p style={{ marginTop: '5px', fontWeight: 'bold', border: '1px dashed #000', padding: '2px', fontSize: '10px' }}>
-            Qayta chiqarilgan chek
+          <p style={{ marginTop: '5px', fontWeight: 'bold', border: '1px dashed #000', padding: '2px', fontSize: '10px', textAlign: 'center' }}>
+            {labels.qaytaChek}
           </p>
         )}
         {isPreCheck && (
-          <div style={{ textTransform: 'uppercase', textAlign: 'center', fontWeight: '900', border: '2px solid #000', padding: '4px', fontSize: '12px', margin: '5px 0' }}>
-            STOL HISOBI (PRE-CHEK)
+          <div style={{ textTransform: 'uppercase', textAlign: 'center', fontWeight: '900', border: '2px solid #000', padding: '4px', fontSize: isKatta ? '14px' : '12px', margin: '5px 0' }}>
+            {labels.stolHisobi}
           </div>
         )}
       </div>
       
       <div style={{ marginBottom: '5px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Chek N:</span>
+          <span>{labels.chekN}</span>
           <span>{shiftReceiptNumber || dailyReceiptNumber || saleId}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Sana:</span>
+          <span>{labels.sana}</span>
           <span>{displayDateTime}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Kassir:</span>
+          <span>{labels.kassir}</span>
           <span>{cashierName || 'Kassir'}</span>
         </div>
       </div>
@@ -151,7 +210,7 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
             <div key={category} style={{ marginBottom: '10px' }}>
               <div style={{
                 fontWeight: '900',
-                fontSize: '11px',
+                fontSize: isKatta ? '12px' : '11px',
                 textTransform: 'uppercase',
                 borderBottom: '1px solid #000',
                 paddingBottom: '2px',
@@ -168,17 +227,17 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
                 const itemTotalFinal = itemTotalOriginal - itemDiscAmount;
 
                 return (
-                  <div key={idx} style={{ marginBottom: '6px', display: 'block', fontSize: '12px' }}>
+                  <div key={idx} style={{ marginBottom: '6px', display: 'block', fontSize: isKatta ? '13px' : '12px' }}>
                     <div style={{ fontWeight: 'bold', wordBreak: 'break-all', lineHeight: '1.2' }}>
                       {item.originalIndex}. {item.name}
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#000', marginTop: '2px', paddingLeft: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: isKatta ? '12px' : '11px', color: '#000', marginTop: '2px', paddingLeft: '12px' }}>
                       <span>{item.qty} {item.unit || 'dona'} x {formatNumber(item.sell_price)} so'm</span>
                       <span style={{ fontWeight: 'bold' }}>{formatNumber(itemTotalFinal)} so'm</span>
                     </div>
                     {itemPct > 0 && (
                       <div style={{ fontSize: '10px', fontStyle: 'italic', paddingLeft: '12px', color: '#555' }}>
-                        (Chegirma: -{itemPct}%)
+                        ({labels.chegirma}: -{itemPct}%)
                       </div>
                     )}
                   </div>
@@ -192,34 +251,36 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
       <div style={{ borderTop: '1px solid #000', marginTop: '5px', paddingTop: '5px' }}>
         {overallDiscountAmount > 0 && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: '11px', marginBottom: '2px' }}>
-              <span>Savdo summasi:</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: isKatta ? '12px' : '11px', marginBottom: '2px' }}>
+              <span>{labels.savdoSummasi}</span>
               <span>{formatNumber(totalOriginalAll)} so'm</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: '11px', marginBottom: '4px' }}>
-              <span>Chegirma {overallDiscountPercent > 0 ? `(${overallDiscountPercent}%)` : ''}:</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: isKatta ? '12px' : '11px', marginBottom: '4px' }}>
+              <span>{labels.chegirma} {overallDiscountPercent > 0 ? `(${overallDiscountPercent}%)` : ''}:</span>
               <span>-{formatNumber(overallDiscountAmount)} so'm</span>
             </div>
           </>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '13px' }}>
-          <span>JAMI:</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: isKatta ? '15px' : '13px' }}>
+          <span>{labels.jami}</span>
           <span>{formatNumber(total)} so'm</span>
         </div>
         {!isPreCheck && (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', marginTop: '2px' }}>
-            <span>To'lov turi:</span>
+            <span>{labels.tolovTuri}</span>
             <span>{paymentMethodLabel}</span>
           </div>
         )}
       </div>
+      
       {comment && (
         <div style={{ borderTop: '1px dashed #000', marginTop: '5px', paddingTop: '5px', fontSize: '10px', fontWeight: 'bold', wordBreak: 'break-all' }}>
-          Izoh: {comment}
+          {labels.izoh} {comment}
         </div>
       )}
 
-      {(() => {
+      {/* Render social media QR codes only if not precheck */}
+      {!isPreCheck && (() => {
         const tgQr = localStorage.getItem('telegramQrCode');
         const igQr = localStorage.getItem('instagramQrCode');
         if (!tgQr && !igQr) return null;
@@ -251,25 +312,22 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
       })()}
 
       <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '10px' }}>
-        <p style={{ margin: '0' }}>Xaridingiz uchun rahmat!</p>
+        <p style={{ margin: '0' }}>{labels.rahmat}</p>
       </div>
 
-
-
-      <div style={{
-        marginTop: '10px',
-        paddingTop: '7px',
-        paddingBottom: '4px',
-        borderTop: '1px dashed #888',
-        textAlign: 'center',
-        fontSize: '9px',
-        lineHeight: '1.4',
-        color: '#555'
-      }}>
-        Ushbu chek ichki hisob-kitob uchun.<br />
-        Fiskal (soliq) cheki hisoblanmaydi!<br />
-        Iltimos, kassirdan rasmiy fiskal chek talab qiling.
-      </div>
+      <div 
+        style={{
+          marginTop: '10px',
+          paddingTop: '7px',
+          paddingBottom: '4px',
+          borderTop: '1px dashed #888',
+          textAlign: 'center',
+          fontSize: '9px',
+          lineHeight: '1.4',
+          color: '#555'
+        }}
+        dangerouslySetInnerHTML={{ __html: labels.disclaimer }}
+      />
     </div>
   );
 });

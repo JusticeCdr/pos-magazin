@@ -8,9 +8,9 @@ import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands } from './utils';
 import { useReactToPrint } from 'react-to-print';
 import { PrintableReceipt } from './components/PrintableReceipt';
-import { AlertModal } from './components/Modals';
+import { AlertModal, ConfirmModal } from './components/Modals';
 
-const ZONES = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
+const DEFAULT_ZONES = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
 
 /* ── Zone icon helper ──────────────────────────────────────────────────────── */
 function ZoneIcon({ zone, size = 16 }) {
@@ -423,11 +423,46 @@ function AddTableModal({ zone, onAdd, onClose }) {
   );
 }
 
+/* ── Add Zone Modal ────────────────────────────────────────────────────────── */
+function AddZoneModal({ onAdd, onClose }) {
+  const [name, setName] = useState('');
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onAdd(name.trim());
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-black text-gray-900 dark:text-white mb-4">
+          Yangi zona qo'shish
+        </h3>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="text"
+            autoFocus
+            placeholder="Zona nomi (mas: VIP, Terrassa)"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-205 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-bold">Bekor</button>
+            <button type="submit" className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-colors">Qo'shish</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ── Restaurant Cashier (main component) ───────────────────────────────────── */
 export default function RestaurantCashier({ isActive }) {
   const { t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts, globalCustomers: customers } = useApp();
 
   // Zone & table selection
+  const [zones, setZones] = useState(DEFAULT_ZONES);
   const [activeZone, setActiveZone] = useState('Stol');
   const [onlyMyOrders, setOnlyMyOrders] = useState(false);
   const [tables, setTables] = useState([]);
@@ -453,6 +488,9 @@ export default function RestaurantCashier({ isActive }) {
   // Modals
   const [showPayModal, setShowPayModal] = useState(false);
   const [showAddTableModal, setShowAddTableModal] = useState(false);
+  const [showAddZoneModal, setShowAddZoneModal] = useState(false);
+  const [showDeleteZoneConfirm, setShowDeleteZoneConfirm] = useState(false);
+  const [showDeleteTableConfirm, setShowDeleteTableConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState(null);
   const [alertModal, setAlertModal] = useState(null);
@@ -538,6 +576,25 @@ export default function RestaurantCashier({ isActive }) {
     }
   }, []);
 
+  const loadZones = useCallback(async () => {
+    if (!window.api || !window.api.getRestaurantZones) return;
+    try {
+      const res = await window.api.getRestaurantZones();
+      if (res && res.success && res.data) {
+        const zoneNames = res.data.map(z => z.name);
+        setZones(zoneNames);
+        setActiveZone(currentActive => {
+          if (zoneNames.length > 0 && !zoneNames.includes(currentActive)) {
+            return zoneNames[0];
+          }
+          return currentActive;
+        });
+      }
+    } catch (err) {
+      console.error('loadZones error:', err);
+    }
+  }, []);
+
   const loadWaiters = useCallback(async () => {
     if (!window.api || !window.api.getWaiters) return;
     try {
@@ -551,14 +608,18 @@ export default function RestaurantCashier({ isActive }) {
   useEffect(() => {
     loadTables();
     loadWaiters();
-  }, [loadTables, loadWaiters]);
+    loadZones();
+  }, [loadTables, loadWaiters, loadZones]);
 
   // Refresh tables on sales-updated
   useEffect(() => {
-    const h = () => loadTables();
+    const h = () => {
+      loadTables();
+      loadZones();
+    };
     window.addEventListener('sales-updated', h);
     return () => window.removeEventListener('sales-updated', h);
-  }, [loadTables]);
+  }, [loadTables, loadZones]);
 
   // ── Select/Lock Table ────────────────────────────────────────────────────────
   const selectTable = useCallback(async (table) => {
@@ -835,6 +896,58 @@ export default function RestaurantCashier({ isActive }) {
     }
   };
 
+  const handleAddZone = async (name) => {
+    if (!window.api || !window.api.addRestaurantZone) return;
+    try {
+      const res = await window.api.addRestaurantZone(name);
+      if (res && res.success) {
+        setToast(`"${name}" zonasi qo'shildi!`);
+        loadZones();
+        setActiveZone(name);
+      } else {
+        setAlertModal({ title: 'Xatolik', message: res?.error || 'Zonani qo\'shishda xatolik', type: 'error' });
+      }
+    } catch (err) {
+      setAlertModal({ title: 'Xatolik', message: err.message, type: 'error' });
+    }
+  };
+
+  const handleDeleteZone = async (zoneName) => {
+    if (!window.api || !window.api.deleteRestaurantZone) return;
+    try {
+      const res = await window.api.deleteRestaurantZone(zoneName);
+      if (res && res.success) {
+        setToast(`"${zoneName}" zonasi o'chirildi!`);
+        loadZones();
+        loadTables();
+      } else {
+        setAlertModal({ title: 'Xatolik', message: res?.error || 'Zonani o\'chirishda xatolik', type: 'error' });
+      }
+    } catch (err) {
+      setAlertModal({ title: 'Xatolik', message: err.message, type: 'error' });
+    }
+  };
+
+  const handleDeleteTable = async (tableId, tableName) => {
+    if (!window.api || !window.api.deleteRestaurantTable) return;
+    try {
+      const res = await window.api.deleteRestaurantTable(tableId);
+      if (res && res.success) {
+        setToast(`"${tableName}" o'chirildi!`);
+        setSelectedTable(null);
+        setCart([]);
+        setSavedItems([]);
+        setActiveOrder(null);
+        setCheckComment('');
+        loadTables();
+      } else {
+        setAlertModal({ title: 'Xatolik', message: res?.error || 'Stolni o\'chirishda xatolik', type: 'error' });
+      }
+    } catch (err) {
+      setAlertModal({ title: 'Xatolik', message: err.message, type: 'error' });
+    }
+  };
+
   // Toast auto-hide
   useEffect(() => {
     if (toast) {
@@ -900,7 +1013,7 @@ export default function RestaurantCashier({ isActive }) {
 
       {/* ── Zone Tabs (top) ─────────────────────────────────────────────────── */}
       <div className="flex gap-1 p-2 pb-0 shrink-0 overflow-x-auto custom-scrollbar">
-        {ZONES.map(zone => {
+        {zones.map(zone => {
           const count = (tables || []).filter(t => t.zone === zone).length;
           const occupied = (tables || []).filter(t => t.zone === zone && t.status === 'occupied').length;
           return (
@@ -927,6 +1040,16 @@ export default function RestaurantCashier({ isActive }) {
             </button>
           );
         })}
+        {currentUser?.role !== 'waiter' && (
+          <button
+            onClick={() => setShowAddZoneModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl font-bold text-sm bg-gray-50/50 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 border-b-2 border-transparent transition-all cursor-pointer whitespace-nowrap"
+            title="Yangi zona qo'shish"
+          >
+            <Plus size={15} />
+            <span>Zona qo'shish</span>
+          </button>
+        )}
       </div>
 
       {/* ── Content Area ────────────────────────────────────────────────────── */}
@@ -957,12 +1080,22 @@ export default function RestaurantCashier({ isActive }) {
                     </label>
                   )}
                 </div>
-                <button
-                  onClick={() => setShowAddTableModal(true)}
-                  className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition cursor-pointer"
-                >
-                  <Plus size={13} /> {activeZone === 'Dostavka' ? "Kuryer qo'shish" : "Stol qo'shish"}
-                </button>
+                <div className="flex gap-2">
+                  {currentUser?.role !== 'waiter' && activeZone !== 'Dostavka' && (
+                    <button
+                      onClick={() => setShowDeleteZoneConfirm(true)}
+                      className="flex items-center gap-1 text-xs px-3 py-1.5 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-lg font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition cursor-pointer"
+                    >
+                      <Trash2 size={13} /> Zonani o'chirish
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowAddTableModal(true)}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition cursor-pointer"
+                  >
+                    <Plus size={13} /> {activeZone === 'Dostavka' ? "Kuryer qo'shish" : "Stol qo'shish"}
+                  </button>
+                </div>
               </div>
 
               {zoneTables.length === 0 ? (
@@ -1194,6 +1327,15 @@ export default function RestaurantCashier({ isActive }) {
                     {cart.reduce((s, i) => s + i.qty, 0)}
                   </span>
                 )}
+                {currentUser?.role !== 'waiter' && selectedTable.status === 'free' && selectedTable.zone !== 'Dostavka' && (
+                  <button
+                    onClick={() => setShowDeleteTableConfirm(true)}
+                    className="p-1 text-red-500 hover:text-red-750 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-md transition cursor-pointer"
+                    title="Stolni o'chirish"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
               {cart.length > 0 && currentUser?.role !== 'waiter' && (
                 <button onClick={() => checkManagerApproval(() => setCart([]))} className="text-xs text-red-500 hover:text-red-600 font-bold px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md transition cursor-pointer">
@@ -1349,6 +1491,43 @@ export default function RestaurantCashier({ isActive }) {
           zone={activeZone}
           onAdd={handleAddTable}
           onClose={() => setShowAddTableModal(false)}
+        />
+      )}
+
+      {showAddZoneModal && (
+        <AddZoneModal
+          onAdd={handleAddZone}
+          onClose={() => setShowAddZoneModal(false)}
+        />
+      )}
+
+      {showDeleteZoneConfirm && (
+        <ConfirmModal
+          isOpen={showDeleteZoneConfirm}
+          title="Zonani o'chirish"
+          message={`Siz haqiqatan ham "${activeZone}" zonasi va undagi barcha stollarni o'chirmoqchimisiz?`}
+          onConfirm={() => {
+            handleDeleteZone(activeZone);
+            setShowDeleteZoneConfirm(false);
+          }}
+          onCancel={() => setShowDeleteZoneConfirm(false)}
+          confirmText="O'chirish"
+          cancelText="Bekor qilish"
+        />
+      )}
+
+      {showDeleteTableConfirm && selectedTable && (
+        <ConfirmModal
+          isOpen={showDeleteTableConfirm}
+          title="Stolni o'chirish"
+          message={`Siz haqiqatan ham "${selectedTable.name}" stolini o'chirmoqchimisiz?`}
+          onConfirm={() => {
+            handleDeleteTable(selectedTable.id, selectedTable.name);
+            setShowDeleteTableConfirm(false);
+          }}
+          onCancel={() => setShowDeleteTableConfirm(false)}
+          confirmText="O'chirish"
+          cancelText="Bekor qilish"
         />
       )}
 

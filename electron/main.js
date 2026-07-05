@@ -343,7 +343,10 @@ const {
   getAttendanceList,
   saveAttendance,
   updateCashier,
-  updateWaiter
+  updateWaiter,
+  getRestaurantZones,
+  addRestaurantZone,
+  deleteRestaurantZone
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
@@ -447,15 +450,38 @@ async function printKitchenRunner(tableName, waiterName, items) {
     const settings = settingsRes.data;
 
     const printerMap = {
-      kitchen: settings.kitchen_printer_name || settings.receipt_printer_name,
-      bar: settings.bar_printer_name || settings.receipt_printer_name,
-      cold: settings.cold_printer_name || settings.receipt_printer_name
+      // Legacy destinations mapping
+      kitchen: settings.oshxona_1_printer_name || settings.kitchen_printer_name || settings.receipt_printer_name,
+      bar: settings.bar_1_printer_name || settings.bar_printer_name || settings.receipt_printer_name,
+      cold: settings.xolodniy_1_printer_name || settings.cold_printer_name || settings.receipt_printer_name,
+      
+      // New explicit destinations
+      'oshxona-1': settings.oshxona_1_printer_name || settings.kitchen_printer_name || settings.receipt_printer_name,
+      'oshxona-2': settings.oshxona_2_printer_name || settings.receipt_printer_name,
+      'oshxona-3': settings.oshxona_3_printer_name || settings.receipt_printer_name,
+      
+      'bar-1': settings.bar_1_printer_name || settings.bar_printer_name || settings.receipt_printer_name,
+      'bar-2': settings.bar_2_printer_name || settings.receipt_printer_name,
+      'bar-3': settings.bar_3_printer_name || settings.receipt_printer_name,
+      
+      'xolodniy-1': settings.xolodniy_1_printer_name || settings.cold_printer_name || settings.receipt_printer_name,
+      'xolodniy-2': settings.xolodniy_2_printer_name || settings.receipt_printer_name,
+      'xolodniy-3': settings.xolodniy_3_printer_name || settings.receipt_printer_name
     };
 
     const titleMap = {
       kitchen: "OSHXONA CHEKI",
       bar: "BAR CHEKI",
-      cold: "XOLODNIY CHEKI"
+      cold: "XOLODNIY CHEKI",
+      'oshxona-1': "OSHXONA-1 CHEKI",
+      'oshxona-2': "OSHXONA-2 CHEKI",
+      'oshxona-3': "OSHXONA-3 CHEKI",
+      'bar-1': "BAR-1 CHEKI",
+      'bar-2': "BAR-2 CHEKI",
+      'bar-3': "BAR-3 CHEKI",
+      'xolodniy-1': "XOLODNIY-1 CHEKI",
+      'xolodniy-2': "XOLODNIY-2 CHEKI",
+      'xolodniy-3': "XOLODNIY-3 CHEKI"
     };
 
     // Group items by printer destination
@@ -513,37 +539,37 @@ async function printSingleDepartmentRunner(tableName, waiterName, items, printer
     for (const it of items) {
       const priceStr = it.price ? Math.round(it.price).toLocaleString('ru-RU') : '0';
       itemsHtml += `
-        <tr style="border-bottom: 1px dashed #000; font-size: 14px;">
-          <td style="padding: 6px 0; font-weight: bold;">${it.name}</td>
-          <td style="padding: 6px 0; text-align: center; font-size: 16px; font-weight: bold;">x${it.qty}</td>
-          <td style="padding: 6px 0; text-align: right; font-size: 14px;">${priceStr}</td>
+        <tr style="border-bottom: 1px dashed #000; font-size: 15px;">
+          <td style="padding: 8px 0; font-weight: bold;">${it.name}</td>
+          <td style="padding: 8px 0; text-align: center; font-size: 18px; font-weight: bold;">x${it.qty}</td>
+          <td style="padding: 8px 0; text-align: right; font-size: 15px;">${priceStr}</td>
         </tr>
       `;
     }
 
     const runnerHTML = `
       <html>
-        <body style="font-family: 'Courier New', Courier, monospace; margin: 0; padding: 10px; width: 280px; color: #000;">
-          <div id="printable-receipt" style="text-align: center;">
-            <h2 style="margin: 0; font-size: 22px; font-weight: 900; border-bottom: 2px double #000; padding-bottom: 5px;">${title}</h2>
-            <div style="text-align: left; margin: 10px 0; font-size: 14px; line-height: 1.4;">
-              <div><b>STOL:</b> <span style="font-size: 18px; font-weight: 900;">${tableName}</span></div>
+        <body style="font-family: 'Courier New', Courier, monospace; margin: 0; padding: 5px; width: 100%; max-width: 80mm; color: #000; box-sizing: border-box; overflow: hidden;">
+          <div id="printable-receipt" style="text-align: center; width: 100%; padding: 0 5px;">
+            <h2 style="margin: 0; font-size: 24px; font-weight: 900; border-bottom: 2px double #000; padding-bottom: 5px;">${title}</h2>
+            <div style="text-align: left; margin: 12px 0; font-size: 15px; line-height: 1.4;">
+              <div><b>STOL:</b> <span style="font-size: 20px; font-weight: 900;">${tableName}</span></div>
               <div><b>OFITSIANT:</b> ${waiterName}</div>
               <div><b>VAQT:</b> ${dateStr} ${timeStr}</div>
             </div>
             <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
               <thead>
-                <tr style="border-bottom: 2px solid #000; font-size: 12px;">
-                  <th style="text-align: left; padding-bottom: 4px;">Nomi</th>
-                  <th style="text-align: center; padding-bottom: 4px;">Soni</th>
-                  <th style="text-align: right; padding-bottom: 4px;">Narxi</th>
+                <tr style="border-bottom: 2px solid #000; font-size: 13px;">
+                  <th style="text-align: left; padding-bottom: 6px;">Nomi</th>
+                  <th style="text-align: center; padding-bottom: 6px;">Soni</th>
+                  <th style="text-align: right; padding-bottom: 6px;">Narxi</th>
                 </tr>
               </thead>
               <tbody>
                 ${itemsHtml}
               </tbody>
             </table>
-            <div style="margin-top: 20px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px;">
+            <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 8px; font-size: 13px;">
               * Yangi buyurtma *
             </div>
           </div>
@@ -623,16 +649,16 @@ async function printCancellationSlip(tableName, staffName) {
 
     const cancelHTML = `
       <html>
-        <body style="font-family: 'Courier New', Courier, monospace; margin: 0; padding: 10px; width: 280px; color: #000;">
-          <div id="printable-receipt" style="text-align: center; border: 4px solid #000; padding: 10px;">
-            <h2 style="margin: 0; font-size: 24px; font-weight: 900; background-color: #000; color: #fff; padding: 5px;">BEKOR QILINDI</h2>
-            <h3 style="margin: 5px 0 0 0; font-size: 20px; font-weight: 900;">CANCELLED</h3>
-            <div style="text-align: left; margin: 15px 0; font-size: 15px; line-height: 1.5; border-top: 1px dashed #000; padding-top: 10px;">
-              <div><b>STOL:</b> <span style="font-size: 20px; font-weight: 900;">${tableName}</span></div>
+        <body style="font-family: 'Courier New', Courier, monospace; margin: 0; padding: 5px; width: 100%; max-width: 80mm; color: #000; box-sizing: border-box; overflow: hidden;">
+          <div id="printable-receipt" style="text-align: center; border: 4px solid #000; padding: 10px; width: 100%; box-sizing: border-box;">
+            <h2 style="margin: 0; font-size: 26px; font-weight: 900; background-color: #000; color: #fff; padding: 8px;">BEKOR QILINDI</h2>
+            <h3 style="margin: 5px 0 0 0; font-size: 22px; font-weight: 900;">CANCELLED</h3>
+            <div style="text-align: left; margin: 15px 0; font-size: 16px; line-height: 1.5; border-top: 1px dashed #000; padding-top: 10px;">
+              <div><b>STOL:</b> <span style="font-size: 22px; font-weight: 900;">${tableName}</span></div>
               <div><b>XODIM:</b> ${staffName}</div>
               <div><b>VAQT:</b> ${dateStr} ${timeStr}</div>
             </div>
-            <div style="font-size: 14px; font-weight: bold; border-top: 1px dashed #000; padding-top: 10px;">
+            <div style="font-size: 15px; font-weight: bold; border-top: 1px dashed #000; padding-top: 10px;">
               BUYURTMA TO'LIQ BEKOR QILINDI. TAYYORLANMASIN!
             </div>
           </div>
@@ -768,12 +794,6 @@ function startExpressServer() {
       if (isPublicTunnelRequest(req)) {
         return res.status(403).json({ success: false, error: 'Ofitsiantlar faqat kafedagi WiFi orqali ulanishi mumkin (tashqi tarmoq taqiqlangan)' });
       }
-      
-      const settingsRes = getSettings();
-      const terminalMode = settingsRes && settingsRes.success && settingsRes.data.terminal_mode === 'true';
-      if (!terminalMode) {
-        return res.status(403).json({ success: false, error: 'Ofitsiantlar telefondan ishlashi uchun Sozlamalardan "Terminal rejimi" yoqilishi shart!' });
-      }
 
       const { pin_code } = req.body;
       if (!pin_code) {
@@ -790,7 +810,7 @@ function startExpressServer() {
           role: result.role
         });
       } else {
-        return res.status(401).json({ success: false, error: 'Invalid PIN' });
+        return res.status(401).json({ success: false, error: 'Noto\'g\'ri PIN-kod! Qayta urinib ko\'ring.' });
       }
     });
 
@@ -2402,8 +2422,35 @@ if (!gotTheLock) {
   ipcMain.handle('transfer-restaurant-order-waiter', (_, { tableId, targetWaiterId }) => transferRestaurantOrderWaiter(tableId, targetWaiterId));
   ipcMain.handle('cancel-restaurant-order', (_, { tableId, cancelledBy }) => cancelRestaurantOrder(tableId, cancelledBy));
   ipcMain.handle('add-delivery-order', (_, { customerName, customerPhone, customerAddress, waiterId }) => addDeliveryOrder(customerName, customerPhone, customerAddress, waiterId));
-  ipcMain.handle('add-restaurant-table', (_, { name, zone }) => addRestaurantTable(name, zone));
-  ipcMain.handle('delete-restaurant-table', (_, tableId) => deleteRestaurantTable(tableId));
+  ipcMain.handle('add-restaurant-table', (_, { name, zone }) => {
+    const res = addRestaurantTable(name, zone);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('delete-restaurant-table', (_, tableId) => {
+    const res = deleteRestaurantTable(tableId);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('get-restaurant-zones', () => getRestaurantZones());
+  ipcMain.handle('add-restaurant-zone', (_, name) => {
+    const res = addRestaurantZone(name);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('delete-restaurant-zone', (_, name) => {
+    const res = deleteRestaurantZone(name);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
   ipcMain.handle('save-product-recipe', (_, productId, ingredients) => saveProductRecipe(productId, ingredients));
   ipcMain.handle('get-product-recipe', (_, productId) => getProductRecipe(productId));
   ipcMain.handle('lock-table', (_, tableId, userName) => lockTable(tableId, userName));

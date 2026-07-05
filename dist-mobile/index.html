@@ -187,13 +187,8 @@
       </div>
     </div>
 
-    <!-- Owner / Admin login link -->
-    <div class="pb-4 text-center">
-      <button onclick="showScreen('login')" class="text-slate-500 hover:text-slate-300 text-xs font-semibold underline underline-offset-2 transition-colors">
-        🏪 Cafe egasi / Kassir kirishi
-      </button>
-    </div>
-  </div>
+
+
 
   <!-- ================= WAITER APPLICATION SHELL ================= -->
   <div id="waiter-shell" class="hidden flex flex-col h-full bg-slate-950">
@@ -1642,9 +1637,9 @@
         showScreen('login');
         return;
       }
-      // Local WiFi access — show "Ofitsiant kirishi" link on cashier screen too
+      // Local WiFi access — directly go to waiter PIN screen (no owner login button shown)
       const waiterLink = document.getElementById('waiter-login-link-container');
-      if (waiterLink) waiterLink.classList.remove('hidden');
+      if (waiterLink) waiterLink.classList.add('hidden');
       
       const savedWaiterPin = localStorage.getItem('waiter_pin');
       if (savedWaiterPin) {

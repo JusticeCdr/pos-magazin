@@ -1,15 +1,93 @@
 import { logoBase64 } from './logoBase64';
 import { parseSQLiteDate } from './utils';
 
+const receiptTranslations = {
+  uz: {
+    murojaat: "Murojaat uchun:",
+    manzil: "Manzil:",
+    qaytaChek: "Qayta chiqarilgan chek",
+    chekN: "Chek N:",
+    sana: "Sana:",
+    kassir: "Kassir:",
+    jami: "JAMI:",
+    savdoSummasi: "Savdo summasi:",
+    chegirma: "Chegirma",
+    tolovTuri: "To'lov turi:",
+    izoh: "Izoh:",
+    rahmat: "Xaridingiz uchun rahmat!",
+    disclaimer: "Ushbu chek ichki hisob-kitob uchun.<br>Fiskal (soliq) cheki hisoblanmaydi!<br>Iltimos, kassirdan rasmiy fiskal chek talab qiling.",
+    naqd: "Naqd pul",
+    card: "Plastik karta",
+    debt: "Qarzga"
+  },
+  ru: {
+    murojaat: "Для справок:",
+    manzil: "Адрес:",
+    qaytaChek: "Повторно распечатанный чек",
+    chekN: "Чек №:",
+    sana: "Дата:",
+    kassir: "Кассир:",
+    jami: "ИТОГО:",
+    savdoSummasi: "Сумма продажи:",
+    chegirma: "Скидка",
+    tolovTuri: "Тип оплаты:",
+    izoh: "Примечание:",
+    rahmat: "Спасибо за покупку!",
+    disclaimer: "Этот чек предназначен для внутреннего учета.<br>Не является фискальным чеком!<br>Пожалуйста, требуйте официальный фискальный чек у кассира.",
+    naqd: "Наличные",
+    card: "Пластиковая карта",
+    debt: "В долг"
+  }
+};
+
+const zReportTranslations = {
+  uz: {
+    zReport: "Z-HISOBOT",
+    shiftClose: "Smena yopilishi",
+    openedAt: "Ochilgan vaqti:",
+    closedAt: "Yopilgan vaqti:",
+    openedBy: "Smena ochgan:",
+    closedBy: "Smena yopgan:",
+    jamiSavdo: "JAMI SAVDO:",
+    naqd: "Naqd pul:",
+    card: "Plastik karta:",
+    debt: "Qarzga:",
+    chegirmalar: "Chegirmalar:",
+    vozvrat: "Qaytarilgan cheklar",
+    rashod: "Chiqim (Rasxod):",
+    kassadagiNaqd: "KASSADAGI NAQD PUL:",
+    cheklarSoni: "Cheklar soni:",
+    rahmat: "Xaridingiz uchun rahmat!"
+  },
+  ru: {
+    zReport: "Z-ОТЧЕТ",
+    shiftClose: "Закрытие смены",
+    openedAt: "Время открытия:",
+    closedAt: "Время закрытия:",
+    openedBy: "Смену открыл:",
+    closedBy: "Смену закрыл:",
+    jamiSavdo: "ОБЩИЕ ПРОДАЖИ:",
+    naqd: "Наличные:",
+    card: "Пластиковая карта:",
+    debt: "В долг:",
+    chegirmalar: "Скидки:",
+    vozvrat: "Возвращенные чеки",
+    rashod: "Расход (Выдача):",
+    kassadagiNaqd: "НАЛИЧНЫЕ В КАССЕ:",
+    cheklarSoni: "Количество чеков:",
+    rahmat: "Спасибо за покупку!"
+  }
+};
+
 export function generateReceiptHTML({ saleData, storeName, cashierName, isReprint = false, contactPhones }) {
-  // Extract data from saleData
   const { cartItems, total, paymentMethod, saleId, date, comment } = saleData;
 
   const formatNumber = (num) => {
     return Number(num).toLocaleString('ru-RU');
   };
 
-
+  const receiptLang = localStorage.getItem('receipt_lang') || 'uz';
+  const labels = receiptTranslations[receiptLang] || receiptTranslations.uz;
 
   const totalOriginalAll = (cartItems || []).reduce((sum, item) => {
     return sum + (item.qty * item.sell_price);
@@ -20,7 +98,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
 
   let totalsHTML = `
     <div class="total-row">
-      <span>JAMI:</span>
+      <span>${labels.jami}</span>
       <span>${formatNumber(total)} so'm</span>
     </div>
   `;
@@ -28,15 +106,15 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
   if (overallDiscountAmount > 0) {
     totalsHTML = `
       <div class="total-row" style="font-weight: normal; font-size: 11px; margin-bottom: 2px;">
-        <span>Savdo summasi:</span>
+        <span>${labels.savdoSummasi}</span>
         <span>${formatNumber(totalOriginalAll)} so'm</span>
       </div>
       <div class="total-row" style="font-weight: normal; font-size: 11px; margin-bottom: 4px;">
-        <span>Chegirma ${overallDiscountPercent > 0 ? `(${overallDiscountPercent}%)` : ''}:</span>
+        <span>${labels.chegirma} ${overallDiscountPercent > 0 ? `(${overallDiscountPercent}%)` : ''}:</span>
         <span>-${formatNumber(overallDiscountAmount)} so'm</span>
       </div>
       <div class="total-row">
-        <span>JAMI:</span>
+        <span>${labels.jami}</span>
         <span>${formatNumber(total)} so'm</span>
       </div>
     `;
@@ -44,7 +122,6 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
 
   let dateObj = new Date();
   if (date) {
-    // If it's a SQLite date string like '2026-05-23 20:00:00', append Z to parse as UTC
     const validDateStr = (date.includes('Z') || date.includes('T')) ? date : date.replace(' ', 'T') + 'Z';
     dateObj = new Date(validDateStr);
     if (isNaN(dateObj.getTime())) dateObj = new Date();
@@ -54,11 +131,10 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
   const formattedTime = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const displayDateTime = `${formattedDate} | ${formattedTime}`;
 
-  let paymentMethodLabel = 'Naqd pul';
-  if (paymentMethod === 'card') paymentMethodLabel = 'Plastik karta';
-  if (paymentMethod === 'debt') paymentMethodLabel = 'Qarzga';
+  let paymentMethodLabel = labels.naqd;
+  if (paymentMethod === 'card') paymentMethodLabel = labels.card;
+  if (paymentMethod === 'debt') paymentMethodLabel = labels.debt;
 
-  // Construct items HTML
   const itemsHTML = cartItems.map((item, index) => {
     const itemPct = parseFloat(item.discount || item.discount_percent) || 0;
     const itemTotalOriginal = item.qty * item.sell_price;
@@ -76,7 +152,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
         </div>
         ${itemPct > 0 ? `
           <div style="font-size: 10px; font-style: italic; padding-left: 12px; color: #555;">
-            (Chegirma: -${itemPct}%)
+            (${labels.chegirma}: -${itemPct}%)
           </div>
         ` : ''}
       </div>
@@ -109,7 +185,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
   if (headerPhoneList.length > 0) {
     headerPhonesHTML = `
       <div class="receipt-phone-container">
-        <span class="receipt-phone-label">Murojaat uchun:</span>
+        <span class="receipt-phone-label">${labels.murojaat}</span>
         ${headerPhoneList.map(p => `<span class="receipt-phone-val">${p}</span>`).join('')}
       </div>
     `;
@@ -121,7 +197,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
 
   return `
     <!DOCTYPE html>
-    <html lang="uz">
+    <html lang="${receiptLang}">
     <head>
       <meta charset="UTF-8">
       <title>Chek #${saleData.shiftReceiptNumber || saleData.shift_receipt_number || saleId}</title>
@@ -359,22 +435,22 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
         <div class="header">
           <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 0 auto 3px auto;" />
           ${headerPhonesHTML}
-          ${shopLocation ? `<span class="receipt-location">Manzil: ${shopLocation}</span>` : ''}
+          ${shopLocation ? `<span class="receipt-location">${labels.manzil} ${shopLocation}</span>` : ''}
           <hr class="receipt-divider" />
-          ${isReprint ? '<p style="margin-top: 5px; font-weight: bold; border: 1px dashed #000; padding: 2px; text-align: center; font-size: 10px;">Qayta chiqarilgan chek</p>' : ''}
+          ${isReprint ? `<p style="margin-top: 5px; font-weight: bold; border: 1px dashed #000; padding: 2px; text-align: center; font-size: 10px;">${labels.qaytaChek}</p>` : ''}
         </div>
         
         <div class="info">
           <div class="info-row">
-            <span>Chek N:</span>
+            <span>${labels.chekN}</span>
             <span>${saleData.shiftReceiptNumber || saleData.shift_receipt_number || saleData.dailyReceiptNumber || saleId}</span>
           </div>
           <div class="info-row">
-            <span>Sana:</span>
+            <span>${labels.sana}</span>
             <span>${displayDateTime}</span>
           </div>
           <div class="info-row">
-            <span>Kassir:</span>
+            <span>${labels.kassir}</span>
             <span>${cashierName || 'Kassir'}</span>
           </div>
         </div>
@@ -388,7 +464,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
         <div class="totals">
           ${totalsHTML}
           <div class="total-row" style="font-weight: normal; margin-top: 2px;">
-            <span>To'lov turi:</span>
+            <span>${labels.tolovTuri}</span>
             <span>${paymentMethodLabel}</span>
           </div>
         </div>
@@ -402,19 +478,17 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
 
         ${comment && comment.trim() ? `
         <div style="border-top: 1px dashed #000; margin-top: 6px; padding-top: 6px; text-align: left;">
-          <div style="font-size: 11px; font-weight: bold; margin-bottom: 2px;">Izoh:</div>
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 2px;">${labels.izoh}</div>
           <div style="font-size: 11px; word-break: break-all; white-space: pre-wrap;">${comment}</div>
         </div>
         ` : ''}
 
         <div class="footer">
-          <p>Xaridingiz uchun rahmat!</p>
+          <p>${labels.rahmat}</p>
         </div>
 
         <div class="disclaimer">
-          Ushbu chek ichki hisob-kitob uchun.<br>
-          Fiskal (soliq) cheki hisoblanmaydi!<br>
-          Iltimos, kassirdan rasmiy fiskal chek talab qiling.
+          ${labels.disclaimer}
         </div>
       </div>
     </body>
@@ -438,6 +512,9 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
     return Number(num).toLocaleString('ru-RU');
   };
 
+  const receiptLang = localStorage.getItem('receipt_lang') || 'uz';
+  const zLabels = zReportTranslations[receiptLang] || zReportTranslations.uz;
+
   let shopLogo = logoBase64;
   let printerWidth = '58';
   try {
@@ -457,10 +534,10 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
 
   return `
     <!DOCTYPE html>
-    <html lang="uz">
+    <html lang="${receiptLang}">
     <head>
       <meta charset="UTF-8">
-      <title>Z-HISOBOT</title>
+      <title>${zLabels.zReport}</title>
       <style>
         * {
           margin: 0;
@@ -533,7 +610,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
             display: block !important;
             position: static !important; 
             width: ${isKatta ? '78mm' : '56mm'};
-            margin: 0 !important; /* Set margin to 0 to prevent cutting off the store name header */
+            margin: 0 !important;
             padding: 0 !important;
             font-family: 'Courier New', Courier, monospace;
             font-size: ${fontSize};
@@ -551,25 +628,25 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         <div class="header">
           <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 10px auto 10px auto;" />
           <h2>${storeName || "Do'kon"}</h2>
-          <p style="font-weight: bold; font-size: 14px; margin-top: 5px;">Z-HISOBOT ${stats.shift_number ? `№${stats.shift_number}` : ''}</p>
-          <p>Smena yopilishi</p>
+          <p style="font-weight: bold; font-size: 14px; margin-top: 5px;">${zLabels.zReport} ${stats.shift_number ? `№${stats.shift_number}` : ''}</p>
+          <p>${zLabels.shiftClose}</p>
         </div>
         
         <div class="info">
           <div class="info-row">
-            <span>Ochilgan vaqti:</span>
+            <span>${zLabels.openedAt}</span>
             <span>${openedAtStr}</span>
           </div>
           <div class="info-row">
-            <span>Yopilgan vaqti:</span>
+            <span>${zLabels.closedAt}</span>
             <span>${closedAtStr}</span>
           </div>
           <div class="info-row">
-            <span>Smena ochgan:</span>
+            <span>${zLabels.openedBy}</span>
             <span>${stats.opened_by || cashierName}</span>
           </div>
           <div class="info-row">
-            <span>Smena yopgan:</span>
+            <span>${zLabels.closedBy}</span>
             <span>${stats.closed_by || cashierName}</span>
           </div>
         </div>
@@ -577,35 +654,35 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         <div class="divider"></div>
 
         <div class="total-row">
-          <span>JAMI SAVDO:</span>
+          <span>${zLabels.jamiSavdo}</span>
           <span>${formatNumber(stats.total_sales)} so'm</span>
         </div>
         
         <div class="divider"></div>
 
         <div class="sub-row">
-          <span>Naqd pul:</span>
+          <span>${zLabels.naqd}</span>
           <span>${formatNumber(stats.cash_sales)} so'm</span>
         </div>
         <div class="sub-row">
-          <span>Plastik karta:</span>
+          <span>${zLabels.card}</span>
           <span>${formatNumber(stats.card_sales)} so'm</span>
         </div>
         <div class="sub-row">
-          <span>Qarzga:</span>
+          <span>${zLabels.debt}</span>
           <span>${formatNumber(stats.debt_sales)} so'm</span>
         </div>
         
         ${stats.total_discounts > 0 ? `
         <div class="sub-row">
-          <span>Chegirmalar:</span>
+          <span>${zLabels.chegirmalar}</span>
           <span>-${formatNumber(stats.total_discounts)} so'm</span>
         </div>
         ` : ''}
 
         ${stats.total_refunds > 0 ? `
         <div class="sub-row">
-          <span>Qaytarilgan cheklar (${stats.refunds_count} ta):</span>
+          <span>${zLabels.vozvrat} (${stats.refunds_count} ta):</span>
           <span>-${formatNumber(stats.total_refunds)} so'm</span>
         </div>
         ` : ''}
@@ -613,7 +690,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         ${stats.total_expenses > 0 ? `
         <div class="divider"></div>
         <div class="sub-row" style="color: #000; font-weight: bold;">
-          <span>Chiqim (Rasxod):</span>
+          <span>${zLabels.rashod}</span>
           <span>-${formatNumber(stats.total_expenses)} so'm</span>
         </div>
         ` : ''}
@@ -621,19 +698,19 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         <div class="divider"></div>
 
         <div class="total-row">
-          <span>KASSADAGI NAQD PUL:</span>
+          <span>${zLabels.kassadagiNaqd}</span>
           <span>${formatNumber(stats.expected_cash)} so'm</span>
         </div>
 
         <div class="divider"></div>
         
         <div class="sub-row">
-          <span>Cheklar soni:</span>
+          <span>${zLabels.cheklarSoni}</span>
           <span>${stats.receipts_count} ta</span>
         </div>
 
         <div class="footer">
-          <p>Xaridingiz uchun rahmat!</p>
+          <p>${zLabels.rahmat}</p>
         </div>
       </div>
     </body>

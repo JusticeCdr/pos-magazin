@@ -223,6 +223,36 @@ function initDB() {
   if (!db.prepare("SELECT value FROM settings WHERE key = 'cold_printer'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('cold_printer', '')").run();
   }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'oshxona_1_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('oshxona_1_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'oshxona_2_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('oshxona_2_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'oshxona_3_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('oshxona_3_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'bar_1_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_1_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'bar_2_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_2_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'bar_3_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_3_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'xolodniy_1_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_1_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'xolodniy_2_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_2_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'xolodniy_3_printer'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_3_printer', '')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'receipt_lang'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('receipt_lang', 'uz')").run();
+  }
 
   // ── Product Groups ────────────────────────────────────────────────────────
   db.exec(`
@@ -258,6 +288,13 @@ function initDB() {
     db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Alisher', '1234', 'waiter', 10)").run();
     db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Madina', '5678', 'waiter', 10)").run();
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS restaurant_zones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    );
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS restaurant_tables (
@@ -424,14 +461,21 @@ function initDB() {
     db.prepare("DELETE FROM restaurant_tables WHERE status = 'free' AND (name LIKE 'Стол %' OR name LIKE 'VIP %')").run();
   } catch (_) {}
 
-  // Seed restaurant tables for all 8 zones (30 tables each)
-  const seedZones = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
-  for (const zone of seedZones) {
-    for (let i = 1; i <= 30; i++) {
-      const name = `${zone} ${i}`;
+  // Seed restaurant zones and tables only once if empty
+  const zoneCount = db.prepare("SELECT COUNT(*) as count FROM restaurant_zones").get().count;
+  if (zoneCount === 0) {
+    const seedZones = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
+    for (const zone of seedZones) {
       try {
-        db.prepare("INSERT OR IGNORE INTO restaurant_tables (name, zone, status) VALUES (?, ?, 'free')").run(name, zone);
+        db.prepare("INSERT OR IGNORE INTO restaurant_zones (name) VALUES (?)").run(zone);
       } catch (_) {}
+      
+      for (let i = 1; i <= 30; i++) {
+        const name = `${zone} ${i}`;
+        try {
+          db.prepare("INSERT OR IGNORE INTO restaurant_tables (name, zone, status) VALUES (?, ?, 'free')").run(name, zone);
+        } catch (_) {}
+      }
     }
   }
 
@@ -1780,6 +1824,7 @@ function resetFactoryData() {
     db.exec('DELETE FROM waiters');
     db.exec('DELETE FROM cashiers');
     db.exec('DELETE FROM restaurant_tables');
+    db.exec('DELETE FROM restaurant_zones');
     db.exec('DELETE FROM attendance');
 
     // 2. Reset sequence
@@ -1797,6 +1842,16 @@ function resetFactoryData() {
     db.prepare("INSERT INTO settings (key, value) VALUES ('kitchen_printer', '')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('bar_printer', '')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('cold_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('oshxona_1_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('oshxona_2_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('oshxona_3_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_1_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_2_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('bar_3_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_1_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_2_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_3_printer', '')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('receipt_lang', 'uz')").run();
 
     // 4. Re-seed default cashiers
     db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES ('Admin', '1111', 'admin', 0)").run();
@@ -1806,9 +1861,10 @@ function resetFactoryData() {
     db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Alisher', '1234', 'waiter', 10)").run();
     db.prepare("INSERT INTO waiters (name, pin_code, role, percentage) VALUES ('Madina', '5678', 'waiter', 10)").run();
 
-    // 6. Re-seed default restaurant tables
+    // 6. Re-seed default restaurant zones & tables
     const seedZones = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
     for (const zone of seedZones) {
+      db.prepare("INSERT INTO restaurant_zones (name) VALUES (?)").run(zone);
       for (let i = 1; i <= 30; i++) {
         const name = `${zone} ${i}`;
         db.prepare("INSERT INTO restaurant_tables (name, zone, status) VALUES (?, ?, 'free')").run(name, zone);
@@ -2875,6 +2931,56 @@ function deleteRestaurantTable(tableId) {
   }
 }
 
+function getRestaurantZones() {
+  try {
+    const rows = db.prepare("SELECT id, name FROM restaurant_zones ORDER BY id ASC").all();
+    return { success: true, data: rows };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function addRestaurantZone(name) {
+  try {
+    db.prepare("INSERT INTO restaurant_zones (name) VALUES (?)").run(name);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function deleteRestaurantZone(name) {
+  try {
+    if (name === 'Dostavka') {
+      return { success: false, error: 'Dostavka zonasini o\'chirib bo\'lmaydi!' };
+    }
+    
+    // Check if there are active orders in this zone
+    const activeOrder = db.prepare(`
+      SELECT 1 FROM restaurant_tables t
+      JOIN restaurant_orders o ON o.table_id = t.id
+      WHERE t.zone = ? AND o.status = 'active'
+      LIMIT 1
+    `).get(name);
+    
+    if (activeOrder) {
+      return { success: false, error: 'Bu zonada faol buyurtmalar bor, avval ularni yakunlang!' };
+    }
+    
+    db.exec('BEGIN TRANSACTION');
+    // Delete tables under this zone
+    db.prepare("DELETE FROM restaurant_tables WHERE zone = ?").run(name);
+    // Delete the zone itself
+    db.prepare("DELETE FROM restaurant_zones WHERE name = ?").run(name);
+    db.exec('COMMIT');
+    
+    return { success: true };
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
 
 
 function getActiveOrderForTable(tableId) {
@@ -3579,5 +3685,8 @@ module.exports = {
   setTablePrePrinted,
   getWaitersReport,
   getRestaurantOnlyProducts,
-  clearWarehouse
+  clearWarehouse,
+  getRestaurantZones,
+  addRestaurantZone,
+  deleteRestaurantZone
 };

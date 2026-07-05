@@ -487,57 +487,59 @@ function App() {
         {/* All non-cashier tabs share the same card wrapper */}
         <div
           style={{ display: activeTab !== 'cashier' ? 'block' : 'none' }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-150 dark:border-gray-700 p-6 h-full overflow-auto transition-colors duration-300"
+          className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-150 dark:border-gray-700 p-6 h-full transition-colors duration-300 ${
+            ['warehouse', 'debts', 'history', 'invlog'].includes(activeTab)
+              ? 'flex flex-col overflow-hidden'
+              : 'overflow-auto'
+          }`}
         >
-          {activeTab === 'warehouse' && (
-            <div className="h-full">
-              <ErrorBoundary name="Warehouse">
-                <Warehouse isActive={activeTab === 'warehouse'} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'debts' && (
-            <div className="h-full">
-              <ErrorBoundary name="Debts">
-                <Debts isActive={activeTab === 'debts'} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'history' && (
-            <div className="h-full">
-              <ErrorBoundary name="SalesHistory">
-                <SalesHistory isActive={activeTab === 'history'} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'invlog' && (
-            <div className="h-full">
-              <ErrorBoundary name="InventoryHistory">
-                <InventoryHistory isActive={activeTab === 'invlog'} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'reports' && (
-            <div className="h-full">
-              <ErrorBoundary name="Reports">
-                <Reports isActive={activeTab === 'reports'} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'settings' && (
-            <div className="h-full">
-              <ErrorBoundary name="Settings">
-                <Settings isActive={activeTab === 'settings'} />
-              </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'bashoratchi' && (
-            <div className="h-full rounded-2xl overflow-hidden bg-slate-900 text-white">
-              <ErrorBoundary name="AiBashoratchi">
-                <AiBashoratchi isActive={activeTab === 'bashoratchi'} />
-              </ErrorBoundary>
-            </div>
-          )}
+          <div 
+            style={{ display: activeTab === 'warehouse' ? 'flex' : 'none' }} 
+            className="h-full flex-col min-h-0 flex-1"
+          >
+            <ErrorBoundary name="Warehouse">
+              <Warehouse isActive={activeTab === 'warehouse'} />
+            </ErrorBoundary>
+          </div>
+          <div 
+            style={{ display: activeTab === 'debts' ? 'flex' : 'none' }} 
+            className="h-full flex-col min-h-0 flex-1"
+          >
+            <ErrorBoundary name="Debts">
+              <Debts isActive={activeTab === 'debts'} />
+            </ErrorBoundary>
+          </div>
+          <div 
+            style={{ display: activeTab === 'history' ? 'flex' : 'none' }} 
+            className="h-full flex-col min-h-0 flex-1"
+          >
+            <ErrorBoundary name="SalesHistory">
+              <SalesHistory isActive={activeTab === 'history'} />
+            </ErrorBoundary>
+          </div>
+          <div 
+            style={{ display: activeTab === 'invlog' ? 'flex' : 'none' }} 
+            className="h-full flex-col min-h-0 flex-1"
+          >
+            <ErrorBoundary name="InventoryHistory">
+              <InventoryHistory isActive={activeTab === 'invlog'} />
+            </ErrorBoundary>
+          </div>
+          <div style={{ display: activeTab === 'reports' ? 'block' : 'none' }} className="h-full">
+            <ErrorBoundary name="Reports">
+              <Reports isActive={activeTab === 'reports'} />
+            </ErrorBoundary>
+          </div>
+          <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }} className="h-full">
+            <ErrorBoundary name="Settings">
+              <Settings isActive={activeTab === 'settings'} />
+            </ErrorBoundary>
+          </div>
+          <div style={{ display: activeTab === 'bashoratchi' ? 'block' : 'none' }} className="h-full rounded-2xl overflow-hidden bg-slate-900 text-white">
+            <ErrorBoundary name="AiBashoratchi">
+              <AiBashoratchi isActive={activeTab === 'bashoratchi'} />
+            </ErrorBoundary>
+          </div>
         </div>
       </div>
 

@@ -25,6 +25,7 @@ const EMPTY_FORM = {
   discount: '',
   category: 'Boshqa',
   type: 'ready_dish',
+  printer_destination: 'none',
 };
 
 export default memo(function Warehouse({ isActive }) {
@@ -481,6 +482,7 @@ export default memo(function Warehouse({ isActive }) {
         discount: parseFloat(formData.discount) || 0,
         category: formData.category || 'Boshqa',
         type: formData.type || 'ready_dish',
+        printer_destination: formData.printer_destination || 'none',
         userName: currentUser?.name || 'Ombor',
       };
 
@@ -554,6 +556,7 @@ export default memo(function Warehouse({ isActive }) {
       discount: product.discount !== undefined ? String(product.discount) : '',
       category: product.category || 'Boshqa',
       type: product.type || 'ready_dish',
+      printer_destination: product.printer_destination || 'none',
     });
 
     if (product.type === 'ready_dish') {
@@ -660,7 +663,7 @@ export default memo(function Warehouse({ isActive }) {
     'w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100';
 
   return (
-    <div className="h-full flex flex-col gap-6 transition-colors">
+    <div className="h-full flex flex-col gap-6 transition-colors overflow-y-auto pr-2 custom-scrollbar">
       {/* Floating Toast Alert */}
       {toast && (
         <div className="fixed top-6 right-6 z-[100] bg-emerald-600 dark:bg-emerald-500 text-white font-bold px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce border border-emerald-500 dark:border-emerald-400">
@@ -983,6 +986,32 @@ export default memo(function Warehouse({ isActive }) {
             </div>
           )}
 
+          {/* Printer Destination */}
+          {businessType === 'restaurant' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                {lang === 'uz' ? 'Chop etish bo\'limi' : 'Отдел печати'}
+              </label>
+              <select
+                name="printer_destination"
+                value={formData.printer_destination || 'none'}
+                onChange={handleInputChange}
+                className={inputCls + ' cursor-pointer'}
+              >
+                <option value="none">-- {lang === 'uz' ? 'Chop etilmasin' : 'Не печатать'} --</option>
+                <option value="oshxona-1">{lang === 'uz' ? 'Oshxona-1' : 'Кухня-1'}</option>
+                <option value="oshxona-2">{lang === 'uz' ? 'Oshxona-2' : 'Кухня-2'}</option>
+                <option value="oshxona-3">{lang === 'uz' ? 'Oshxona-3' : 'Кухня-3'}</option>
+                <option value="bar-1">{lang === 'uz' ? 'Bar-1' : 'Бар-1'}</option>
+                <option value="bar-2">{lang === 'uz' ? 'Bar-2' : 'Бар-2'}</option>
+                <option value="bar-3">{lang === 'uz' ? 'Bar-3' : 'Бар-3'}</option>
+                <option value="xolodniy-1">{lang === 'uz' ? 'Xolodniy-1' : 'Холодный-1'}</option>
+                <option value="xolodniy-2">{lang === 'uz' ? 'Xolodniy-2' : 'Холодный-2'}</option>
+                <option value="xolodniy-3">{lang === 'uz' ? 'Xolodniy-3' : 'Холодный-3'}</option>
+              </select>
+            </div>
+          )}
+
           {/* Turi */}
           {businessType === 'restaurant' && (
             <div>
@@ -1190,7 +1219,7 @@ export default memo(function Warehouse({ isActive }) {
       </div>
 
       {/* ── Products table ── */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 min-h-0 transition-colors">
+      <div className="flex flex-col bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 h-[100vh] transition-colors">
         {/* Table header */}
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -1263,8 +1292,13 @@ export default memo(function Warehouse({ isActive }) {
                               }`}>
                                 {product.type === 'raw_material' 
                                   ? (lang === 'uz' ? 'Xom-ashyo' : 'Сырье') 
-                                  : (lang === 'uz' ? 'Tayyor taom' : 'Блюдо')}
+                                  : (lang === 'uz' ? 'Tayyor taom' : 'Блюdo')}
                               </span>
+                              {product.printer_destination && product.printer_destination !== 'none' && (
+                                <span className="text-[10px] text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded font-normal">
+                                  🖨️ {product.printer_destination}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>

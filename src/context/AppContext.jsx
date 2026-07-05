@@ -3,6 +3,7 @@ import { TRANSLATIONS } from '../translations';
 import { io } from 'socket.io-client';
 
 const AppContext = createContext(null);
+export const CartContext = createContext(null);
 
 export function AppProvider({ children }) {
   // ── Cart (persists across tab switches) ─────────────────────────────────────
@@ -136,9 +137,10 @@ export function AppProvider({ children }) {
           if (res.data.store_name) setStoreName(res.data.store_name);
           if (res.data.business_type) setBusinessType(res.data.business_type);
           if (res.data.terminal_mode) setTerminalMode(res.data.terminal_mode === 'true');
-          if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
+           if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
           if (res.data.label_printer_name) localStorage.setItem('labelPrinterName', res.data.label_printer_name);
           if (res.data.printer_width) localStorage.setItem('printer_width', res.data.printer_width);
+          if (res.data.receipt_lang) localStorage.setItem('receipt_lang', res.data.receipt_lang);
           if (res.data.label_width) localStorage.setItem('label_width', res.data.label_width);
           if (res.data.label_height) localStorage.setItem('label_height', res.data.label_height);
           if (res.data.shop_location) localStorage.setItem('shopLocation', res.data.shop_location);
@@ -214,17 +216,19 @@ export function AppProvider({ children }) {
     return () => {
       if (socket) socket.disconnect();
     };
-  }, []);
+  }, [fetchGlobalProducts, fetchGlobalCustomers]);
 
   return (
     <AppContext.Provider value={{ 
-      cart, setCart, carts, setCarts, activeCartId, setActiveCartId, theme, toggleTheme, lang, toggleLang, t,
+      theme, toggleTheme, lang, toggleLang, t,
       currentUser, setCurrentUser, storeName, setStoreName, businessType, setBusinessType, shopLogo, setShopLogo, receiptLogo, setReceiptLogo,
       terminalMode, updateTerminalMode,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded
     }}>
-      {children}
+      <CartContext.Provider value={{ cart, setCart, carts, setCarts, activeCartId, setActiveCartId }}>
+        {children}
+      </CartContext.Provider>
     </AppContext.Provider>
   );
 }
@@ -232,5 +236,11 @@ export function AppProvider({ children }) {
 export const useApp = () => {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useApp must be used inside AppProvider');
+  return ctx;
+};
+
+export const useCart = () => {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error('useCart must be used inside CartProvider');
   return ctx;
 };
