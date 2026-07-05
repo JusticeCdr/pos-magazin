@@ -217,25 +217,21 @@ export default memo(function Reports({ isActive }) {
     }
   }, [reportSubTab, attendanceDate]);
 
-  // Effect 1 — Fetch on MOUNT once, then only when filter/dates change.
-  // isActive is intentionally NOT in the dependency array:
-  // switching tabs must never trigger a new database round-trip.
+  // Effect 1 — Fetch when tab is active or filter/dates change.
   useEffect(() => {
+    if (!isActive) return;
     if (filter === 'custom' && (!customStart || !customEnd)) return;
-    const filterChanged = prevFilterKeyRef.current !== filterKey;
-    prevFilterKeyRef.current = filterKey;
-    if (!hasLoadedRef.current || filterChanged) {
-      fetchReports(!hasLoadedRef.current); // spinner only on first-ever load
-      fetchLowStock();
-      if (businessType === 'restaurant') {
-        fetchWaitersData();
-        if (selectedWaiterId) {
-          fetchSingleWaiterReport(selectedWaiterId);
-        }
+    
+    fetchReports(!hasLoadedRef.current); // spinner only on first-ever load
+    fetchLowStock();
+    if (businessType === 'restaurant') {
+      fetchWaitersData();
+      if (selectedWaiterId) {
+        fetchSingleWaiterReport(selectedWaiterId);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, businessType, selectedWaiterId]);
+  }, [isActive, filterKey, businessType, selectedWaiterId]);
 
   useEffect(() => {
     if (reportSubTab === 'waiters' && businessType === 'restaurant') {

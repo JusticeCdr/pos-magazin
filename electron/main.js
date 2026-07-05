@@ -1887,6 +1887,12 @@ function startExpressServer() {
       }
     });
 
+    // Helper to detect mobile user agent
+    const isMobileRequest = (req) => {
+      const ua = req.headers['user-agent'] || '';
+      return /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(ua);
+    };
+
     // Serve index.html for mobile or desktop SPA routing nicely
     expressApp.get(/^\/mobile(\/.*)?$/, (req, res) => {
       res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
@@ -1895,7 +1901,7 @@ function startExpressServer() {
       try {
         const settingsRes = getSettings();
         const isRetail = settingsRes && settingsRes.success && settingsRes.data && settingsRes.data.business_type === 'retail';
-        if (isRetail) {
+        if (isRetail && isMobileRequest(req)) {
           res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
         } else {
           res.sendFile(path.join(__dirname, '../dist/index.html'));
@@ -1919,9 +1925,7 @@ function startExpressServer() {
         }
       });
       io.on('connection', (socket) => {
-        console.log(`🔌 [WS] Client connected: ${socket.id}`);
         socket.on('disconnect', () => {
-          console.log(`🔌 [WS] Client disconnected: ${socket.id}`);
         });
       });
     } catch (wsErr) {

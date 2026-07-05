@@ -561,20 +561,43 @@ export default memo(function SalesHistory({ isActive }) {
               let methodLabel = "Naqd pul";
               if (sale.payment_method === 'card') methodLabel = "Plastik karta";
               if (sale.payment_method === 'debt') methodLabel = "Qarzga";
+              if (sale.payment_method === 'expense') methodLabel = lang === 'ru' ? "Списание (Расход)" : "Chiqim (Spisaniya)";
 
               return (
                 <div key={sale.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm flex flex-col transition-colors hover:shadow-md">
                   {/* Card Header */}
-                  <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
+                  <div className={`px-4 py-3 border-b flex justify-between items-center shrink-0 ${
+                    sale.payment_method === 'expense'
+                      ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50'
+                      : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700'
+                  }`}>
                     <div className="flex items-center gap-2">
-                      <Receipt size={16} className={sale.status === 'refunded' || sale.total_amount === 0 ? "text-red-500" : "text-blue-500"} />
-                      <span className={`font-bold ${sale.status === 'refunded' || sale.total_amount === 0 ? 'text-red-500 line-through decoration-2' : 'text-gray-800 dark:text-gray-200'}`}>
-                        Chek #{sale.shift_receipt_number || sale.id}
+                      <Receipt size={16} className={
+                        sale.payment_method === 'expense'
+                          ? 'text-red-500'
+                          : sale.status === 'refunded' || sale.total_amount === 0
+                          ? "text-red-500"
+                          : "text-blue-500"
+                      } />
+                      <span className={`font-bold ${
+                        sale.payment_method === 'expense'
+                          ? 'text-red-600 dark:text-red-400'
+                          : sale.status === 'refunded' || sale.total_amount === 0
+                          ? 'text-red-500 line-through decoration-2'
+                          : 'text-gray-800 dark:text-gray-200'
+                      }`}>
+                        {sale.payment_method === 'expense'
+                          ? (lang === 'ru' ? 'Расход #' : 'Chiqim #')
+                          : (lang === 'ru' ? 'Чек #' : 'Chek #')}
+                        {sale.shift_receipt_number || sale.id}
                       </span>
                       {sale.device === 'mobile' && (
                         <span className="text-[10px] uppercase font-black bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full ml-1" title="Mobil telefondan sotilgan">📱 Mobil</span>
                       )}
-                      {(sale.status === 'refunded' || sale.total_amount === 0) && (
+                      {sale.payment_method === 'expense' && (
+                        <span className="text-[10px] uppercase font-black bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full ml-1">Spisaniya</span>
+                      )}
+                      {(sale.status === 'refunded' || sale.total_amount === 0) && sale.payment_method !== 'expense' && (
                         <span className="text-[10px] uppercase font-black bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full ml-1">Qaytarilgan</span>
                       )}
                       {sale.discount_percent > 0 && (
@@ -670,61 +693,72 @@ export default memo(function SalesHistory({ isActive }) {
                     </div>
                   </div>
 
+                  {/* Comment if exists */}
+                  {sale.comment && sale.comment.trim() && (
+                    <div className="px-4 py-2 bg-amber-50/50 dark:bg-amber-950/10 border-t border-gray-150 dark:border-gray-700/50 text-xs text-amber-800 dark:text-amber-300 font-medium italic">
+                      {lang === 'ru' ? 'Примечание: ' : 'Izoh: '} {sale.comment}
+                    </div>
+                  )}
+
                   {/* Total & Action Buttons */}
                   <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
                     <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleReprint(sale)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm active:scale-95"
-                        title="Chekni qayta chiqarish"
-                      >
-                        <Printer size={16} />
-                        <span className="hidden sm:inline">Qayta chiqarish</span>
-                      </button>
+                      {sale.payment_method !== 'expense' && (
+                        <>
+                          <button 
+                            onClick={() => handleReprint(sale)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm active:scale-95"
+                            title="Chekni qayta chiqarish"
+                          >
+                            <Printer size={16} />
+                            <span className="hidden sm:inline">Qayta chiqarish</span>
+                          </button>
 
-                      <button 
-                        onClick={() => handleExportExcel(sale)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-green-600 dark:hover:text-green-400 transition-colors shadow-sm active:scale-95"
-                        title="Excel nakladnoy yuklash"
-                      >
-                        <FileSpreadsheet size={16} />
-                        <span className="hidden sm:inline">Excel</span>
-                      </button>
+                          <button 
+                            onClick={() => handleExportExcel(sale)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 hover:text-green-600 dark:hover:text-green-400 transition-colors shadow-sm active:scale-95"
+                            title="Excel nakladnoy yuklash"
+                          >
+                            <FileSpreadsheet size={16} />
+                            <span className="hidden sm:inline">Excel</span>
+                          </button>
 
-                      {(() => {
-                        // 30 days (1 month) validation
-                        const saleDate = parseSQLiteDate(sale.created_at);
-                        const isRefundable = (Date.now() - saleDate.getTime()) <= 30 * 24 * 60 * 60 * 1000;
-                        const isAlreadyReturned = sale.status === 'refunded' || sale.total_amount === 0;
+                          {(() => {
+                            // 30 days (1 month) validation
+                            const saleDate = parseSQLiteDate(sale.created_at);
+                            const isRefundable = (Date.now() - saleDate.getTime()) <= 30 * 24 * 60 * 60 * 1000;
+                            const isAlreadyReturned = sale.status === 'refunded' || sale.total_amount === 0;
 
-                        if (isAlreadyReturned) {
-                          return (
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-500 dark:text-gray-400 shadow-sm cursor-not-allowed">
-                              Qaytarilgan
-                            </span>
-                          );
-                        }
+                            if (isAlreadyReturned) {
+                              return (
+                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-500 dark:text-gray-400 shadow-sm cursor-not-allowed">
+                                  Qaytarilgan
+                                </span>
+                              );
+                            }
 
-                        if (isRefundable) {
-                          return (
-                            <button 
-                              onClick={() => setConfirmReturn(sale)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-red-200 dark:border-red-900/50 rounded-lg text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shadow-sm active:scale-95"
-                              title="Chekni to'liq qaytarish"
-                            >
-                              <RotateCcw size={16} />
-                              <span className="hidden sm:inline">Vozvrat</span>
-                            </button>
-                          );
-                        } else {
-                          return (
-                            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-400 dark:text-gray-500 shadow-sm cursor-not-allowed" title="1 oylik muddat o'tgan">
-                              <RotateCcw size={16} className="opacity-50" />
-                              <span className="hidden sm:inline">Muddati o'tgan</span>
-                            </span>
-                          );
-                        }
-                      })()}
+                            if (isRefundable) {
+                              return (
+                                <button 
+                                  onClick={() => setConfirmReturn(sale)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-700 border border-red-200 dark:border-red-900/50 rounded-lg text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shadow-sm active:scale-95"
+                                  title="Chekni to'liq qaytarish"
+                                >
+                                  <RotateCcw size={16} />
+                                  <span className="hidden sm:inline">Vozvrat</span>
+                                </button>
+                              );
+                            } else {
+                              return (
+                                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-semibold text-gray-400 dark:text-gray-500 shadow-sm cursor-not-allowed" title="1 oylik muddat o'tgan">
+                                  <RotateCcw size={16} className="opacity-50" />
+                                  <span className="hidden sm:inline">Muddati o'tgan</span>
+                                </span>
+                              );
+                            }
+                          })()}
+                        </>
+                      )}
                     </div>
                     <div className="text-right">
                       {sale.discount_percent > 0 && (
@@ -732,9 +766,11 @@ export default memo(function SalesHistory({ isActive }) {
                           {formatCurrency(sale.original_total, lang)} - {sale.discount_percent}% (Chegirma: -{formatCurrency(sale.discount_amount, lang)})
                         </div>
                       )}
-                      <span className="font-bold text-gray-600 dark:text-gray-400 uppercase text-xs mr-2">Jami summa:</span>
-                      <span className="font-black text-blue-600 dark:text-blue-400 text-lg">
-                        {formatCurrency(sale.total_amount, lang)}
+                      <span className="font-bold text-gray-600 dark:text-gray-400 uppercase text-xs mr-2">
+                        {sale.payment_method === 'expense' ? (lang === 'ru' ? 'Расход:' : 'Chiqim:') : 'Jami summa:'}
+                      </span>
+                      <span className={`font-black text-lg ${sale.payment_method === 'expense' ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                        {sale.payment_method === 'expense' ? '-' : ''}{formatCurrency(sale.total_amount, lang)}
                       </span>
                     </div>
                   </div>

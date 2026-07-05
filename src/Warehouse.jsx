@@ -8,11 +8,9 @@ import { logoBase64 } from './logoBase64';
 
 const formatPriceInput = (val) => {
   if (val === null || val === undefined) return '';
-  let str = String(val).replace(/[^\d.]/g, '');
+  let str = String(val).replace(/\D/g, '');
   if (!str) return '';
-  const parts = str.split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  return parts.join('.');
+  return str.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
 const EMPTY_FORM = {
@@ -472,11 +470,15 @@ export default memo(function Warehouse({ isActive }) {
       }
 
       const isReadyWithRecipe = formData.type === 'ready_dish' && recipeIngredients.length > 0;
+      const rawBuyPrice = (businessType === 'restaurant' && isReadyWithRecipe)
+        ? projectedCostPrice
+        : parseInt(String(formData.buy_price).replace(/\D/g, '')) || 0;
+
       const productData = {
         name: formattedName,
         barcode: formData.barcode,
-        buy_price: parseFloat(String(formData.buy_price).replace(/\s/g, '')) || 0,
-        sell_price: parseFloat(String(formData.sell_price).replace(/\s/g, '')) || 0,
+        buy_price: rawBuyPrice,
+        sell_price: parseInt(String(formData.sell_price).replace(/\D/g, '')) || 0,
         stock: isReadyWithRecipe ? 0 : (parseFloat(formData.stock) || 0),
         unit: formData.unit,
         discount: parseFloat(formData.discount) || 0,

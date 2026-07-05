@@ -386,7 +386,8 @@ function initDB() {
       amount       REAL NOT NULL,
       cashier_name TEXT,
       created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-      is_closed    INTEGER DEFAULT 0
+      is_closed    INTEGER DEFAULT 0,
+      source       TEXT DEFAULT 'cash'
     );
   `);
 
@@ -398,6 +399,11 @@ function initDB() {
   }
   try {
     db.exec('ALTER TABLE expenses ADD COLUMN is_closed INTEGER DEFAULT 0');
+  } catch (err) {
+    // Column already exists, safe to ignore
+  }
+  try {
+    db.exec("ALTER TABLE expenses ADD COLUMN source TEXT DEFAULT 'cash'");
   } catch (err) {
     // Column already exists, safe to ignore
   }
@@ -899,8 +905,8 @@ function addProduct(product) {
 
       if (existing) {
         const addedQty = parseFloat(product.stock) || 0;
-        const newBuyPrice  = parseFloat(product.buy_price)  || 0;
-        const newSellPrice = parseFloat(product.sell_price) || 0;
+        const newBuyPrice  = typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0);
+        const newSellPrice = typeof product.sell_price === 'string' ? (parseInt(product.sell_price.replace(/\D/g, '')) || 0) : (parseFloat(product.sell_price) || 0);
         const discount     = product.discount !== undefined ? (parseFloat(product.discount) || 0) : (existing.discount || 0);
         
         db.prepare(`
@@ -936,8 +942,8 @@ function addProduct(product) {
     const info = stmt.run(
       product.name,
       barcode,
-      parseFloat(product.buy_price)  || 0,
-      parseFloat(product.sell_price) || 0,
+      typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0),
+      typeof product.sell_price === 'string' ? (parseInt(product.sell_price.replace(/\D/g, '')) || 0) : (parseFloat(product.sell_price) || 0),
       parseFloat(product.stock)      || 0,
       product.unit || 'dona',
       parseFloat(product.discount)   || 0,
@@ -1009,9 +1015,9 @@ function updateProduct(id, product) {
     stmt.run(
       product.name,
       barcode,
-      parseFloat(product.buy_price)  || 0,
-      parseFloat(product.buy_price)  || 0, // cost_price gets buy_price
-      parseFloat(product.sell_price) || 0,
+      typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0),
+      typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0), // cost_price gets buy_price
+      typeof product.sell_price === 'string' ? (parseInt(product.sell_price.replace(/\D/g, '')) || 0) : (parseFloat(product.sell_price) || 0),
       newQty,
       product.unit || 'dona',
       discount,
@@ -1050,8 +1056,8 @@ function addStockToProduct(id, product) {
       return { success: false, error: 'Mahsulot topilmadi' };
     }
 
-    const newSellPrice = parseFloat(product.sell_price) || 0;
-    const newBuyPrice  = parseFloat(product.buy_price)  || 0;
+    const newSellPrice = typeof product.sell_price === 'string' ? (parseInt(product.sell_price.replace(/\D/g, '')) || 0) : (parseFloat(product.sell_price) || 0);
+    const newBuyPrice  = typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0);
     const addedQty     = parseFloat(product.stock)      || 0;
     const discount     = product.discount !== undefined ? (parseFloat(product.discount) || 0) : (existing.discount || 0);
 
@@ -1548,7 +1554,9 @@ function getReports(startDateISO, endDateISO) {
 
     for (const row of statsRows) {
       totalDiscounts += (row.total_discounts || 0);
-      if (row.payment_method === 'debt') {
+      if (row.payment_method === 'expense') {
+        // Skip write-offs from revenue
+      } else if (row.payment_method === 'debt') {
         totalDebtIssued += row.total;
         salesByType.debt += row.total;
       } else {
@@ -1565,7 +1573,7 @@ function getReports(startDateISO, endDateISO) {
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
-      WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+      WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded' AND s.payment_method != 'expense'
     `).get(startDateISO, endDateISO);
     
     const totalProfit = (profitRow?.total_profit || 0) - totalDiscounts;
@@ -1576,7 +1584,7 @@ function getReports(startDateISO, endDateISO) {
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
-      WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+      WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded' AND s.payment_method != 'expense'
       GROUP BY si.product_id, COALESCE(p.name, si.product_name, 'Mahsulot #' || si.product_id), COALESCE(p.unit, si.unit, 'dona')
       ORDER BY total_sold DESC
       LIMIT 50
@@ -2068,17 +2076,17 @@ function getCurrentShiftStats() {
   try {
     const query = `
       SELECT 
-        SUM(CASE WHEN status != 'refunded' THEN total_amount ELSE 0 END) as total_sales,
+        SUM(CASE WHEN status != 'refunded' AND payment_method != 'expense' THEN total_amount ELSE 0 END) as total_sales,
         SUM(CASE WHEN payment_method = 'cash' AND status != 'refunded' THEN total_amount ELSE 0 END) as cash_sales,
         SUM(CASE WHEN payment_method = 'card' AND status != 'refunded' THEN total_amount ELSE 0 END) as card_sales,
         SUM(CASE WHEN payment_method = 'debt' AND status != 'refunded' THEN total_amount ELSE 0 END) as debt_sales,
-        COUNT(CASE WHEN status != 'refunded' THEN id END) as receipts_count
+        COUNT(CASE WHEN status != 'refunded' AND payment_method != 'expense' THEN id END) as receipts_count
       FROM sales
       WHERE is_closed = 0
     `;
     const row = db.prepare(query).get();
     
-    const expRow = db.prepare('SELECT SUM(amount) as total_expenses FROM expenses WHERE is_closed = 0').get();
+    const expRow = db.prepare("SELECT SUM(amount) as total_expenses FROM expenses WHERE is_closed = 0 AND COALESCE(source, 'cash') = 'cash'").get();
     
     // 1. Shift Number
     const countRow = db.prepare('SELECT COUNT(*) as cnt FROM shifts_history').get();
@@ -2250,12 +2258,56 @@ function writeOffProduct({ productId, quantity, reason, userName }) {
     
     // 4. Add to expenses
     if (totalLoss > 0) {
-      db.prepare('INSERT INTO expenses (reason, amount, cashier_name) VALUES (?, ?, ?)').run(
+      db.prepare("INSERT INTO expenses (reason, amount, cashier_name, source) VALUES (?, ?, ?, 'write_off')").run(
         `Spisaniya: ${product.name} (${reason || 'Boshqa'})`,
         totalLoss,
         userName || 'Tizim/Ombor'
       );
     }
+
+    // 5. If businessType is retail, also log this as a write-off (expense) in the sales and sale_items tables
+    const bType = getActiveBusinessType();
+    if (bType === 'retail') {
+      const countRow = db.prepare('SELECT MAX(shift_receipt_number) as max_num FROM sales WHERE is_closed = 0').get();
+      const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
+      
+      const created_at = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      
+      const saleStmt = db.prepare(`
+        INSERT INTO sales (total_amount, payment_method, cashier_name, created_at, comment, original_total, discount_percent, discount_amount, device, shift_receipt_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      const saleInfo = saleStmt.run(
+        totalLoss,
+        'expense',
+        userName || 'Ombor',
+        created_at,
+        `Spisaniya: ${product.name} (${reason || 'Boshqa'})`,
+        totalLoss,
+        0,
+        0,
+        'desktop',
+        shiftReceiptNumber
+      );
+      
+      const saleId = saleInfo.lastInsertRowid;
+      
+      db.prepare(`
+        INSERT INTO sale_items (sale_id, product_id, qty, price, product_name, unit, discount_percent, discount_amount)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        saleId,
+        productId,
+        qty,
+        costPrice,
+        product.name,
+        product.unit || 'dona',
+        0,
+        0
+      );
+    }
+
     db.exec('COMMIT');
 
     return { success: true, totalLoss, productName: product.name };
@@ -2327,7 +2379,7 @@ function getInventoryLogs({ page = 1, pageSize = 100, startDate = '', endDate = 
 function addExpense(reason, amount, cashier_name) {
   try {
     const created_at = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    db.prepare('INSERT INTO expenses (reason, amount, cashier_name, created_at) VALUES (?, ?, ?, ?)').run(reason, amount, cashier_name || 'Kassir', created_at);
+    db.prepare("INSERT INTO expenses (reason, amount, cashier_name, created_at, source) VALUES (?, ?, ?, ?, 'cash')").run(reason, amount, cashier_name || 'Kassir', created_at);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -3228,24 +3280,26 @@ function saveProductRecipe(productId, ingredients) {
     db.prepare("BEGIN TRANSACTION").run();
     db.prepare("DELETE FROM product_ingredients WHERE parent_product_id = ?").run(productId);
     
-    const stmt = db.prepare("INSERT INTO product_ingredients (parent_product_id, ingredient_product_id, quantity) VALUES (?, ?, ?)");
-    for (const ing of ingredients) {
-      stmt.run(productId, ing.ingredient_product_id, parseFloat(ing.quantity) || 0);
-    }
-    
-    // Dynamically calculate parent product buy_price (cost price) as sum of ingredients' costs
-    let calculatedCost = 0;
-    for (const ing of ingredients) {
-      const ingProduct = db.prepare("SELECT buy_price FROM products WHERE id = ?").get(ing.ingredient_product_id);
-      if (ingProduct) {
-        calculatedCost += (ingProduct.buy_price * (parseFloat(ing.quantity) || 0));
+    if (ingredients && ingredients.length > 0) {
+      const stmt = db.prepare("INSERT INTO product_ingredients (parent_product_id, ingredient_product_id, quantity) VALUES (?, ?, ?)");
+      for (const ing of ingredients) {
+        stmt.run(productId, ing.ingredient_product_id, parseFloat(ing.quantity) || 0);
       }
+      
+      // Dynamically calculate parent product buy_price (cost price) as sum of ingredients' costs
+      let calculatedCost = 0;
+      for (const ing of ingredients) {
+        const ingProduct = db.prepare("SELECT buy_price FROM products WHERE id = ?").get(ing.ingredient_product_id);
+        if (ingProduct) {
+          calculatedCost += (ingProduct.buy_price * (parseFloat(ing.quantity) || 0));
+        }
+      }
+      db.prepare("UPDATE products SET buy_price = ?, cost_price = ? WHERE id = ?").run(calculatedCost, calculatedCost, productId);
+      calculateAvailablePortions(productId);
     }
-    db.prepare("UPDATE products SET buy_price = ?, cost_price = ? WHERE id = ?").run(calculatedCost, calculatedCost, productId);
-    calculateAvailablePortions(productId);
     
     db.prepare("COMMIT").run();
-    return { success: true, calculatedCost };
+    return { success: true };
   } catch (err) {
     try { db.prepare("ROLLBACK").run(); } catch (_) {}
     return { success: false, error: err.message };

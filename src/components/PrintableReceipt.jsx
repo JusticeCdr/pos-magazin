@@ -44,7 +44,7 @@ const receiptTranslations = {
 };
 
 export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, isReprint = false }, ref) => {
-  const { shopLogo } = useApp();
+  const { shopLogo, businessType } = useApp();
   const [phones, setPhones] = useState({ phone_1: '', phone_2: '', phone_3: '' });
   const [receiptLang, setReceiptLang] = useState('uz');
 
@@ -138,6 +138,12 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
           <img src={shopLogo || logoBase64} alt="Logo" style={{ width: '200px', height: 'auto', display: 'block', margin: '0 auto 3px auto' }} />
         )}
         
+        {storeName && (
+          <h2 style={{ fontSize: isKatta ? '18px' : '16px', fontWeight: 'bold', margin: '5px 0', textTransform: 'uppercase', color: '#000000', textAlign: 'center' }}>
+            {storeName}
+          </h2>
+        )}
+        
         {(() => {
           const phoneList = [phones.phone_1, phones.phone_2, phones.phone_3].filter(p => p && p.trim() !== '');
           if (phoneList.length === 0) return null;
@@ -207,19 +213,21 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
           });
           
           return Object.entries(grouped).map(([category, items]) => (
-            <div key={category} style={{ marginBottom: '10px' }}>
-              <div style={{
-                fontWeight: '900',
-                fontSize: isKatta ? '12px' : '11px',
-                textTransform: 'uppercase',
-                borderBottom: '1px solid #000',
-                paddingBottom: '2px',
-                marginBottom: '5px',
-                color: '#000',
-                letterSpacing: '1px'
-              }}>
-                -- {category} --
-              </div>
+            <div key={category} style={{ marginBottom: businessType === 'retail' ? '0px' : '10px' }}>
+              {businessType !== 'retail' && (
+                <div style={{
+                  fontWeight: '900',
+                  fontSize: isKatta ? '12px' : '11px',
+                  textTransform: 'uppercase',
+                  borderBottom: '1px solid #000',
+                  paddingBottom: '2px',
+                  marginBottom: '5px',
+                  color: '#000',
+                  letterSpacing: '1px'
+                }}>
+                  -- {category} --
+                </div>
+              )}
               {items.map((item, idx) => {
                 const itemPct = parseFloat(item.discount || item.discount_percent) || 0;
                 const itemTotalOriginal = item.qty * item.sell_price;
@@ -239,6 +247,9 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
                       <div style={{ fontSize: '10px', fontStyle: 'italic', paddingLeft: '12px', color: '#555' }}>
                         ({labels.chegirma}: -{itemPct}%)
                       </div>
+                    )}
+                    {businessType === 'retail' && (
+                      <div style={{ borderBottom: '1px dashed #000', margin: '6px 0 6px 0' }}></div>
                     )}
                   </div>
                 );

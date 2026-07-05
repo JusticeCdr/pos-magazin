@@ -53,6 +53,7 @@ export default memo(function Cashier({ isActive }) {
     globalCustomers: customers, fetchGlobalCustomers, businessType
   } = useApp();
   const [debtForm, setDebtForm] = useState({ id: '', name: '', phone: '' });
+  const [checkComment, setCheckComment] = useState('');
 
   // Network / QR Code Modal State
   const [showNetworkModal, setShowNetworkModal] = useState(false);
@@ -413,11 +414,11 @@ export default memo(function Cashier({ isActive }) {
   const clearCart = () => setCart([]);
 
   const handleRemoveFromCart = (id) => {
-    checkManagerApproval(() => removeFromCart(id));
+    removeFromCart(id);
   };
 
   const handleClearCart = () => {
-    checkManagerApproval(() => clearCart());
+    clearCart();
   };
   
   const total = cart.reduce((sum, i) => {
@@ -459,7 +460,8 @@ export default memo(function Cashier({ isActive }) {
         paymentMethod: method,
         customerInfo: customerInfo,
         cashierName: currentUser?.name,
-        discountPercent: discountPercent
+        discountPercent: discountPercent,
+        comment: checkComment
       });
 
       if (result && result.success) {
@@ -478,7 +480,8 @@ export default memo(function Cashier({ isActive }) {
             saleId: result.saleId,
             dailyReceiptNumber: result.dailyReceiptNumber,
             shiftReceiptNumber: result.shiftReceiptNumber,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            comment: checkComment
           });
         }
 
@@ -513,10 +516,12 @@ export default memo(function Cashier({ isActive }) {
       discountAmount,
       method,
       time: new Date().toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'uz-UZ'),
+      comment: checkComment
     };
     setReceipt(receiptData);
     clearCart();
     setQuery('');
+    setCheckComment('');
     setDebtModal(false);
     setDiscountPercent(0);
     fetchGlobalProducts();
@@ -1003,6 +1008,20 @@ export default memo(function Cashier({ isActive }) {
             <span className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">
               {formatCurrency(total, lang)}
             </span>
+          </div>
+
+          {/* Check Comment Input */}
+          <div className="mb-4">
+            <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">
+              {lang === 'ru' ? 'Примечание к чеку' : 'Chek uchun izoh'}
+            </label>
+            <input
+              type="text"
+              value={checkComment}
+              onChange={e => setCheckComment(e.target.value)}
+              placeholder={lang === 'ru' ? 'Примечание...' : 'Izoh yozing...'}
+              className="w-full px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-900 dark:text-white transition-colors"
+            />
           </div>
 
           {/* Print receipt toggle */}

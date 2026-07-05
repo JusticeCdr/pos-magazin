@@ -155,6 +155,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
             (${labels.chegirma}: -${itemPct}%)
           </div>
         ` : ''}
+        <div style="border-bottom: 1px dashed #000; margin: 6px 0 6px 0;"></div>
       </div>
     `;
   }).join('');
@@ -434,6 +435,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
       <div class="receipt" id="printable-receipt">
         <div class="header">
           <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 0 auto 3px auto;" />
+          ${storeName ? `<h2 style="font-size: 16px; font-weight: bold; margin: 5px 0; text-transform: uppercase; text-align: center;">${storeName}</h2>` : ''}
           ${headerPhonesHTML}
           ${shopLocation ? `<span class="receipt-location">${labels.manzil} ${shopLocation}</span>` : ''}
           <hr class="receipt-divider" />
