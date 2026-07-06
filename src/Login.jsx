@@ -331,10 +331,18 @@ export default function Login() {
         </button>
       </div>
 
-      {/* Right Column - Cashier Login */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 bg-gray-50 dark:bg-gray-900">
         <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 sm:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-gray-100 dark:border-gray-700/50 flex flex-col items-center relative overflow-hidden">
           
+          {/* Settings button accessible on all devices */}
+          <button
+            onClick={() => setShowAdminModal(true)}
+            title="Sozlamalarga kirish"
+            className="absolute top-4 right-4 p-2.5 text-gray-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700/50 z-10"
+          >
+            <Settings size={20} />
+          </button>
+
           <div className="w-20 h-20 bg-slate-50 dark:bg-slate-900/40 rounded-[1.5rem] flex items-center justify-center mb-8 border border-slate-100 dark:border-slate-700/50 rotate-3">
             <Lock className="text-slate-600 dark:text-slate-400 -rotate-3" size={36} />
           </div>

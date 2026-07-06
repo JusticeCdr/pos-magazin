@@ -411,7 +411,8 @@
   </div>
 
   <!-- ================= MAIN APPLICATION SHELL ================= -->
-  <div id="app-shell" class="hidden flex flex-col h-full bg-slate-950">
+  <div id="app-shell" class="hidden flex flex-col h-full bg-red-600">
+    <div style="font-size: 24px; color: white; padding: 20px; background: blue; z-index: 9999; text-align: center;">TEST APP SHELL IS VISIBLE</div>
     <!-- Top Header -->
     <header class="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800/80 shrink-0">
       <div class="flex items-center gap-3">
@@ -1434,7 +1435,27 @@
 
   <!-- ================= JAVASCRIPT LOGIC ================= -->
   <script>
+    window.onerror = function(msg, url, line, col, error) {
+      alert(`[ERROR] ${msg}\nAt: ${url}:${line}:${col}\nStack: ${error ? error.stack : ''}`);
+      return false;
+    };
+    window.onunhandledrejection = function(event) {
+      alert(`[REJECTION] ${event.reason}`);
+    };
+
     const API_URL = ''; // Relative path, same host and port since served by Express
+
+    function parseDateSafely(str) {
+      if (!str) return null;
+      const isoStr = String(str).replace(' ', 'T');
+      const formatted = (isoStr.endsWith('Z') || isoStr.includes('+')) ? isoStr : isoStr + 'Z';
+      const d = new Date(formatted);
+      if (isNaN(d.getTime())) {
+        const dRaw = new Date(str);
+        return isNaN(dRaw.getTime()) ? null : dRaw;
+      }
+      return d;
+    }
 
     // ── Camera Scanner State & Logic ──────────────────────────────────────────
     let html5Qrcode = null;
@@ -1978,6 +1999,7 @@
 
     // Helper: Screen manager
     function showScreen(screenId) {
+      alert("showScreen: " + screenId);
       // Hide all main containers
       document.getElementById('screen-login').classList.add('hidden');
       document.getElementById('screen-waiter-login').classList.add('hidden');
@@ -1994,7 +2016,9 @@
         document.getElementById('waiter-shell').classList.remove('hidden');
         showWaiterScreen('tables');
       } else if (screenId === 'app' || screenId === 'app-shell') {
-        document.getElementById('app-shell').classList.remove('hidden');
+        const shell = document.getElementById('app-shell');
+        shell.classList.remove('hidden');
+        alert("app-shell className: " + shell.className);
         switchTab(state.activeTab);
       }
     }
@@ -3076,7 +3100,9 @@
       });
       
       // Show selected tab
-      document.getElementById(`screen-${tabId}`).classList.remove('hidden');
+      const tabScr = document.getElementById(`screen-${tabId}`);
+      tabScr.classList.remove('hidden');
+      alert("screen-" + tabId + " className: " + tabScr.className);
       const activeBtn = document.getElementById(`nav-btn-${tabId}`);
       if (activeBtn) {
         activeBtn.classList.remove('text-slate-450');
@@ -3165,6 +3191,7 @@
     }
 
     async function loadStats() {
+      alert("loadStats started, PIN: " + state.pin);
       const refreshIcon = document.getElementById('refresh-icon');
       if (refreshIcon) refreshIcon.classList.add('animate-spin');
       
@@ -3173,6 +3200,7 @@
         const statsRes = await fetch(`${API_URL}/api/stats`, {
           headers: { 'Authorization': state.pin }
         });
+        alert("statsRes status: " + statsRes.status);
         
         if (statsRes.status === 401) {
           logout();
@@ -3214,6 +3242,7 @@
         const reportsRes = await fetch(`${API_URL}/api/reports?start=${encodeURIComponent(dates.start)}&end=${encodeURIComponent(dates.end)}`, {
           headers: { 'Authorization': state.pin }
         });
+        alert("reportsRes status: " + reportsRes.status);
         
         if (reportsRes.ok) {
           const result = await reportsRes.json();
@@ -3295,11 +3324,13 @@
             // Aging products
             state.agingProducts = data.agingProducts || [];
             renderAgingProducts();
+            alert("loadStats finished rendering!");
           }
         } else {
           showToast('Hisobotlarni yuklashda xatolik yuz berdi', 'error');
         }
       } catch (err) {
+        alert("loadStats caught error: " + err.message + "\nStack: " + err.stack);
         showToast('Tarmoq xatoligi yuz berdi', 'error');
       } finally {
         if (refreshIcon) {
@@ -3330,9 +3361,11 @@
       const limit = state.agingDaysLimit;
       const now = Date.now();
       const filtered = (state.agingProducts || []).filter(p => {
-        const refDate = p.last_sold_at ? p.last_sold_at : p.added_at;
+        const refDateStr = p.last_sold_at ? p.last_sold_at : p.added_at;
+        if (!refDateStr) return true;
+        const refDate = parseDateSafely(refDateStr);
         if (!refDate) return true;
-        const days = Math.floor((now - new Date(refDate + 'Z').getTime()) / 86400000);
+        const days = Math.floor((now - refDate.getTime()) / 86400000);
         return days >= limit;
       });
 
@@ -3352,25 +3385,26 @@
       }
 
       container.innerHTML = filtered.map(p => {
-        const refDate = p.last_sold_at ? p.last_sold_at : p.added_at;
+        const refDateStr = p.last_sold_at ? p.last_sold_at : p.added_at;
+        const refDate = parseDateSafely(refDateStr);
         const days = refDate
-          ? Math.floor((now - new Date(refDate + 'Z').getTime()) / 86400000)
+          ? Math.floor((now - refDate.getTime()) / 86400000)
           : limit;
-        const label = p.last_sold_at
-          ? `Oxirgi savdo: ${new Date(p.last_sold_at + 'Z').toLocaleDateString('ru-RU')}`
-          : p.added_at
-          ? `Kiritilgan: ${new Date(p.added_at + 'Z').toLocaleDateString('ru-RU')}`
+        const label = p.last_sold_at && parseDateSafely(p.last_sold_at)
+          ? `Oxirgi savdo: ${parseDateSafely(p.last_sold_at).toLocaleDateString('ru-RU')}`
+          : p.added_at && parseDateSafely(p.added_at)
+          ? `Kiritilgan: ${parseDateSafely(p.added_at).toLocaleDateString('ru-RU')}`
           : 'Hech sotilmagan';
         const color = days >= 30 ? 'text-red-400' : days >= 20 ? 'text-orange-400' : 'text-yellow-400';
         return `
           <div class="flex justify-between items-start border-b border-slate-800/60 pb-2 gap-2">
             <div class="min-w-0">
-              <p class="text-slate-200 font-semibold text-xs truncate">${p.name}</p>
-              <p class="text-slate-500 text-[10px] mt-0.5">${label}</p>
+               <p class="text-slate-200 font-semibold text-xs truncate">${p.name}</p>
+               <p class="text-slate-500 text-[10px] mt-0.5">${label}</p>
             </div>
             <div class="text-right shrink-0">
-              <p class="${color} font-black text-xs">${days} kun</p>
-              <p class="text-slate-400 text-[10px]">${p.stock} ${p.unit || 'dona'}</p>
+               <p class="${color} font-black text-xs">${days} kun</p>
+               <p class="text-slate-400 text-[10px]">${p.stock} ${p.unit || 'dona'}</p>
             </div>
           </div>
         `;
@@ -4127,7 +4161,7 @@
                 ${statusHtml}
               </div>
               <span class="text-xs text-slate-500 font-semibold mt-1">Tel: ${cust.phone || 'Yo\'q'}</span>
-              ${cust.last_debt_date ? `<span class="text-[10px] text-slate-400 mt-1 font-semibold">Oxirgi qarz: ${new Date(cust.last_debt_date).toLocaleDateString('ru-RU')}</span>` : ''}
+              ${cust.last_debt_date && parseDateSafely(cust.last_debt_date) ? `<span class="text-[10px] text-slate-400 mt-1 font-semibold">Oxirgi qarz: ${parseDateSafely(cust.last_debt_date).toLocaleDateString('ru-RU')}</span>` : ''}
             </div>
             <div class="text-right shrink-0">
               <span class="text-sm font-black ${balanceColor}">
@@ -4227,7 +4261,8 @@
       
       state.activeCustomerHistory.forEach(item => {
         const isSale = item.type === 'sale';
-        const dateStr = new Date(item.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const parsedD = parseDateSafely(item.created_at);
+        const dateStr = parsedD ? parsedD.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
         
         let contentHtml = '';
         if (isSale) {
@@ -4610,7 +4645,8 @@
       }
 
       filtered.forEach(sale => {
-        const dateStr = new Date(sale.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const parsedD = parseDateSafely(sale.created_at);
+        const dateStr = parsedD ? parsedD.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
         const total = Math.round(sale.total_amount);
         const isRefunded = sale.status === 'refunded' || sale.total_amount === 0;
 
@@ -4660,7 +4696,8 @@
     function openSaleDetails(sale) {
       activeSaleForDetails = sale;
       document.getElementById('sale-details-title').innerText = `Chek #${sale.shift_receipt_number || sale.id}`;
-      document.getElementById('sale-details-date').innerText = new Date(sale.created_at).toLocaleString('ru-RU');
+      const parsedD = parseDateSafely(sale.created_at);
+      document.getElementById('sale-details-date').innerText = parsedD ? parsedD.toLocaleString('ru-RU') : '';
       
       let payType = 'Naqd';
       if (sale.payment_method === 'card') payType = 'Karta';
@@ -4723,7 +4760,8 @@
       // Handle return button status
       const btnReturn = document.getElementById('btn-return-sale');
       const isRefunded = sale.status === 'refunded' || sale.total_amount === 0;
-      const isRefundableTime = (Date.now() - new Date(sale.created_at).getTime()) <= 3 * 24 * 60 * 60 * 1000;
+      const parsedD2 = parseDateSafely(sale.created_at);
+      const isRefundableTime = parsedD2 ? (Date.now() - parsedD2.getTime()) <= 3 * 24 * 60 * 60 * 1000 : false;
 
       if (isRefunded) {
         btnReturn.classList.add('hidden');

@@ -574,6 +574,7 @@ export default memo(function SalesHistory({ isActive }) {
               if (sale.payment_method === 'card') methodLabel = "Plastik karta";
               if (sale.payment_method === 'debt') methodLabel = "Qarzga";
               if (sale.payment_method === 'expense') methodLabel = lang === 'ru' ? "Списание (Расход)" : "Chiqim (Spisaniya)";
+              if (sale.payment_method === 'qarz_tulov') methodLabel = lang === 'ru' ? "Оплата долга" : "Qarz to'lovi";
 
               return (
                 <div key={sale.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm flex flex-col transition-colors hover:shadow-md">
@@ -609,6 +610,12 @@ export default memo(function SalesHistory({ isActive }) {
                       {sale.payment_method === 'expense' && (
                         <span className="text-[10px] uppercase font-black bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full ml-1">Spisaniya</span>
                       )}
+                      {sale.payment_method === 'qarz_tulov' && (
+                        <span className="text-[10px] uppercase font-black bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full ml-1">To'landi</span>
+                      )}
+                      {sale.status === 'completed' && sale.payment_method !== 'qarz_tulov' && sale.payment_method !== 'expense' && (
+                        <span className="text-[10px] uppercase font-black bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full ml-1">Sotildi</span>
+                      )}
                       {(sale.status === 'refunded' || sale.total_amount === 0) && sale.payment_method !== 'expense' && (
                         <span className="text-[10px] uppercase font-black bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full ml-1">Qaytarilgan</span>
                       )}
@@ -635,75 +642,81 @@ export default memo(function SalesHistory({ isActive }) {
                   </div>
 
                   {/* Items List */}
-                  <div className="flex-1 p-4 overflow-y-auto max-h-48 custom-scrollbar bg-gray-50/50 dark:bg-gray-800">
-                    <h4 className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-2 tracking-wider">Mahsulotlar</h4>
-                    <div className="space-y-2">
-                      {sale.items && sale.items.map(item => {
-                        const availableQty = item.qty - (item.refunded_qty || 0);
-                        const isRefundableTime = (Date.now() - parseSQLiteDate(sale.created_at).getTime()) <= 3 * 24 * 60 * 60 * 1000;
-                        const canReturn = availableQty > 0 && isRefundableTime && sale.status !== 'refunded';
-                        const itemDiscount = parseFloat(item.discount_percent) || 0;
-                        const itemOriginalTotal = item.qty * item.price;
-                        const itemDiscAmount = Math.round(itemOriginalTotal * (itemDiscount / 100));
-                        const itemFinalTotal = itemOriginalTotal - itemDiscAmount;
-
-                        return (
-                          <div
-                            key={item.id}
-                            className={`flex justify-between items-start text-sm border-b pb-2 last:border-0 last:pb-0 group rounded-lg px-1 transition-colors ${
-                              itemDiscount > 0
-                                ? 'border-emerald-100 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-900/10'
-                                : 'border-gray-100 dark:border-gray-700/50'
-                            }`}
-                          >
-                            <div className="flex-1 pr-2">
-                              <div className="font-medium text-gray-800 dark:text-gray-200 flex flex-wrap items-center gap-1">
-                                {item.name}
-                                {itemDiscount > 0 && (
-                                  <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold">
-                                    -{itemDiscount}% skidka
-                                  </span>
-                                )}
-                                {item.refunded_qty > 0 && (
-                                  <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase font-bold">
-                                    -{item.refunded_qty} qaytdi
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                {item.qty} x {formatCurrency(item.price, lang)}
-                                {itemDiscount > 0 && (
-                                  <span className="ml-1 line-through text-gray-400">
-                                    {formatCurrency(itemOriginalTotal, lang)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <div className={`font-bold text-right whitespace-nowrap ${
-                                itemDiscount > 0
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : 'text-gray-800 dark:text-gray-200'
-                              }`}>
-                                {formatCurrency(itemFinalTotal, lang)}
-                              </div>
-                              {canReturn && (
-                                <button 
-                                  onClick={() => {
-                                    setPartialReturnItem({ ...item, available: availableQty });
-                                    setPartialReturnQty(availableQty);
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] bg-red-50 text-red-600 border border-red-200 px-2 py-1 rounded-md font-bold uppercase hover:bg-red-100"
-                                >
-                                  <RotateCcw size={10} /> Qaytarish
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                  {sale.payment_method === 'qarz_tulov' ? (
+                    <div className="flex-1 p-4 flex items-center justify-center bg-gray-50/50 dark:bg-gray-800 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                      Mijoz: {sale.customer_name || 'Noma\'lum mijoz'} qarz to'lovini amalga oshirdi.
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex-1 p-4 overflow-y-auto max-h-48 custom-scrollbar bg-gray-50/50 dark:bg-gray-800">
+                      <h4 className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-2 tracking-wider">Mahsulotlar</h4>
+                      <div className="space-y-2">
+                        {sale.items && sale.items.map(item => {
+                          const availableQty = item.qty - (item.refunded_qty || 0);
+                          const isRefundableTime = (Date.now() - parseSQLiteDate(sale.created_at).getTime()) <= 3 * 24 * 60 * 60 * 1000;
+                          const canReturn = availableQty > 0 && isRefundableTime && sale.status !== 'refunded';
+                          const itemDiscount = parseFloat(item.discount_percent) || 0;
+                          const itemOriginalTotal = item.qty * item.price;
+                          const itemDiscAmount = Math.round(itemOriginalTotal * (itemDiscount / 100));
+                          const itemFinalTotal = itemOriginalTotal - itemDiscAmount;
+
+                          return (
+                            <div
+                              key={item.id}
+                              className={`flex justify-between items-start text-sm border-b pb-2 last:border-0 last:pb-0 group rounded-lg px-1 transition-colors ${
+                                itemDiscount > 0
+                                  ? 'border-emerald-100 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-900/10'
+                                  : 'border-gray-100 dark:border-gray-700/50'
+                              }`}
+                            >
+                              <div className="flex-1 pr-2">
+                                <div className="font-medium text-gray-800 dark:text-gray-200 flex flex-wrap items-center gap-1">
+                                  {item.name}
+                                  {itemDiscount > 0 && (
+                                    <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold">
+                                      -{itemDiscount}% skidka
+                                    </span>
+                                  )}
+                                  {item.refunded_qty > 0 && (
+                                    <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase font-bold">
+                                      -{item.refunded_qty} qaytdi
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-0.5">
+                                  {item.qty} x {formatCurrency(item.price, lang)}
+                                  {itemDiscount > 0 && (
+                                    <span className="ml-1 line-through text-gray-400">
+                                      {formatCurrency(itemOriginalTotal, lang)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <div className={`font-bold text-right whitespace-nowrap ${
+                                  itemDiscount > 0
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-gray-800 dark:text-gray-200'
+                                }`}>
+                                  {formatCurrency(itemFinalTotal, lang)}
+                                </div>
+                                {canReturn && (
+                                  <button 
+                                    onClick={() => {
+                                      setPartialReturnItem({ ...item, available: availableQty });
+                                      setPartialReturnQty(availableQty);
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] bg-red-50 text-red-600 border border-red-200 px-2 py-1 rounded-md font-bold uppercase hover:bg-red-100"
+                                  >
+                                    <RotateCcw size={10} /> Qaytarish
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Comment if exists */}
                   {sale.comment && sale.comment.trim() && (
@@ -715,7 +728,7 @@ export default memo(function SalesHistory({ isActive }) {
                   {/* Total & Action Buttons */}
                   <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
                     <div className="flex gap-2">
-                      {sale.payment_method !== 'expense' && (
+                      {sale.payment_method !== 'expense' && sale.payment_method !== 'qarz_tulov' && (
                         <>
                           <button 
                             onClick={() => handleReprint(sale)}

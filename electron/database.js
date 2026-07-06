@@ -53,6 +53,7 @@ function initDB() {
   try { db.exec("ALTER TABLE sales ADD COLUMN status TEXT DEFAULT 'completed';"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN shift_receipt_number INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN device TEXT DEFAULT 'desktop';"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN cash_refund REAL DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN opened_by TEXT;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN closed_by TEXT;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN total_expenses REAL DEFAULT 0;"); } catch (_) {}
@@ -1366,7 +1367,7 @@ function getRecentSales() {
       SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.total_debt as customer_total_debt
       FROM sales s
       LEFT JOIN customers c ON s.customer_id = c.id
-      WHERE s.created_at >= datetime('now', '-3 days', 'localtime')
+      WHERE s.created_at >= datetime('now', '-3 days', 'localtime') AND s.payment_method != 'qarz_tulov'
       ORDER BY s.id DESC
     `).all();
 
@@ -1394,30 +1395,60 @@ function processFullReturn(saleId) {
     const saleItems = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(saleId);
 
     let totalReturnedAmount = 0;
+    for (const item of saleItems) {
+      if (item.qty > 0) {
+        totalReturnedAmount += (item.qty * item.price);
+      }
+    }
+
+    let debtReduction = 0;
+    let cashRefundAmount = 0;
+
+    // If debt, reduce total_debt (prevent negative debt, refund paid part as cash)
+    if (sale.payment_method === 'debt' && sale.customer_id && totalReturnedAmount > 0) {
+      const cust = db.prepare('SELECT total_debt FROM customers WHERE id = ?').get(sale.customer_id);
+      if (cust) {
+        const previousDebt = cust.total_debt;
+        const newDebt = Math.max(0, previousDebt - totalReturnedAmount);
+        debtReduction = previousDebt - newDebt;
+        cashRefundAmount = totalReturnedAmount - debtReduction;
+        db.prepare('UPDATE customers SET total_debt = ? WHERE id = ?').run(newDebt, sale.customer_id);
+      }
+    }
 
     for (const item of saleItems) {
       if (item.qty > 0) {
         // Restore stock
         db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(item.qty, item.product_id);
-        // qty is kept intact for history
+        
+        // Log inventory with precise note
         const prod = db.prepare('SELECT name FROM products WHERE id = ?').get(item.product_id);
+        
+        let logNote = `Chek #${sale.shift_receipt_number || sale.id} to'liq qaytarildi`;
+        if (sale.payment_method === 'debt') {
+          if (cashRefundAmount > 0 && debtReduction > 0) {
+            logNote = `Chek #${sale.shift_receipt_number || sale.id} (Qarzga) qaytarildi. Qarz kamaydi: ${debtReduction.toLocaleString('ru-RU')} so'm, Kassadan qaytdi: ${cashRefundAmount.toLocaleString('ru-RU')} so'm`;
+          } else if (cashRefundAmount > 0) {
+            logNote = `Chek #${sale.shift_receipt_number || sale.id} (Qarzga) qaytarildi. Kassadan qaytdi: ${cashRefundAmount.toLocaleString('ru-RU')} so'm`;
+          } else {
+            logNote = `Chek #${sale.shift_receipt_number || sale.id} (Qarzga) qaytarildi. Qarz kamaydi: ${debtReduction.toLocaleString('ru-RU')} so'm`;
+          }
+        }
+
         logInventory({
           productId: item.product_id,
           productName: prod ? prod.name : (item.product_name || `Product #${item.product_id}`),
           actionType: 'vozvrat',
           quantityChanged: +item.qty,
           userName: sale.cashier_name || '',
-          note: `Chek #${sale.shift_receipt_number || sale.id} to'liq qaytarildi`
+          note: logNote
         });
-        totalReturnedAmount += (item.qty * item.price);
       }
     }
 
-    // The total_amount is kept intact for history.
-
-    // If debt, reduce total_debt
-    if (sale.payment_method === 'debt' && sale.customer_id && totalReturnedAmount > 0) {
-      db.prepare('UPDATE customers SET total_debt = total_debt - ? WHERE id = ?').run(totalReturnedAmount, sale.customer_id);
+    // Save the cash refund amount to the sale
+    if (cashRefundAmount > 0) {
+      db.prepare('UPDATE sales SET cash_refund = cash_refund + ? WHERE id = ?').run(cashRefundAmount, sale.id);
     }
 
     // Update status to refunded
@@ -1470,21 +1501,47 @@ function processReturn(saleItemId, returnQty) {
       db.prepare("UPDATE sales SET status = 'partially_refunded' WHERE id = ?").run(sale.id);
     }
 
+    // 6. Handle Debt reduction if applicable
+    let debtReduction = 0;
+    let cashRefundAmount = 0;
+    if (sale.payment_method === 'debt' && sale.customer_id) {
+      const cust = db.prepare('SELECT total_debt FROM customers WHERE id = ?').get(sale.customer_id);
+      if (cust) {
+        const previousDebt = cust.total_debt;
+        const newDebt = Math.max(0, previousDebt - returnAmount);
+        debtReduction = previousDebt - newDebt;
+        cashRefundAmount = returnAmount - debtReduction;
+        db.prepare('UPDATE customers SET total_debt = ? WHERE id = ?').run(newDebt, sale.customer_id);
+      }
+    }
+
+    // Save the cash refund amount to the sale
+    if (cashRefundAmount > 0) {
+      db.prepare('UPDATE sales SET cash_refund = cash_refund + ? WHERE id = ?').run(cashRefundAmount, sale.id);
+    }
+
     // Log inventory
     const prodRow = db.prepare('SELECT name FROM products WHERE id = ?').get(saleItem.product_id);
+    
+    let logNote = `Chek #${sale.shift_receipt_number || sale.id} qisman qaytarildi`;
+    if (sale.payment_method === 'debt') {
+      if (cashRefundAmount > 0 && debtReduction > 0) {
+        logNote = `Chek #${sale.shift_receipt_number || sale.id} (Qarzga) qisman qaytarildi. Qarz kamaydi: ${debtReduction.toLocaleString('ru-RU')} so'm, Kassadan qaytdi: ${cashRefundAmount.toLocaleString('ru-RU')} so'm`;
+      } else if (cashRefundAmount > 0) {
+        logNote = `Chek #${sale.shift_receipt_number || sale.id} (Qarzga) qisman qaytarildi. Kassadan qaytdi: ${cashRefundAmount.toLocaleString('ru-RU')} so'm`;
+      } else {
+        logNote = `Chek #${sale.shift_receipt_number || sale.id} (Qarzga) qisman qaytarildi. Qarz kamaydi: ${debtReduction.toLocaleString('ru-RU')} so'm`;
+      }
+    }
+
     logInventory({
       productId: saleItem.product_id,
       productName: prodRow ? prodRow.name : (saleItem.product_name || `Product #${saleItem.product_id}`),
       actionType: 'vozvrat',
       quantityChanged: +returnQty,
       userName: sale.cashier_name || '',
-      note: `Chek #${sale.shift_receipt_number || sale.id} qisman qaytarildi`
+      note: logNote
     });
-
-    // 6. Handle Debt reduction if applicable
-    if (sale.payment_method === 'debt' && sale.customer_id) {
-      db.prepare('UPDATE customers SET total_debt = total_debt - ? WHERE id = ?').run(returnAmount, sale.customer_id);
-    }
 
     db.exec('COMMIT');
     return { success: true };
@@ -1505,6 +1562,14 @@ function payDebt(customerId, amount, cashierName = '') {
     db.prepare('INSERT INTO debt_payments (customer_id, amount) VALUES (?, ?)')
       .run(customerId, parsedAmount);
 
+    const countRow = db.prepare('SELECT MAX(shift_receipt_number) as max_num FROM sales WHERE is_closed = 0').get();
+    const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
+
+    db.prepare(`
+      INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, status, shift_receipt_number)
+      VALUES (?, 'qarz_tulov', ?, ?, 'completed', ?)
+    `).run(parsedAmount, customerId, cashierName || 'Kassir', shiftReceiptNumber);
+
     const customer = db.prepare('SELECT name FROM customers WHERE id = ?').get(customerId);
     if (customer) {
       logInventory({
@@ -1513,7 +1578,7 @@ function payDebt(customerId, amount, cashierName = '') {
         actionType: 'qarz_tulov',
         quantityChanged: 0,
         userName: cashierName,
-        note: `Qarzdan to'lov: ${parsedAmount} so'm`
+        note: `Qarzdan to'lov: ${parsedAmount.toLocaleString('ru-RU')} so'm`
       });
     }
 
@@ -1539,13 +1604,21 @@ function getLocalDateString(isoStr) {
 
 function getReports(startDateISO, endDateISO) {
   try {
+    const bType = getActiveBusinessType();
+
     // 1. Stats by Payment Method & Total Revenue/Debt & Total Discounts (consolidated query)
     const statsRows = db.prepare(`
-      SELECT payment_method, SUM(total_amount) as total, SUM(discount_amount) as total_discounts
-      FROM sales
-      WHERE created_at >= ? AND created_at <= ? AND status != 'refunded'
-      GROUP BY payment_method
-    `).all(startDateISO, endDateISO);
+      SELECT s.payment_method, SUM(s.total_amount) as total, SUM(s.discount_amount) as total_discounts
+      FROM sales s
+      WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+        AND s.id IN (
+          SELECT si.sale_id FROM sale_items si 
+          LEFT JOIN products p ON si.product_id = p.id 
+          WHERE p.business_type = ? 
+             OR (p.id IS NULL AND ((? = 'retail' AND s.waiter_id IS NULL) OR (? = 'restaurant' AND s.waiter_id IS NOT NULL)))
+        )
+      GROUP BY s.payment_method
+    `).all(startDateISO, endDateISO, bType, bType, bType);
 
     let totalRevenue = 0;
     let totalDebtIssued = 0;
@@ -1566,29 +1639,77 @@ function getReports(startDateISO, endDateISO) {
       }
     }
 
+    // Subtract refunds in this period to get actual net revenue and net debt
+    const refundsByTypeRows = db.prepare(`
+      SELECT s.payment_method, SUM(si.refunded_qty * si.price) as refunded_total
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+        AND (p.business_type = ? 
+             OR (p.id IS NULL AND ((? = 'retail' AND s.waiter_id IS NULL) OR (? = 'restaurant' AND s.waiter_id IS NOT NULL))))
+      GROUP BY s.payment_method
+    `).all(startDateISO, endDateISO, bType, bType, bType);
+
+    const refundsByType = { cash: 0, card: 0, debt: 0 };
+    for (const r of refundsByTypeRows) {
+      if (r.payment_method === 'cash') refundsByType.cash = r.refunded_total || 0;
+      if (r.payment_method === 'card') refundsByType.card = r.refunded_total || 0;
+      if (r.payment_method === 'debt') refundsByType.debt = r.refunded_total || 0;
+    }
+
+    // Fetch total cash refunds made on debt sales in this period
+    const cashRefundsRow = db.prepare(`
+      SELECT SUM(s.cash_refund) as total_cash_refund
+      FROM sales s
+      WHERE s.created_at >= ? AND s.created_at <= ? AND s.payment_method = 'debt' AND s.status != 'refunded'
+        AND s.id IN (
+          SELECT si.sale_id FROM sale_items si 
+          LEFT JOIN products p ON si.product_id = p.id 
+          WHERE p.business_type = ? 
+             OR (p.id IS NULL AND ((? = 'retail' AND s.waiter_id IS NULL) OR (? = 'restaurant' AND s.waiter_id IS NOT NULL)))
+        )
+    `).get(startDateISO, endDateISO, bType, bType, bType);
+    const totalDebtCashRefund = cashRefundsRow?.total_cash_refund || 0;
+
+    // Apply refund deductions
+    salesByType.cash = Math.max(0, salesByType.cash - refundsByType.cash - totalDebtCashRefund);
+    salesByType.card = Math.max(0, salesByType.card - refundsByType.card);
+    
+    // The actual debt reduction is the total refunded on debt sales minus the cash portion refunded
+    const debtReduction = Math.max(0, refundsByType.debt - totalDebtCashRefund);
+    salesByType.debt = Math.max(0, salesByType.debt - debtReduction);
+
+    totalRevenue = Math.max(0, totalRevenue - (refundsByType.cash + refundsByType.card + totalDebtCashRefund));
+    totalDebtIssued = Math.max(0, totalDebtIssued - debtReduction);
+
     // 2. Total Profit Calculation
-    // Profit = (sell_price - buy_price) * qty - discount_amount
+    // Profit = (sell_price - buy_price) * (qty - refunded_qty) - discount_amount
     const profitRow = db.prepare(`
-      SELECT SUM((si.price - IFNULL(p.buy_price, 0)) * si.qty) as total_profit
+      SELECT SUM((si.price - IFNULL(p.buy_price, 0)) * (si.qty - si.refunded_qty)) as total_profit
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
       WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded' AND s.payment_method != 'expense'
-    `).get(startDateISO, endDateISO);
+        AND (p.business_type = ? 
+             OR (p.id IS NULL AND ((? = 'retail' AND s.waiter_id IS NULL) OR (? = 'restaurant' AND s.waiter_id IS NOT NULL))))
+    `).get(startDateISO, endDateISO, bType, bType, bType);
     
     const totalProfit = (profitRow?.total_profit || 0) - totalDiscounts;
 
     // 3. Top 5 Selling Products
     const topProducts = db.prepare(`
-      SELECT COALESCE(p.name, si.product_name, 'Mahsulot #' || si.product_id) as name, SUM(si.qty) as total_sold, COALESCE(p.unit, si.unit, 'dona') as unit
+      SELECT COALESCE(p.name, si.product_name, 'Mahsulot #' || si.product_id) as name, SUM(si.qty - si.refunded_qty) as total_sold, COALESCE(p.unit, si.unit, 'dona') as unit
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
       WHERE s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded' AND s.payment_method != 'expense'
+        AND (p.business_type = ? 
+             OR (p.id IS NULL AND ((? = 'retail' AND s.waiter_id IS NULL) OR (? = 'restaurant' AND s.waiter_id IS NOT NULL))))
       GROUP BY si.product_id, COALESCE(p.name, si.product_name, 'Mahsulot #' || si.product_id), COALESCE(p.unit, si.unit, 'dona')
       ORDER BY total_sold DESC
       LIMIT 50
-    `).all(startDateISO, endDateISO);
+    `).all(startDateISO, endDateISO, bType, bType, bType);
 
     // Fetch total debt payments in this period
     const debtPaymentsRow = db.prepare(`
@@ -1614,7 +1735,8 @@ function getReports(startDateISO, endDateISO) {
     const valuation = db.prepare(`
       SELECT SUM(buy_price * stock) as total_buy, SUM(sell_price * stock) as total_sell
       FROM products
-    `).get();
+      WHERE business_type = ?
+    `).get(bType);
 
     const warehouseBuyValue = valuation?.total_buy || 0;
     const warehouseSellValue = valuation?.total_sell || 0;
@@ -1633,13 +1755,13 @@ function getReports(startDateISO, endDateISO) {
                 WHERE il.product_id = p.id
                ) as added_at
         FROM products p
-        WHERE p.stock > 0
+        WHERE p.stock > 0 AND p.business_type = ?
       ) WHERE 
         (last_sold_at IS NOT NULL AND last_sold_at < datetime('now', '-10 days', 'localtime'))
         OR (last_sold_at IS NULL AND (added_at IS NULL OR added_at < datetime('now', '-10 days', 'localtime')))
       ORDER BY COALESCE(last_sold_at, added_at) ASC
       LIMIT 150
-    `).all();
+    `).all(bType);
 
     const waiterStats = db.prepare(`
       SELECT ro.waiter_id, w.name as waiter_name, w.percentage, SUM(ro.total_amount) as total_sales
@@ -2076,11 +2198,11 @@ function getCurrentShiftStats() {
   try {
     const query = `
       SELECT 
-        SUM(CASE WHEN status != 'refunded' AND payment_method != 'expense' THEN total_amount ELSE 0 END) as total_sales,
-        SUM(CASE WHEN payment_method = 'cash' AND status != 'refunded' THEN total_amount ELSE 0 END) as cash_sales,
+        SUM(CASE WHEN status != 'refunded' AND payment_method != 'expense' AND payment_method != 'qarz_tulov' THEN total_amount ELSE 0 END) as total_sales,
+        SUM(CASE WHEN payment_method IN ('cash', 'qarz_tulov') AND status != 'refunded' THEN total_amount ELSE 0 END) as cash_sales,
         SUM(CASE WHEN payment_method = 'card' AND status != 'refunded' THEN total_amount ELSE 0 END) as card_sales,
         SUM(CASE WHEN payment_method = 'debt' AND status != 'refunded' THEN total_amount ELSE 0 END) as debt_sales,
-        COUNT(CASE WHEN status != 'refunded' AND payment_method != 'expense' THEN id END) as receipts_count
+        COUNT(CASE WHEN status != 'refunded' AND payment_method != 'expense' AND payment_method != 'qarz_tulov' THEN id END) as receipts_count
       FROM sales
       WHERE is_closed = 0
     `;
@@ -2093,11 +2215,11 @@ function getCurrentShiftStats() {
     const shift_number = (countRow?.cnt || 0) + 1;
 
     // 2. Discounts
-    const discountRow = db.prepare("SELECT SUM(discount_amount) as total_discounts FROM sales WHERE is_closed = 0 AND status != 'refunded'").get();
+    const discountRow = db.prepare("SELECT SUM(discount_amount) as total_discounts FROM sales WHERE is_closed = 0 AND status != 'refunded' AND payment_method != 'qarz_tulov'").get();
     const total_discounts = discountRow?.total_discounts || 0;
 
     // 3. Refunds / Voids
-    const refundRow = db.prepare("SELECT COUNT(id) as cnt, SUM(total_amount) as total_refunds FROM sales WHERE is_closed = 0 AND status = 'refunded'").get();
+    const refundRow = db.prepare("SELECT COUNT(id) as cnt, SUM(total_amount) as total_refunds FROM sales WHERE is_closed = 0 AND status = 'refunded' AND payment_method != 'qarz_tulov'").get();
     const refunds_count = refundRow?.cnt || 0;
     const total_refunds = refundRow?.total_refunds || 0;
 
@@ -2106,11 +2228,11 @@ function getCurrentShiftStats() {
     const total_expenses = expRow.total_expenses || 0;
     const expected_cash = cash_sales - total_expenses;
 
-    const firstSale = db.prepare('SELECT cashier_name FROM sales WHERE is_closed = 0 LIMIT 1').get();
+    const firstSale = db.prepare("SELECT cashier_name FROM sales WHERE is_closed = 0 AND payment_method != 'qarz_tulov' LIMIT 1").get();
     const opened_by = firstSale ? firstSale.cashier_name : 'Noma\'lum';
 
     // Get current shift opened time (fast query via indices)
-    const salesRow = db.prepare('SELECT MIN(created_at) as opened_at FROM sales WHERE is_closed = 0').get();
+    const salesRow = db.prepare("SELECT MIN(created_at) as opened_at FROM sales WHERE is_closed = 0 AND payment_method != 'qarz_tulov'").get();
     const expensesRow = db.prepare('SELECT MIN(created_at) as opened_at FROM expenses WHERE is_closed = 0').get();
     
     let opened_at = null;
@@ -2330,15 +2452,20 @@ function getWriteOffs() {
 
 function getInventoryLogs({ page = 1, pageSize = 100, startDate = '', endDate = '', productId = null, actionType = '', productSearch = '' } = {}) {
   try {
+    const bType = getActiveBusinessType();
     const offset = (page - 1) * pageSize;
     const conditions = [];
     const params     = [];
+
+    // Filter by active business type (allow product_id = 0 or general logs)
+    conditions.push("(il.product_id = 0 OR p.business_type = ?)");
+    params.push(bType);
 
     if (startDate) {
       const localStart = new Date(`${startDate}T00:00:00`);
       if (!isNaN(localStart.getTime())) {
         const utcStr = localStart.toISOString().replace('T', ' ').substring(0, 19);
-        conditions.push("created_at >= ?");
+        conditions.push("il.created_at >= ?");
         params.push(utcStr);
       }
     }
@@ -2346,29 +2473,40 @@ function getInventoryLogs({ page = 1, pageSize = 100, startDate = '', endDate = 
       const localEnd = new Date(`${endDate}T23:59:59`);
       if (!isNaN(localEnd.getTime())) {
         const utcStr = localEnd.toISOString().replace('T', ' ').substring(0, 19);
-        conditions.push("created_at <= ?");
+        conditions.push("il.created_at <= ?");
         params.push(utcStr);
       }
     }
     if (productId) {
-      conditions.push('product_id = ?');
+      conditions.push('il.product_id = ?');
       params.push(productId);
     }
     if (actionType) {
-      conditions.push('action_type = ?');
+      conditions.push('il.action_type = ?');
       params.push(actionType);
     }
     if (productSearch && productSearch.trim() !== '') {
-      conditions.push('my_lower(product_name) LIKE my_lower(?)');
+      conditions.push('my_lower(il.product_name) LIKE my_lower(?)');
       params.push(`%${productSearch.trim()}%`);
     }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    const total = db.prepare(`SELECT COUNT(*) as cnt FROM inventory_logs ${where}`).get(...params).cnt;
-    const rows  = db.prepare(
-      `SELECT * FROM inventory_logs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, pageSize, offset);
+    const total = db.prepare(`
+      SELECT COUNT(*) as cnt 
+      FROM inventory_logs il
+      LEFT JOIN products p ON il.product_id = p.id
+      ${where}
+    `).get(...params).cnt;
+
+    const rows  = db.prepare(`
+      SELECT il.* 
+      FROM inventory_logs il
+      LEFT JOIN products p ON il.product_id = p.id
+      ${where} 
+      ORDER BY il.created_at DESC 
+      LIMIT ? OFFSET ?
+    `).all(...params, pageSize, offset);
 
     return { success: true, data: rows, total, page, pageSize };
   } catch (err) {
@@ -2795,6 +2933,7 @@ async function getAiInsights() {
     const bestDay = weekdaySales ? weekdayMap[weekdaySales.weekday] : 'Noma\'lum';
 
     // Aging products (unsold for 30+ days)
+    const bType = getActiveBusinessType();
     const agingProducts = db.prepare(`
       SELECT * FROM (
         SELECT p.id, p.name, p.barcode, p.buy_price, p.sell_price, p.stock, p.unit,
@@ -2808,13 +2947,13 @@ async function getAiInsights() {
                 WHERE il.product_id = p.id
                ) as added_at
         FROM products p
-        WHERE p.stock > 0
+        WHERE p.stock > 0 AND p.business_type = ?
       ) WHERE 
         (last_sold_at IS NOT NULL AND last_sold_at < datetime('now', '-30 days', 'localtime'))
         OR (last_sold_at IS NULL AND (added_at IS NULL OR added_at < datetime('now', '-30 days', 'localtime')))
       ORDER BY COALESCE(last_sold_at, added_at) ASC
       LIMIT 30
-    `).all();
+    `).all(bType);
 
     const genAI = new GoogleGenerativeAI(apiKey);
     

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertTriangle, AlertCircle, X, Plus, Trash2, Users, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertTriangle, AlertCircle, X, Plus, Trash2, Users, ArrowLeft, ChevronRight, DollarSign } from 'lucide-react';
 
 import { useApp } from './context/AppContext';
 import { formatCurrency, parseSQLiteDate } from './utils';
@@ -336,6 +336,14 @@ export default memo(function Reports({ isActive }) {
       color: 'bg-red-500', 
       bg: 'bg-red-50 dark:bg-red-900/20',
       text: 'text-red-600 dark:text-red-400' 
+    },
+    { 
+      title: lang === 'uz' ? "Qarz to'lovi (yig'ilgan)" : 'Оплата долга (собрано)', 
+      value: data.totalDebtPayments || 0, 
+      icon: DollarSign, 
+      color: 'bg-teal-500', 
+      bg: 'bg-teal-50 dark:bg-teal-900/20',
+      text: 'text-teal-600 dark:text-teal-400' 
     },
     { 
       title: 'Ombor tannarxi (Olish qiymati)', 
@@ -932,6 +940,7 @@ export default memo(function Reports({ isActive }) {
               { id: 'cash', label: t('payMethod').cash, value: data.salesByType.cash, color: 'bg-emerald-500' },
               { id: 'card', label: t('payMethod').card, value: data.salesByType.card, color: 'bg-blue-500' },
               { id: 'debt', label: t('payMethod').debt, value: data.salesByType.debt, color: 'bg-orange-500' },
+              { id: 'debt_payment', label: lang === 'uz' ? "Qarz to'lovi (yig'ilgan)" : "Оплата долга", value: data.totalDebtPayments || 0, color: 'bg-teal-500' },
             ].map(type => {
               const total = data.totalRevenue + data.totalDebtIssued;
               const percent = total > 0 ? (type.value / total) * 100 : 0;

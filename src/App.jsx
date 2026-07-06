@@ -15,6 +15,7 @@ import ShiftModal from './components/ShiftModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles } from 'lucide-react';
 import { logoBase64 } from './logoBase64';
+import { parseSQLiteDate } from './utils';
 
 export function LogoIcon({ className = "w-5 h-5 text-orange-500" }) {
   return (
@@ -653,7 +654,7 @@ function App() {
                               <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors">
                                 <td className="px-6 py-4 font-black">#{r.shift_receipt_number}</td>
                                 <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
-                                  {new Date(r.created_at).toLocaleString('ru-RU', {
+                                  {parseSQLiteDate(r.created_at).toLocaleString('ru-RU', {
                                     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
                                   })}
                                 </td>

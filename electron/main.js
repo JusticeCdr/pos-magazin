@@ -1901,7 +1901,7 @@ function startExpressServer() {
       try {
         const settingsRes = getSettings();
         const isRetail = settingsRes && settingsRes.success && settingsRes.data && settingsRes.data.business_type === 'retail';
-        if (isRetail && isMobileRequest(req)) {
+        if (!isRetail && isMobileRequest(req)) {
           res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
         } else {
           res.sendFile(path.join(__dirname, '../dist/index.html'));

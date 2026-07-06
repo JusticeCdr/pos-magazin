@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, memo, useRef } from 'react';
 import { Search, Users, Phone, DollarSign, Wallet, X, Trash2 } from 'lucide-react';
 import { useApp } from './context/AppContext';
-import { formatCurrency, formatThousands } from './utils';
+import { formatCurrency, formatThousands, parseSQLiteDate } from './utils';
 import { AlertModal } from './components/Modals';
 
 export default memo(function Debts({ isActive }) {
@@ -52,8 +52,10 @@ export default memo(function Debts({ isActive }) {
   };
 
   useEffect(() => {
-    fetchCustomers();
-  }, []);
+    if (isActive) {
+      fetchCustomers();
+    }
+  }, [isActive]);
 
   const reloadDebtDetails = async (customerId) => {
     if (!customerId) return;
@@ -112,12 +114,12 @@ export default memo(function Debts({ isActive }) {
 
   if (startDate) {
     const start = new Date(startDate).setHours(0, 0, 0, 0);
-    debtors = debtors.filter(c => c.last_debt_date && new Date(c.last_debt_date).getTime() >= start);
+    debtors = debtors.filter(c => c.last_debt_date && parseSQLiteDate(c.last_debt_date).getTime() >= start);
   }
 
   if (endDate) {
     const end = new Date(endDate).setHours(23, 59, 59, 999);
-    debtors = debtors.filter(c => c.last_debt_date && new Date(c.last_debt_date).getTime() <= end);
+    debtors = debtors.filter(c => c.last_debt_date && parseSQLiteDate(c.last_debt_date).getTime() <= end);
   }
 
   debtors.sort((a, b) => {
@@ -199,7 +201,7 @@ export default memo(function Debts({ isActive }) {
     if (!debtDetails || debtDetails.length === 0) return { active: [], closed: [] };
     
     // sorted oldest first:
-    const sorted = [...debtDetails].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const sorted = [...debtDetails].sort((a, b) => parseSQLiteDate(a.created_at) - parseSQLiteDate(b.created_at));
     
     let balance = 0;
     const processed = sorted.map(tx => {
@@ -390,7 +392,7 @@ export default memo(function Debts({ isActive }) {
                       {c.phone ? <><Phone size={14} className="text-gray-400" /> {c.phone}</> : <span className="text-gray-300 dark:text-gray-600">—</span>}
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
-                      {c.last_debt_date ? new Date(c.last_debt_date).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—'}
+                      {c.last_debt_date ? parseSQLiteDate(c.last_debt_date).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—'}
                     </td>
                     <td className={`py-3 px-4 text-base font-black ${c.total_debt > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`}>
                       {formatCurrency(c.total_debt, lang)}
@@ -567,7 +569,7 @@ export default memo(function Debts({ isActive }) {
               ) : (
                 <div className="space-y-4">
                   {(detailsTab === 'active' ? splitDetails.active : splitDetails.closed).map(record => {
-                    const d = new Date(record.created_at);
+                    const d = parseSQLiteDate(record.created_at);
                     const sana = d.toLocaleDateString('ru-RU');
                     const vaqt = d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'});
                     
@@ -595,7 +597,19 @@ export default memo(function Debts({ isActive }) {
                     return (
                       <div key={`sale_${record.id}`} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                         <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                          <span className="font-semibold text-gray-700 dark:text-gray-300">Sotuv (Chek N: {record.id})</span>
+                          <span className="font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            Sotuv (Chek N: {record.shift_receipt_number || record.id})
+                            {record.status === 'refunded' && (
+                              <span className="text-[10px] uppercase font-black bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">
+                                Qaytarilgan
+                              </span>
+                            )}
+                            {record.status === 'partially_refunded' && (
+                              <span className="text-[10px] uppercase font-black bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full">
+                                Qisman qaytarilgan
+                              </span>
+                            )}
+                          </span>
                           <span className="text-sm text-gray-500 dark:text-gray-400">Sana: {sana}, Vaqt: {vaqt}</span>
                         </div>
                         <table className="w-full text-left text-sm">
@@ -611,7 +625,14 @@ export default memo(function Debts({ isActive }) {
                             {record.items.map(item => (
                               <tr key={item.id}>
                                 <td className="px-4 py-2">{item.name}</td>
-                                <td className="px-4 py-2 text-center">{item.qty}</td>
+                                <td className="px-4 py-2 text-center">
+                                  {item.qty}
+                                  {item.refunded_qty > 0 && (
+                                    <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold ml-1.5 inline-block">
+                                      {item.refunded_qty} ta vozvrat
+                                    </span>
+                                  )}
+                                </td>
                                 <td className="px-4 py-2 text-right">{formatCurrency(item.price, lang)}</td>
                                 <td className="px-4 py-2 text-right font-semibold">{formatCurrency(item.price * item.qty, lang)}</td>
                               </tr>
