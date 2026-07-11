@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { Search, Plus, Trash2, Edit, AlertTriangle, AlertCircle, CheckCircle2, XCircle, MinusCircle, Printer, X } from 'lucide-react';
 import { useApp } from './context/AppContext';
-import { formatCurrency } from './utils';
+import { formatCurrency, formatThousands } from './utils';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 import JsBarcode from 'jsbarcode';
 import { logoBase64 } from './logoBase64';
@@ -24,13 +24,15 @@ const EMPTY_FORM = {
   category: 'Boshqa',
   type: 'ready_dish',
   printer_destination: 'none',
+  note: '',
 };
 
 export default memo(function Warehouse({ isActive }) {
   const { 
-    t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName, shopLogo, businessType,
+    t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName, shopLogo, businessType, usdRate, setUsdRate
   } = useApp();
   const [formData, setFormData] = useState(EMPTY_FORM);
+  const [buyPriceCurrency, setBuyPriceCurrency] = useState('UZS');
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(50);
@@ -40,6 +42,25 @@ export default memo(function Warehouse({ isActive }) {
   const [productToDelete, setProductToDelete] = useState(null); // For custom delete modal
   const [existingProductId, setExistingProductId] = useState(null);
   const stockInputRef = useRef(null);
+
+  const handleCurrencySwitch = (newCurrency) => {
+    if (newCurrency === buyPriceCurrency) return;
+    setBuyPriceCurrency(newCurrency);
+    const currentPriceStr = String(formData.buy_price).replace(/\s/g, '');
+    if (!currentPriceStr) return;
+
+    if (newCurrency === 'USD') {
+      // UZS to USD
+      const uzsVal = parseFloat(currentPriceStr) || 0;
+      const usdVal = uzsVal > 0 ? (uzsVal / usdRate).toFixed(2) : '';
+      setFormData(prev => ({ ...prev, buy_price: String(usdVal) }));
+    } else {
+      // USD to UZS
+      const usdVal = parseFloat(currentPriceStr.replace(/,/g, '.')) || 0;
+      const uzsVal = usdVal > 0 ? Math.round(usdVal * usdRate) : 0;
+      setFormData(prev => ({ ...prev, buy_price: formatPriceInput(String(uzsVal)) }));
+    }
+  };
 
   // ── Recipe / Composition state ─────────────────────────────────────────────
   const [recipeIngredients, setRecipeIngredients] = useState([]);
@@ -129,7 +150,22 @@ export default memo(function Warehouse({ isActive }) {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    if (name === 'buy_price' || name === 'sell_price') {
+    if (name === 'buy_price' && buyPriceCurrency === 'USD') {
+      // Keep only digits and first dot or comma
+      let clean = value.replace(/[^0-9.,]/g, '');
+      // Replace commas with dots
+      clean = clean.replace(/,/g, '.');
+      // Ensure only one dot exists
+      const parts = clean.split('.');
+      if (parts.length > 2) {
+        clean = parts[0] + '.' + parts.slice(1).join('');
+      }
+      // If starts with 0 and followed by a digit, place dot after 0 (e.g. 05 -> 0.5)
+      if (clean.startsWith('0') && clean.length > 1 && clean[1] !== '.') {
+        clean = '0.' + clean.slice(1);
+      }
+      setFormData(prev => ({ ...prev, buy_price: clean }));
+    } else if (name === 'buy_price' || name === 'sell_price') {
       const input = e.target;
       const rawValue = value;
       const selectionStart = input.selectionStart;
@@ -426,6 +462,7 @@ export default memo(function Warehouse({ isActive }) {
         stock: '' // Clear stock so they can type the incoming quantity
       }));
       setExistingProductId(existing.id);
+      setBuyPriceCurrency('UZS');
 
       if (existing.type === 'ready_dish') {
         window.api.getProductRecipe(existing.id).then(res => {
@@ -470,9 +507,24 @@ export default memo(function Warehouse({ isActive }) {
       }
 
       const isReadyWithRecipe = formData.type === 'ready_dish' && recipeIngredients.length > 0;
-      const rawBuyPrice = (businessType === 'restaurant' && isReadyWithRecipe)
-        ? projectedCostPrice
-        : parseInt(String(formData.buy_price).replace(/\D/g, '')) || 0;
+      let rawBuyPrice = 0;
+      if (businessType === 'restaurant' && isReadyWithRecipe) {
+        rawBuyPrice = projectedCostPrice;
+      } else if (buyPriceCurrency === 'USD') {
+        rawBuyPrice = Math.round((parseFloat(String(formData.buy_price).replace(/,/g, '.')) || 0) * usdRate);
+      } else {
+        rawBuyPrice = parseInt(String(formData.buy_price).replace(/\D/g, '')) || 0;
+      }
+
+      // Format final note to include USD conversion info if USD mode was used
+      let finalNote = formData.note ? formData.note.trim() : '';
+      if (buyPriceCurrency === 'USD') {
+        const usdDetail = `USD da: ${formData.buy_price}$, kurs: ${usdRate}`;
+        finalNote = finalNote ? `${finalNote} (${usdDetail})` : usdDetail;
+      }
+
+      const isUsd = buyPriceCurrency === 'USD';
+      const buyPriceUsd = isUsd ? (parseFloat(String(formData.buy_price).replace(/,/g, '.')) || 0) : 0;
 
       const productData = {
         name: formattedName,
@@ -486,6 +538,9 @@ export default memo(function Warehouse({ isActive }) {
         type: formData.type || 'ready_dish',
         printer_destination: formData.printer_destination || 'none',
         userName: currentUser?.name || 'Ombor',
+        note: finalNote,
+        buy_price_usd: buyPriceUsd,
+        usd_rate: isUsd ? usdRate : 0,
       };
 
       let result;
@@ -548,10 +603,12 @@ export default memo(function Warehouse({ isActive }) {
 
   const handleEditClick = (product) => {
     setEditingId(product.id);
+    const isUsd = product.buy_price_usd > 0;
+    setBuyPriceCurrency(isUsd ? 'USD' : 'UZS');
     setFormData({
       name: product.name,
       barcode: product.barcode || '',
-      buy_price: formatPriceInput(product.buy_price),
+      buy_price: isUsd ? String(product.buy_price_usd) : formatPriceInput(product.buy_price),
       sell_price: formatPriceInput(product.sell_price),
       stock: '', // Clear stock so they can type the incoming quantity to add
       unit: product.unit,
@@ -559,6 +616,7 @@ export default memo(function Warehouse({ isActive }) {
       category: product.category || 'Boshqa',
       type: product.type || 'ready_dish',
       printer_destination: product.printer_destination || 'none',
+      note: '',
     });
 
     if (product.type === 'ready_dish') {
@@ -579,6 +637,7 @@ export default memo(function Warehouse({ isActive }) {
   const handleCancelEdit = () => {
     setEditingId(null);
     setExistingProductId(null);
+    setBuyPriceCurrency('UZS');
     setFormData(EMPTY_FORM);
     setRecipeIngredients([]);
     setSelectedIngId('');
@@ -1032,14 +1091,64 @@ export default memo(function Warehouse({ isActive }) {
 
           {/* Zaqup (Tannarx) */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {t('buyPrice')} <span className="text-red-500">*</span>
-            </label>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                {t('buyPrice')} <span className="text-red-500">*</span>
+              </label>
+              {!(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0) && (
+                <div className="flex gap-1 text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => handleCurrencySwitch('UZS')}
+                    className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                      buyPriceCurrency === 'UZS'
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    so'm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCurrencySwitch('USD')}
+                    className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                      buyPriceCurrency === 'USD'
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    USD ($)
+                  </button>
+                </div>
+              )}
+            </div>
             <input
               required name="buy_price" value={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? formatPriceInput(projectedCostPrice) : formData.buy_price} onChange={handleInputChange}
               disabled={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0}
-              type="text" inputMode="decimal" placeholder="0.00" className={inputCls + (businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? ' opacity-60 bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' : '')}
+              type="text" inputMode="decimal" placeholder={buyPriceCurrency === 'USD' ? "0.00" : "0"} className={inputCls + (businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? ' opacity-60 bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' : '')}
             />
+            {buyPriceCurrency === 'USD' && !(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0) && (
+              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 flex flex-col gap-1">
+                <div>
+                  Konvertatsiya: ~ {formatPriceInput(Math.round((parseFloat(String(formData.buy_price).replace(/,/g, '.')) || 0) * usdRate))} so'm
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span>Kursni o'zgartirish:</span>
+                  <input
+                    type="number"
+                    value={usdRate || ''}
+                    onChange={async (e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      setUsdRate(val);
+                      if (window.api) {
+                        await window.api.updateSetting({ key: 'usd_rate', value: String(val) });
+                      }
+                    }}
+                    className="w-20 px-1.5 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sotuv narxi */}
@@ -1195,8 +1304,23 @@ export default memo(function Warehouse({ isActive }) {
             </div>
           )}
 
+          {/* Harakat izohi */}
+          <div className="col-span-2 md:col-span-4 mt-2">
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+              Izoh (Kirim yoki tahrirlash uchun ixtiyoriy izoh)
+            </label>
+            <input
+              name="note"
+              value={formData.note || ''}
+              onChange={handleInputChange}
+              type="text"
+              placeholder="Masalan: Yangi partiya keldi, narxlar tahrirlandi yoki boshqa izoh..."
+              className={inputCls}
+            />
+          </div>
+
           {/* Submit */}
-          <div className="col-span-2 md:col-span-4 flex justify-end gap-2 mt-2">
+          <div className="col-span-2 md:col-span-4 flex justify-end gap-2 mt-4">
             {(editingId || existingProductId || formData.barcode) && (
               <button
                 type="button"
@@ -1311,7 +1435,16 @@ export default memo(function Warehouse({ isActive }) {
                       <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
                         {unitLabel}
                       </td>
-                      <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">{formatCurrency(product.buy_price, lang)}</td>
+                      <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
+                        <div>
+                          {formatCurrency(product.buy_price, lang)}
+                          {product.buy_price_usd > 0 && (
+                            <span className="text-[10px] text-orange-600 dark:text-orange-400 block font-semibold mt-0.5">
+                              {product.buy_price_usd} $ (kurs: {formatThousands(product.usd_rate || 0)})
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-200">{formatCurrency(product.sell_price, lang)}</td>
                       <td className="py-3 px-4 text-sm">
                         <span

@@ -89,8 +89,8 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
     if (isNaN(dateObj.getTime())) dateObj = new Date();
   }
 
-  const formattedDate = dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const formattedTime = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const formattedDate = dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Tashkent' });
+  const formattedTime = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
   const displayDateTime = `${formattedDate} | ${formattedTime}`;
 
   const formatNumber = (num) => {

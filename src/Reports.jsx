@@ -624,7 +624,7 @@ export default memo(function Reports({ isActive }) {
                           #{r.shift_receipt_number}
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-gray-600 dark:text-gray-400">
-                          {parseSQLiteDate(r.created_at).toLocaleString('ru-RU')}
+                          {parseSQLiteDate(r.created_at).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}
                         </td>
                         <td className="px-4 py-3.5">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -1293,7 +1293,7 @@ export default memo(function Reports({ isActive }) {
               ) : (
                 data.expensesList.map(exp => (
                   <tr key={exp.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                    <td className="px-4 py-3.5 whitespace-nowrap text-gray-600 dark:text-gray-400">{parseSQLiteDate(exp.created_at).toLocaleString('ru-RU')}</td>
+                    <td className="px-4 py-3.5 whitespace-nowrap text-gray-600 dark:text-gray-400">{parseSQLiteDate(exp.created_at).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}</td>
                     <td className="px-4 py-3.5 font-medium text-gray-950 dark:text-white">{exp.reason}</td>
                     <td className="px-4 py-3.5 text-gray-600 dark:text-gray-400">{exp.cashier_name}</td>
                     <td className="px-4 py-3.5 font-black text-red-600 dark:text-red-400">{formatCurrency(exp.amount, lang)}</td>

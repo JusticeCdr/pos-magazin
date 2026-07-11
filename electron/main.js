@@ -3,6 +3,37 @@ const path = require('path');
 const fs = require('fs');
 const { exec, execSync } = require('child_process');
 
+function getOrCreateSSLKeys() {
+  const userDataDir = app.getPath('userData');
+  const keyPath = path.join(userDataDir, 'ssl.key');
+  const certPath = path.join(userDataDir, 'ssl.crt');
+
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    return {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath)
+    };
+  }
+
+  console.log('Generating self-signed SSL certificate...');
+  try {
+    const selfsigned = require('selfsigned');
+    const attrs = [{ name: 'commonName', value: 'xxmpos.local' }];
+    const pems = selfsigned.generate(attrs, { days: 3650 }); // 10 years validity
+
+    fs.writeFileSync(keyPath, pems.private);
+    fs.writeFileSync(certPath, pems.cert);
+
+    return {
+      key: pems.private,
+      cert: pems.cert
+    };
+  } catch (err) {
+    console.error('Failed to generate dynamic SSL:', err);
+    return { key: '', cert: '' };
+  }
+}
+
 // ── Network Client-Server Settings ──────────────────────────────────────────
 const networkSettingsPath = path.join(app.getPath('userData'), 'network-settings.json');
 
@@ -290,9 +321,9 @@ async function startNgrokAutomation(saved_token, saved_domain) {
 
 const { 
   initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, deleteProduct, searchProduct,
-  processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
+  processSale, getRecentSales, processFullReturn, processReturn, payDebt, addManualDebt, getReports, getSaleForReprint,
   getLowStockProducts, clearTestData, resetFactoryData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
-  verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase, clearWarehouse,
+  verifyPin, getSettings, updateSetting, syncUsdRate, checkBaseLoaded, loadInitialBase, clearWarehouse,
   getCashiers, addCashier, deleteCashier, updateCashierPin, updateProduct, addStockToProduct,
   getCurrentShiftStats, closeShift,
   optimizeDatabase, getDBPath,
@@ -722,6 +753,15 @@ function startExpressServer() {
 
     // For ngrok/external access to /mobile, allow the page to load (owner can see cashier login)
     // Waiter API endpoints are still individually blocked by waiterAuthMiddleware
+    // Serve html5-qrcode locally so mobile scanner works offline
+    expressApp.get('/js/html5-qrcode.min.js', (req, res) => {
+      try {
+        res.sendFile(require.resolve('html5-qrcode/html5-qrcode.min.js'));
+      } catch (err) {
+        res.status(500).send(err.message);
+      }
+    });
+
     expressApp.use('/mobile', (req, res, next) => {
       // Only block if trying to access waiter API directly (not page load)
       // The page itself handles the redirect to cashier login via JS hostname detection
@@ -1668,7 +1708,7 @@ function startExpressServer() {
 
         const labelW = settings.label_width || '60';
         const labelH = settings.label_height || '30';
-        const storeName = settings.storeName || '750 AVTOTUNING';
+        const storeName = settings.store_name || settings.storeName || '750 AVTOTUNING';
         const shopLogo = settings.shopLogo || '';
 
         // Read jsbarcode source file
@@ -1868,6 +1908,52 @@ function startExpressServer() {
       }
     });
 
+    // API: Add Expense from Mobile
+    expressApp.post('/api/expenses/add', authMiddleware, (req, res) => {
+      const { reason, amount, source } = req.body;
+      if (!reason || !amount) {
+        return res.status(400).json({ success: false, error: 'Sabab va summa talab qilinadi' });
+      }
+      const cashierName = req.cashier.name;
+      const result = addExpense({ reason, amount: parseFloat(amount), cashierName, source: source || 'cash' });
+      if (result.success) {
+        if (io) {
+          io.emit('sales-updated', result);
+        }
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Add Manual Debt from Mobile (Direct debt without products)
+    expressApp.post('/api/debts/add-manual', authMiddleware, (req, res) => {
+      const { customerId, customerName, customerPhone, amount, comment } = req.body;
+      if (!amount) {
+        return res.status(400).json({ success: false, error: 'Summa talab qilinadi' });
+      }
+      const cashierName = req.cashier.name;
+      const result = addManualDebt({
+        customerId: customerId ? parseInt(customerId) : null,
+        customerName,
+        customerPhone,
+        amount: parseFloat(amount),
+        comment: comment || 'Mobil qarz',
+        cashierName
+      });
+      if (result.success) {
+        if (mainWindow) {
+          mainWindow.webContents.send('mobile-debts-updated');
+        }
+        if (io) {
+          io.emit('debts-updated', result);
+        }
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
     // IPC Forwarding route for Client-Server mode
     expressApp.post('/api/ipc-forward', async (req, res) => {
       try {
@@ -1899,9 +1985,9 @@ function startExpressServer() {
     });
     expressApp.get(/.*/, (req, res) => {
       try {
-        const settingsRes = getSettings();
-        const isRetail = settingsRes && settingsRes.success && settingsRes.data && settingsRes.data.business_type === 'retail';
-        if (!isRetail && isMobileRequest(req)) {
+        // Always serve mobile client to mobile devices (phones/tablets),
+        // regardless of business type (retail or restaurant).
+        if (isMobileRequest(req)) {
           res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
         } else {
           res.sendFile(path.join(__dirname, '../dist/index.html'));
@@ -1916,14 +2002,36 @@ function startExpressServer() {
       logError("Express server started on port 4000 (host 0.0.0.0)");
     });
 
+    let httpsServer;
+    try {
+      const https = require('https');
+      const sslKeys = getOrCreateSSLKeys();
+      if (sslKeys.key && sslKeys.cert) {
+        httpsServer = https.createServer(sslKeys, expressApp);
+        httpsServer.listen(4001, '0.0.0.0', () => {
+          console.log("🔒 [SUCCESS] Secure HTTPS server successfully started on port 4001");
+          logError("Secure HTTPS server started on port 4001 (host 0.0.0.0)");
+        });
+      } else {
+        console.error("❌ Failed to load SSL keys, HTTPS server not started");
+      }
+    } catch (httpsErr) {
+      console.error("❌ Failed to start HTTPS server:", httpsErr);
+      logError(`Failed to start HTTPS server: ${httpsErr.message}`);
+    }
+
     try {
       const { Server } = require('socket.io');
-      io = new Server(server, {
+      io = new Server({
         cors: {
           origin: '*',
           methods: ['GET', 'POST']
         }
       });
+      io.attach(server);
+      if (httpsServer) {
+        io.attach(httpsServer);
+      }
       io.on('connection', (socket) => {
         socket.on('disconnect', () => {
         });
@@ -2068,6 +2176,13 @@ if (!gotTheLock) {
   safeHandle('process-return',            (_, { saleItemId, returnQty }) => processReturn(saleItemId, returnQty));
   safeHandle('pay-debt',                  (_, { customerId, amount, cashierName }) => {
     const result = payDebt(customerId, amount, cashierName);
+    if (result && result.success && io) {
+      io.emit('debts-updated', result);
+    }
+    return result;
+  });
+  safeHandle('add-manual-debt',           (_, payload) => {
+    const result = addManualDebt(payload);
     if (result && result.success && io) {
       io.emit('debts-updated', result);
     }
@@ -2401,6 +2516,7 @@ if (!gotTheLock) {
   ipcMain.handle('maybe-open-shift', (_, cashierName) => maybeOpenShift(cashierName));
   ipcMain.handle('get-settings', () => getSettings());
   ipcMain.handle('update-setting', (_, { key, value }) => updateSetting(key, value));
+  ipcMain.handle('sync-usd-rate', () => syncUsdRate());
   ipcMain.handle('check-base-loaded', () => checkBaseLoaded());
   ipcMain.handle('load-initial-base', (_, type) => loadInitialBase(type));
   

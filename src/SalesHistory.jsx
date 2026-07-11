@@ -567,8 +567,8 @@ export default memo(function SalesHistory({ isActive }) {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-6">
             {filteredSales.map((sale) => {
               const d = parseSQLiteDate(sale.created_at);
-              const sana = d.toLocaleDateString('ru-RU');
-              const vaqt = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+              const sana = d.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent' });
+              const vaqt = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
               
               let methodLabel = "Naqd pul";
               if (sale.payment_method === 'card') methodLabel = "Plastik karta";

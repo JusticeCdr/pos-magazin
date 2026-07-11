@@ -5,7 +5,14 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const { app } = require('electron');
 const fs = require('fs');
+const https = require('https');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const getLocalTimeStr = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
 
 let db;
 
@@ -48,11 +55,14 @@ function initDB() {
 
   try { db.exec("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'dona';"); } catch (_) {}
   try { db.exec("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0;"); } catch (_) {} 
+  try { db.exec("ALTER TABLE products ADD COLUMN buy_price_usd REAL DEFAULT 0;"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN usd_rate REAL DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN cashier_name TEXT DEFAULT 'Kassir';"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN is_closed INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN status TEXT DEFAULT 'completed';"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN shift_receipt_number INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN device TEXT DEFAULT 'desktop';"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN is_manual_debt INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN cash_refund REAL DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN opened_by TEXT;"); } catch (_) {}
   try { db.exec("ALTER TABLE shifts_history ADD COLUMN closed_by TEXT;"); } catch (_) {}
@@ -82,6 +92,8 @@ function initDB() {
       WHERE product_name IS NULL;
     `);
   } catch (_) {}
+
+  try { db.exec("ALTER TABLE customers ADD COLUMN is_deleted INTEGER DEFAULT 0;"); } catch (_) {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS debt_payments (
@@ -544,11 +556,73 @@ function initDB() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_sales_is_closed_created ON sales(is_closed, created_at);');
   db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_is_closed_created ON expenses(is_closed, created_at);');
 
+  // Set default usd_rate if not exists
+  try {
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('usd_rate', '12800')").run();
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_usd_rate', '1')").run();
+  } catch (_) {}
+
+  // Check if auto-sync is enabled
+  let autoSync = '1';
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'auto_usd_rate'").get();
+    if (row) autoSync = row.value;
+  } catch (_) {}
+
+  if (autoSync === '1') {
+    // Auto-fetch USD rate from CBU on startup
+    fetchUSDExchangeRate().then(rate => {
+      if (rate > 0) {
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('usd_rate', ?)").run(String(rate));
+        console.log('CBU Exchange rate auto-synced:', rate);
+      }
+    }).catch(err => {
+      console.log('CBU Exchange rate auto-sync failed (offline/error):', err.message);
+    });
+  }
+
 }
 function closeDB() {
   if (db) {
     db.close();
     db = null;
+  }
+}
+
+function fetchUSDExchangeRate() {
+  return new Promise((resolve, reject) => {
+    https.get('https://cbu.uz/uz/arkhiv-kursov-valyut/json/', (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const arr = JSON.parse(data);
+          const usd = arr.find(item => item.Ccy === 'USD');
+          if (usd && usd.Rate) {
+            resolve(parseFloat(usd.Rate));
+          } else {
+            reject(new Error('USD rate not found in CBU response'));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+async function syncUsdRate() {
+  try {
+    const rate = await fetchUSDExchangeRate();
+    if (rate > 0) {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('usd_rate', ?)").run(String(rate));
+      return { success: true, rate };
+    }
+    throw new Error('Noto\'g\'ri kurs qiymati');
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 }
 
@@ -858,16 +932,21 @@ function getCustomers(searchQuery = '') {
     const cleanQ = `%${searchQuery.replace(/\D/g, '')}%`;
     return db.prepare(`
       SELECT c.*, 
-             (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
+             (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date,
+             EXISTS(SELECT 1 FROM sales WHERE customer_id = c.id AND payment_method = 'debt' AND is_manual_debt = 1) as has_manual_debt,
+             EXISTS(SELECT 1 FROM sales WHERE customer_id = c.id AND payment_method = 'debt' AND is_manual_debt = 0) as has_product_debt
       FROM customers c 
-      WHERE my_lower(c.name) LIKE ? OR clean_phone(c.phone) LIKE ?
+      WHERE c.is_deleted = 0 AND (my_lower(c.name) LIKE ? OR clean_phone(c.phone) LIKE ?)
       ORDER BY c.total_debt DESC
     `).all(q, cleanQ);
   }
   return db.prepare(`
     SELECT c.*, 
-           (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date 
+           (SELECT MAX(created_at) FROM sales WHERE customer_id = c.id AND payment_method = 'debt') as last_debt_date,
+           EXISTS(SELECT 1 FROM sales WHERE customer_id = c.id AND payment_method = 'debt' AND is_manual_debt = 1) as has_manual_debt,
+           EXISTS(SELECT 1 FROM sales WHERE customer_id = c.id AND payment_method = 'debt' AND is_manual_debt = 0) as has_product_debt
     FROM customers c 
+    WHERE c.is_deleted = 0
     ORDER BY c.total_debt DESC
   `).all();
 }
@@ -881,9 +960,9 @@ function logInventory({ productId, productName, actionType, quantityChanged, use
     const balanceAfter = row ? row.stock : 0;
     db.prepare(`
       INSERT INTO inventory_logs
-        (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(productId, productName, actionType, quantityChanged, balanceAfter, userName, note);
+        (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(productId, productName, actionType, quantityChanged, balanceAfter, userName, note, getLocalTimeStr());
   } catch (err) {
     // Non-fatal — never crash the parent transaction because of logging
   }
@@ -910,11 +989,13 @@ function addProduct(product) {
         const newSellPrice = typeof product.sell_price === 'string' ? (parseInt(product.sell_price.replace(/\D/g, '')) || 0) : (parseFloat(product.sell_price) || 0);
         const discount     = product.discount !== undefined ? (parseFloat(product.discount) || 0) : (existing.discount || 0);
         
+        const buyPriceUsd = parseFloat(product.buy_price_usd) || 0;
+        const usdRate = parseFloat(product.usd_rate) || 0;
         db.prepare(`
           UPDATE products 
-          SET stock = stock + ?, buy_price = ?, cost_price = ?, sell_price = ?, unit = ?, discount = ?, type = ?, group_id = ?
+          SET stock = stock + ?, buy_price = ?, cost_price = ?, sell_price = ?, unit = ?, discount = ?, type = ?, group_id = ?, buy_price_usd = ?, usd_rate = ?
           WHERE id = ?
-        `).run(addedQty, newBuyPrice, newBuyPrice, newSellPrice, product.unit || 'dona', discount, product.type || 'ready_dish', product.group_id || null, existing.id);
+        `).run(addedQty, newBuyPrice, newBuyPrice, newSellPrice, product.unit || 'dona', discount, product.type || 'ready_dish', product.group_id || null, buyPriceUsd, usdRate, existing.id);
         
         if (addedQty > 0) {
           logInventory({
@@ -923,7 +1004,7 @@ function addProduct(product) {
             actionType: 'kirim',
             quantityChanged: +addedQty,
             userName: product.userName || '',
-            note: 'Mavjud tovar ustiga qo\'shildi'
+            note: product.note || 'Mavjud tovar ustiga qo\'shildi'
           });
         }
         updateDependentDishesStocks(existing.id);
@@ -932,13 +1013,15 @@ function addProduct(product) {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, discount, printer_destination, business_type, category, type, group_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, discount, printer_destination, business_type, category, type, group_id, buy_price_usd, usd_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const dest = product.printer_destination || 'none';
     const bType = product.business_type || getActiveBusinessType();
     const cat = product.category || 'Boshqa';
+    const buyPriceUsd = parseFloat(product.buy_price_usd) || 0;
+    const usdRate = parseFloat(product.usd_rate) || 0;
 
     const info = stmt.run(
       product.name,
@@ -952,7 +1035,9 @@ function addProduct(product) {
       bType,
       cat,
       product.type || 'ready_dish',
-      product.group_id || null
+      product.group_id || null,
+      buyPriceUsd,
+      usdRate
     );
 
     const newId   = info.lastInsertRowid;
@@ -964,7 +1049,7 @@ function addProduct(product) {
         actionType: 'kirim',
         quantityChanged: +newQty,
         userName: product.userName || '',
-        note: 'Yangi mahsulot'
+        note: product.note || 'Yangi mahsulot'
       });
     }
     updateDependentDishesStocks(newId);
@@ -1007,9 +1092,12 @@ function updateProduct(id, product) {
 
     const discount = product.discount !== undefined ? (parseFloat(product.discount) || 0) : (existing ? (existing.discount || 0) : 0);
 
+    const buyPriceUsd = parseFloat(product.buy_price_usd) || 0;
+    const usdRate = parseFloat(product.usd_rate) || 0;
+
     const stmt = db.prepare(`
       UPDATE products 
-      SET name = ?, barcode = ?, buy_price = ?, cost_price = ?, sell_price = ?, stock = ?, unit = ?, discount = ?, printer_destination = ?, business_type = ?, category = ?, type = ?, group_id = ?
+      SET name = ?, barcode = ?, buy_price = ?, cost_price = ?, sell_price = ?, stock = ?, unit = ?, discount = ?, printer_destination = ?, business_type = ?, category = ?, type = ?, group_id = ?, buy_price_usd = ?, usd_rate = ?
       WHERE id = ?
     `);
 
@@ -1027,19 +1115,19 @@ function updateProduct(id, product) {
       product.category || 'Boshqa',
       product.type || 'ready_dish',
       product.group_id || null,
+      buyPriceUsd,
+      usdRate,
       id
     );
 
-    if (addedQty !== 0) {
-      logInventory({
-        productId: id,
-        productName: product.name,
-        actionType: 'tahrirlash',
-        quantityChanged: addedQty,
-        userName: product.userName || '',
-        note: `Tahrirlash orqali qo'shildi. Eski qoldiq: ${oldQty}, Yangi qoldiq: ${newQty}`
-      });
-    }
+    logInventory({
+      productId: id,
+      productName: product.name,
+      actionType: 'tahrirlash',
+      quantityChanged: addedQty,
+      userName: product.userName || '',
+      note: product.note || `Tahrir qilindi. Eski qoldiq: ${oldQty}, Yangi qoldiq: ${newQty}`
+    });
 
     updateDependentDishesStocks(id);
     return { success: true };
@@ -1082,9 +1170,12 @@ function addStockToProduct(id, product) {
     const buyPriceChanged  = Math.abs(existing.buy_price  - newBuyPrice)  > 0.001;
     const priceChanged = sellPriceChanged || buyPriceChanged;
 
+    const buyPriceUsd = parseFloat(product.buy_price_usd) || 0;
+    const usdRate = parseFloat(product.usd_rate) || 0;
+
     const stmt = db.prepare(`
       UPDATE products 
-      SET name = ?, buy_price = ?, cost_price = ?, sell_price = ?, stock = stock + ?, unit = ?, discount = ?
+      SET name = ?, buy_price = ?, cost_price = ?, sell_price = ?, stock = stock + ?, unit = ?, discount = ?, buy_price_usd = ?, usd_rate = ?
       WHERE id = ?
     `);
 
@@ -1096,6 +1187,8 @@ function addStockToProduct(id, product) {
       addedQty,
       product.unit || 'dona',
       discount,
+      buyPriceUsd,
+      usdRate,
       id
     );
 
@@ -1106,7 +1199,7 @@ function addStockToProduct(id, product) {
         actionType: 'kirim',
         quantityChanged: addedQty,
         userName: product.userName || '',
-        note: `Kirim. Eski qoldiq: ${oldQty}, Yangi qoldiq: ${oldQty + addedQty}. Yangi o'rtacha tannarx: ${newAvgCost}`
+        note: product.note || `Kirim. Eski qoldiq: ${oldQty}, Yangi qoldiq: ${oldQty + addedQty}. Yangi o'rtacha tannarx: ${newAvgCost}`
       });
     }
 
@@ -1130,9 +1223,9 @@ function deleteProduct(id, userName) {
     if (product) {
       db.prepare(`
         INSERT INTO inventory_logs
-          (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, product.name, 'ochirildi', -product.stock, 0, userName || '', 'Mahsulot ombordan o\'chirildi');
+          (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, product.name, 'ochirildi', -product.stock, 0, userName || '', 'Mahsulot ombordan o\'chirildi', getLocalTimeStr());
     }
     db.prepare('DELETE FROM products WHERE id = ?').run(id);
     return { success: true };
@@ -1227,12 +1320,13 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
       INSERT INTO sales (
         total_amount, payment_method, customer_id, cashier_name, 
         shift_receipt_number, original_total, discount_percent, discount_amount, 
-        device, waiter_id, waiter_name, waiter_percentage, waiter_commission, comment
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        device, waiter_id, waiter_name, waiter_percentage, waiter_commission, comment, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       finalTotal, paymentMethod, customerId, cashierName, 
       shiftReceiptNumber, originalTotal, pct, discountAmount, 
-      device, waiterId, waiterName, waiterPercentage, waiterCommission, comment || ''
+      device, waiterId, waiterName, waiterPercentage, waiterCommission, comment || '',
+      getLocalTimeStr()
     );
     const saleId = saleInfo.lastInsertRowid;
 
@@ -1559,16 +1653,16 @@ function payDebt(customerId, amount, cashierName = '') {
     db.exec('BEGIN TRANSACTION');
     db.prepare('UPDATE customers SET total_debt = total_debt - ? WHERE id = ?')
       .run(parsedAmount, customerId);
-    db.prepare('INSERT INTO debt_payments (customer_id, amount) VALUES (?, ?)')
-      .run(customerId, parsedAmount);
+    db.prepare('INSERT INTO debt_payments (customer_id, amount, created_at) VALUES (?, ?, ?)')
+      .run(customerId, parsedAmount, getLocalTimeStr());
 
     const countRow = db.prepare('SELECT MAX(shift_receipt_number) as max_num FROM sales WHERE is_closed = 0').get();
     const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
 
     db.prepare(`
-      INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, status, shift_receipt_number)
-      VALUES (?, 'qarz_tulov', ?, ?, 'completed', ?)
-    `).run(parsedAmount, customerId, cashierName || 'Kassir', shiftReceiptNumber);
+      INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, status, shift_receipt_number, created_at)
+      VALUES (?, 'qarz_tulov', ?, ?, 'completed', ?, ?)
+    `).run(parsedAmount, customerId, cashierName || 'Kassir', shiftReceiptNumber, getLocalTimeStr());
 
     const customer = db.prepare('SELECT name FROM customers WHERE id = ?').get(customerId);
     if (customer) {
@@ -1584,6 +1678,58 @@ function payDebt(customerId, amount, cashierName = '') {
 
     db.exec('COMMIT');
     return { success: true };
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    return { success: false, error: err.message };
+  }
+}
+
+function addManualDebt({ customerId, customerName, customerPhone, amount, comment, cashierName }) {
+  try {
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) throw new Error('Invalid amount');
+
+    db.exec('BEGIN TRANSACTION');
+
+    let finalCustomerId = customerId;
+    let targetName = customerName || '';
+
+    if (!finalCustomerId) {
+      // Create new customer
+      const insCust = db.prepare('INSERT INTO customers (name, phone, total_debt) VALUES (?, ?, ?)');
+      const info = insCust.run(customerName, customerPhone || '', parsedAmount);
+      finalCustomerId = info.lastInsertRowid;
+      targetName = customerName;
+    } else {
+      // Update existing customer
+      const customer = db.prepare('SELECT name FROM customers WHERE id = ?').get(finalCustomerId);
+      if (!customer) {
+        throw new Error('Mijoz topilmadi');
+      }
+      targetName = customer.name;
+      db.prepare('UPDATE customers SET total_debt = total_debt + ? WHERE id = ?')
+        .run(parsedAmount, finalCustomerId);
+    }
+
+    const countRow = db.prepare('SELECT MAX(shift_receipt_number) as max_num FROM sales WHERE is_closed = 0').get();
+    const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
+
+    db.prepare(`
+      INSERT INTO sales (total_amount, payment_method, customer_id, cashier_name, status, shift_receipt_number, is_manual_debt, comment, created_at)
+      VALUES (?, 'debt', ?, ?, 'completed', ?, 1, ?, ?)
+    `).run(parsedAmount, finalCustomerId, cashierName || 'Kassir', shiftReceiptNumber, comment || '', getLocalTimeStr());
+
+    logInventory({
+      productId: 0,
+      productName: `Mijoz: ${targetName}`,
+      actionType: 'tahrirlash',
+      quantityChanged: 0,
+      userName: cashierName || 'Kassir',
+      note: `Kassir tomondan to'g'ridan-to'g'ri qarz berildi: ${parsedAmount.toLocaleString('ru-RU')} so'm. Izoh: ${comment || 'izohsiz'}`
+    });
+
+    db.exec('COMMIT');
+    return { success: true, customerId: finalCustomerId };
   } catch (err) {
     try { db.exec('ROLLBACK'); } catch (_) {}
     return { success: false, error: err.message };
@@ -1731,11 +1877,12 @@ function getReports(startDateISO, endDateISO) {
     
     const totalExpenses = expensesList.reduce((sum, exp) => sum + exp.amount, 0);
 
-    // Calculate current warehouse valuation
+    // Calculate current warehouse valuation (only positive stock items count as assets)
     const valuation = db.prepare(`
-      SELECT SUM(buy_price * stock) as total_buy, SUM(sell_price * stock) as total_sell
+      SELECT SUM(IFNULL(buy_price, 0) * stock) as total_buy,
+             SUM(IFNULL(sell_price, 0) * stock) as total_sell
       FROM products
-      WHERE business_type = ?
+      WHERE business_type = ? AND stock > 0
     `).get(bType);
 
     const warehouseBuyValue = valuation?.total_buy || 0;
@@ -2049,25 +2196,25 @@ function getAllSalesHistory({
 
     // Date filters: if both startDate and endDate are empty, default to last 30 days
     if (!startDate && !endDate) {
-      conditions.push("date(s.created_at, 'localtime') >= date('now', '-30 days', 'localtime')");
+      conditions.push("date(s.created_at) >= date('now', '-30 days', 'localtime')");
     } else {
       if (startDate) {
-        conditions.push("date(s.created_at, 'localtime') >= ?");
+        conditions.push("date(s.created_at) >= ?");
         params.push(startDate);
       }
       if (endDate) {
-        conditions.push("date(s.created_at, 'localtime') <= ?");
+        conditions.push("date(s.created_at) <= ?");
         params.push(endDate);
       }
     }
 
     // Time filters
     if (startTime) {
-      conditions.push("time(s.created_at, 'localtime') >= ?");
+      conditions.push("time(s.created_at) >= ?");
       params.push(startTime + ':00');
     }
     if (endTime) {
-      conditions.push("time(s.created_at, 'localtime') <= ?");
+      conditions.push("time(s.created_at) <= ?");
       params.push(endTime + ':00');
     }
 
@@ -2184,7 +2331,7 @@ function getSalesForExcel(startDate, endDate) {
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       LEFT JOIN products p ON si.product_id = p.id
-      WHERE date(s.created_at, 'localtime') >= ? AND date(s.created_at, 'localtime') <= ? AND s.status != 'refunded'
+      WHERE date(s.created_at) >= ? AND date(s.created_at) <= ? AND s.status != 'refunded'
       ORDER BY s.created_at ASC
     `).all(startDate, endDate);
     
@@ -2283,8 +2430,8 @@ function closeShift(stats) {
     db.exec('BEGIN TRANSACTION');
     db.prepare(`
       INSERT INTO shifts_history 
-      (total_sales, cash_sales, card_sales, debt_sales, receipts_count, opened_by, closed_by, total_expenses, opened_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (total_sales, cash_sales, card_sales, debt_sales, receipts_count, opened_by, closed_by, total_expenses, opened_at, closed_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       stats.total_sales, 
       stats.cash_sales, 
@@ -2294,7 +2441,8 @@ function closeShift(stats) {
       stats.opened_by || '', 
       stats.closed_by || '', 
       stats.total_expenses || 0,
-      stats.opened_at || null
+      stats.opened_at || null,
+      getLocalTimeStr()
     );
     db.prepare('UPDATE sales SET is_closed = 1 WHERE is_closed = 0').run();
     db.prepare('UPDATE expenses SET is_closed = 1 WHERE is_closed = 0').run();
@@ -2310,8 +2458,8 @@ function closeShift(stats) {
 
     db.prepare(`
       INSERT INTO inventory_logs
-        (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       0, 
       'Smena', 
@@ -2319,7 +2467,8 @@ function closeShift(stats) {
       0, 
       0, 
       stats.closed_by || 'Kassir', 
-      note
+      note,
+      getLocalTimeStr()
     );
 
     db.exec('COMMIT');
@@ -2380,10 +2529,11 @@ function writeOffProduct({ productId, quantity, reason, userName }) {
     
     // 4. Add to expenses
     if (totalLoss > 0) {
-      db.prepare("INSERT INTO expenses (reason, amount, cashier_name, source) VALUES (?, ?, ?, 'write_off')").run(
+      db.prepare("INSERT INTO expenses (reason, amount, cashier_name, source, created_at) VALUES (?, ?, ?, 'write_off', ?)").run(
         `Spisaniya: ${product.name} (${reason || 'Boshqa'})`,
         totalLoss,
-        userName || 'Tizim/Ombor'
+        userName || 'Tizim/Ombor',
+        getLocalTimeStr()
       );
     }
 
@@ -2393,7 +2543,7 @@ function writeOffProduct({ productId, quantity, reason, userName }) {
       const countRow = db.prepare('SELECT MAX(shift_receipt_number) as max_num FROM sales WHERE is_closed = 0').get();
       const shiftReceiptNumber = (countRow && countRow.max_num) ? countRow.max_num + 1 : 1;
       
-      const created_at = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const created_at = getLocalTimeStr();
       
       const saleStmt = db.prepare(`
         INSERT INTO sales (total_amount, payment_method, cashier_name, created_at, comment, original_total, discount_percent, discount_amount, device, shift_receipt_number)
@@ -2516,7 +2666,7 @@ function getInventoryLogs({ page = 1, pageSize = 100, startDate = '', endDate = 
 
 function addExpense(reason, amount, cashier_name) {
   try {
-    const created_at = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const created_at = getLocalTimeStr();
     db.prepare("INSERT INTO expenses (reason, amount, cashier_name, created_at, source) VALUES (?, ?, ?, ?, 'cash')").run(reason, amount, cashier_name || 'Kassir', created_at);
     return { success: true };
   } catch (err) {
@@ -2542,9 +2692,8 @@ function deleteCustomer(customerId, cashierName = '') {
       return { success: false, error: 'Mijoz topilmadi' };
     }
 
-    db.prepare('DELETE FROM debt_payments WHERE customer_id = ?').run(customerId);
-    db.prepare('UPDATE sales SET customer_id = NULL WHERE customer_id = ?').run(customerId);
-    db.prepare('DELETE FROM customers WHERE id = ?').run(customerId);
+    // Soft delete the customer, keeping debt payments and sales associations intact
+    db.prepare('UPDATE customers SET is_deleted = 1 WHERE id = ?').run(customerId);
 
     logInventory({
       productId: 0,
@@ -2552,7 +2701,7 @@ function deleteCustomer(customerId, cashierName = '') {
       actionType: 'tahrirlash',
       quantityChanged: 0,
       userName: cashierName,
-      note: `Mijoz tizimdan o'chirildi. Yakuniy qarz: ${customer.total_debt} so'm`
+      note: `Mijoz tizimdan o'chirildi. Yakuniy qarz: ${customer.total_debt.toLocaleString('ru-RU')} so'm`
     });
 
     db.exec('COMMIT');
@@ -2597,9 +2746,9 @@ function maybeOpenShift(cashierName) {
 
     // 4. Open a new shift
     db.prepare(`
-      INSERT INTO inventory_logs (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note)
-      VALUES (0, 'Smena', 'smena_ochildi', 0, 0, ?, 'Smena ochildi')
-    `).run(cashierName);
+      INSERT INTO inventory_logs (product_id, product_name, action_type, quantity_changed, balance_after, user_name, note, created_at)
+      VALUES (0, 'Smena', 'smena_ochildi', 0, 0, ?, 'Smena ochildi', ?)
+    `).run(cashierName, getLocalTimeStr());
 
     return { success: true, shiftOpened: true };
   } catch (err) {
@@ -2640,7 +2789,7 @@ function getTodayStats() {
     const salesRow = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) as total_sales, COUNT(id) as receipts_count
       FROM sales
-      WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status != 'refunded'
+      WHERE date(created_at) = date('now', 'localtime') AND status != 'refunded'
     `).get();
 
     const profitRow = db.prepare(`
@@ -2648,19 +2797,19 @@ function getTodayStats() {
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
-      WHERE date(s.created_at, 'localtime') = date('now', 'localtime') AND s.status != 'refunded'
+      WHERE date(s.created_at) = date('now', 'localtime') AND s.status != 'refunded'
     `).get();
 
     const discountsRow = db.prepare(`
       SELECT COALESCE(SUM(discount_amount), 0) as total_discounts
       FROM sales
-      WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status != 'refunded'
+      WHERE date(created_at) = date('now', 'localtime') AND status != 'refunded'
     `).get();
 
     const expensesRow = db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses
-      WHERE date(created_at, 'localtime') = date('now', 'localtime')
+      WHERE date(created_at) = date('now', 'localtime')
     `).get();
 
     const total_sales = salesRow.total_sales;
@@ -3825,9 +3974,9 @@ function updateWaiter(id, name, pinCode, percentage, salary) {
 
 module.exports = { 
   initDB, closeDB, getProducts, getCustomers, getCustomer, addProduct, updateProduct, addStockToProduct, deleteProduct, searchProduct,
-  processSale, getRecentSales, processFullReturn, processReturn, payDebt, getReports, getSaleForReprint,
+  processSale, getRecentSales, processFullReturn, processReturn, payDebt, addManualDebt, getReports, getSaleForReprint,
   getLowStockProducts, clearTestData, resetFactoryData, getCustomerDebtDetails, getAllSalesHistory, getSalesForExcel,
-  verifyPin, getSettings, updateSetting, checkBaseLoaded, loadInitialBase,
+  verifyPin, getSettings, updateSetting, syncUsdRate, checkBaseLoaded, loadInitialBase,
   getCashiers, addCashier, deleteCashier, updateCashierPin,
   getAttendanceList, saveAttendance, updateCashier, updateWaiter,
   getCurrentShiftStats, closeShift,

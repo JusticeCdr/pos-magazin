@@ -4,12 +4,13 @@ import { useApp } from './context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
 
 export default memo(function Settings() {
-  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts } = useApp();
+  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate } = useApp();
   const isAdmin = currentUser?.pin === 'xxMpos7532.' || currentUser?.role === 'admin';
 
   const [cashiers, setCashiers] = useState([]);
   const [waiters, setWaiters] = useState([]);
   const [newStoreName, setNewStoreName] = useState(storeName);
+  const [newUsdRate, setNewUsdRate] = useState(usdRate);
   const [loading, setLoading] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(true);
   const [unlockPin, setUnlockPin] = useState('');
@@ -17,6 +18,7 @@ export default memo(function Settings() {
   const [phone1, setPhone1] = useState('');
   const [phone2, setPhone2] = useState('');
   const [phone3, setPhone3] = useState('');
+  const [autoUsdRate, setAutoUsdRate] = useState(true);
 
   // Waiter Form States
   const [waiterName, setWaiterName] = useState('');
@@ -369,6 +371,8 @@ export default memo(function Settings() {
         if (res.data.ngrok_token) setNgrokToken(res.data.ngrok_token);
         if (res.data.ngrok_domain) setNgrokDomain(res.data.ngrok_domain);
         if (res.data.gemini_api_key) setGeminiApiKey(res.data.gemini_api_key);
+        if (res.data.usd_rate) setNewUsdRate(res.data.usd_rate);
+        if (res.data.auto_usd_rate) setAutoUsdRate(res.data.auto_usd_rate === '1');
         
         // Sync SQLite settings to state & localStorage
         if (res.data.receipt_printer_name) {
@@ -512,6 +516,54 @@ export default memo(function Settings() {
       // Ignore
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveUsdRate = async () => {
+    if (!window.api || !newUsdRate) return;
+    const rate = parseFloat(newUsdRate);
+    if (isNaN(rate) || rate <= 0) return;
+    setLoading(true);
+    try {
+      const res = await window.api.updateSetting({ key: 'usd_rate', value: String(rate) });
+      if (res && res.success) {
+        setUsdRate(rate);
+        setToastMsg('Dollar kursi saqlandi!');
+      }
+    } catch (err) {
+      setToastMsg('Xatolik: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncUsdRate = async () => {
+    if (!window.api) return;
+    setLoading(true);
+    try {
+      const res = await window.api.syncUsdRate();
+      if (res && res.success) {
+        setUsdRate(res.rate);
+        setNewUsdRate(res.rate);
+        setToastMsg(`Dollar kursi internetdan yangilandi: ${res.rate} so'm!`);
+      } else {
+        setToastMsg(`Xatolik: ${res.error || "Internet ulanishini tekshiring"}`);
+      }
+    } catch (err) {
+      setToastMsg('Xatolik: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleAutoUsdRate = async (enabled) => {
+    setAutoUsdRate(enabled);
+    if (window.api) {
+      try {
+        await window.api.updateSetting({ key: 'auto_usd_rate', value: enabled ? '1' : '0' });
+      } catch (err) {
+        setToastMsg('Xatolik: ' + err.message);
+      }
     }
   };
 
@@ -1077,6 +1129,53 @@ export default memo(function Settings() {
                   className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
                 >
                   {t('save')}
+                </button>
+              </div>
+            </div>
+
+            {/* USD Rate Configuration */}
+            <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700">
+              <h4 className="font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
+                <span className="text-emerald-500 font-extrabold text-sm">$</span>
+                Dollar kursi (USD Exchange Rate)
+              </h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                Dollar kursining sumdagi qiymati. Omborda xarid narxini dollarda kiritishda konvertatsiya uchun ishlatiladi.
+              </p>
+              <div className="flex items-center gap-2 mb-3">
+                <input 
+                  type="checkbox"
+                  id="checkbox-auto-usd"
+                  checked={autoUsdRate}
+                  onChange={e => handleToggleAutoUsdRate(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
+                />
+                <label htmlFor="checkbox-auto-usd" className="text-xs text-gray-700 dark:text-gray-300 font-semibold cursor-pointer">
+                  Dastur yoqilganda dollar kursini internetdan (Markaziy Bankdan) avtomatik yangilash
+                </label>
+              </div>
+              <div className="flex gap-2 max-w-md">
+                <input 
+                  type="number" 
+                  value={newUsdRate}
+                  onChange={e => setNewUsdRate(e.target.value)}
+                  placeholder="Masalan: 12800"
+                  className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                />
+                 <button 
+                  onClick={handleSaveUsdRate}
+                  disabled={loading || String(newUsdRate) === String(usdRate)}
+                  className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+                >
+                  {t('save')}
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleSyncUsdRate}
+                  disabled={loading}
+                  className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  🌐 Internetdan olish
                 </button>
               </div>
             </div>

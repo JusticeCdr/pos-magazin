@@ -1050,16 +1050,16 @@ export default memo(function Cashier({ isActive }) {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 gap-3.5">
+          <div className="grid grid-cols-3 gap-2">
             {payMethods.map(({ id, label, icon: Icon, cls }) => (
               <button
                 key={id}
                 onClick={() => checkout(id)}
                 disabled={cart.length === 0}
-                className={`${cls} text-white font-black py-5 text-xl rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 shadow-md hover:shadow-lg`}
+                className={`${cls} text-white font-black py-3 text-sm rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 shadow-sm hover:shadow-md cursor-pointer`}
               >
-                <Icon size={28} strokeWidth={2.5} />
-                <span className="tracking-wide uppercase">{label}</span>
+                <Icon size={20} strokeWidth={2.5} />
+                <span className="tracking-wide uppercase text-[11px]">{label}</span>
               </button>
             ))}
           </div>

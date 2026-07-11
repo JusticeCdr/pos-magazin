@@ -21,7 +21,7 @@ export function parseSQLiteDate(sqliteStr) {
   if (sqliteStr.includes('Z') || sqliteStr.includes('T')) {
     return new Date(sqliteStr);
   }
-  return new Date(sqliteStr.replace(' ', 'T') + 'Z');
+  return new Date(sqliteStr.replace(' ', 'T'));
 }
 
 export function formatThousands(val) {

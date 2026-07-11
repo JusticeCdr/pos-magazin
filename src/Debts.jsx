@@ -4,6 +4,13 @@ import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands, parseSQLiteDate } from './utils';
 import { AlertModal } from './components/Modals';
 
+const formatPriceInput = (val) => {
+  if (val === null || val === undefined) return '';
+  let str = String(val).replace(/\D/g, '');
+  if (!str) return '';
+  return str.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
 export default memo(function Debts({ isActive }) {
   const { t, lang, currentUser, globalCustomers: customers, fetchGlobalCustomers } = useApp();
   const [search, setSearch] = useState('');
@@ -29,6 +36,15 @@ export default memo(function Debts({ isActive }) {
   const [alertModal, setAlertModal] = useState(null);
   const [customerToDelete, setCustomerToDelete] = useState(null);
   const [detailsTab, setDetailsTab] = useState('active'); // 'active' | 'closed'
+
+  // Manual Debt Modal state
+  const [manualDebtModal, setManualDebtModal] = useState(false);
+  const [manualDebtType, setManualDebtType] = useState('existing'); // 'existing' | 'new'
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [manualDebtAmount, setManualDebtAmount] = useState('');
+  const [manualDebtComment, setManualDebtComment] = useState('');
 
   useEffect(() => {
     if (startDate && endDate && startDate.length === 10 && endDate.length === 10) {
@@ -197,6 +213,56 @@ export default memo(function Debts({ isActive }) {
     }
   };
 
+  const handleSaveManualDebt = async (e) => {
+    e.preventDefault();
+    if (!window.api) return;
+
+    const parsedAmount = parseInt(String(manualDebtAmount).replace(/\D/g, '')) || 0;
+    if (parsedAmount <= 0) {
+      setAlertModal({ message: "Qarz summasi noldan katta bo'lishi kerak!", type: 'error' });
+      return;
+    }
+
+    if (manualDebtType === 'existing' && !selectedCustomerId) {
+      setAlertModal({ message: "Mijozni tanlang!", type: 'error' });
+      return;
+    }
+
+    if (manualDebtType === 'new' && !newCustomerName.trim()) {
+      setAlertModal({ message: "Mijoz ismini kiriting!", type: 'error' });
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const res = await window.api.addManualDebt({
+        customerId: manualDebtType === 'existing' ? parseInt(selectedCustomerId) : null,
+        customerName: manualDebtType === 'new' ? newCustomerName.trim() : '',
+        customerPhone: manualDebtType === 'new' ? newCustomerPhone.trim() : '',
+        amount: parsedAmount,
+        comment: manualDebtComment.trim(),
+        cashierName: currentUser?.name || 'Kassir'
+      });
+
+      if (res && res.success) {
+        setManualDebtModal(false);
+        setSelectedCustomerId('');
+        setNewCustomerName('');
+        setNewCustomerPhone('');
+        setManualDebtAmount('');
+        setManualDebtComment('');
+        fetchCustomers();
+        setAlertModal({ message: "Qarz muvaffaqiyatli qo'shildi!", type: 'success' });
+      } else {
+        setAlertModal({ message: res?.error || "Xatolik yuz berdi", type: 'error' });
+      }
+    } catch (err) {
+      setAlertModal({ message: 'IPC xatosi: ' + err.message, type: 'error' });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const splitDetails = useMemo(() => {
     if (!debtDetails || debtDetails.length === 0) return { active: [], closed: [] };
     
@@ -280,9 +346,18 @@ export default memo(function Debts({ isActive }) {
   return (
     <div className="h-full flex flex-col gap-6 transition-colors relative">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('debtsTitle')}</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('debtsSubtitle')}</p>
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('debtsTitle')}</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('debtsSubtitle')}</p>
+        </div>
+        <button
+          onClick={() => setManualDebtModal(true)}
+          className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition-all shadow-sm flex items-center gap-2 cursor-pointer w-fit"
+        >
+          <DollarSign size={16} />
+          Qarz qo'shish (Kassir)
+        </button>
       </div>
 
       {/* Summary Stats Cards */}
@@ -383,10 +458,24 @@ export default memo(function Debts({ isActive }) {
                   <tr key={c.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="py-3 px-4 text-sm text-gray-400 dark:text-gray-500">{index + 1}</td>
                     <td className="py-3 px-4 text-sm font-bold text-gray-900 dark:text-gray-200 flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                         {c.name.charAt(0).toUpperCase()}
                       </div>
-                      {c.name}
+                      <div className="flex flex-col">
+                        <span>{c.name}</span>
+                        <div className="flex gap-1 mt-0.5">
+                          {c.has_manual_debt === 1 && (
+                            <span className="text-[9px] font-black uppercase bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 px-1 py-0.5 rounded leading-none border border-amber-200 dark:border-amber-900/30">
+                              💸 Kassir
+                            </span>
+                          )}
+                          {c.has_product_debt === 1 && (
+                            <span className="text-[9px] font-black uppercase bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 px-1 py-0.5 rounded leading-none border border-blue-200 dark:border-blue-900/30">
+                              📦 Savdo
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400 font-mono flex items-center gap-2">
                       {c.phone ? <><Phone size={14} className="text-gray-400" /> {c.phone}</> : <span className="text-gray-300 dark:text-gray-600">—</span>}
@@ -423,13 +512,6 @@ export default memo(function Debts({ isActive }) {
                             To'langan
                           </button>
                         )}
-                        <button
-                          onClick={() => confirmDeleteCustomer(c)}
-                          className="bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 p-2 rounded-md transition-colors"
-                          title="O'chirish"
-                        >
-                          <Trash2 size={14} />
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -594,6 +676,31 @@ export default memo(function Debts({ isActive }) {
                       );
                     }
 
+                    if (record.is_manual_debt === 1) {
+                      return (
+                        <div key={`sale_${record.id}`} className="border border-orange-200 dark:border-orange-900/50 rounded-xl overflow-hidden bg-orange-50/20 dark:bg-orange-950/5">
+                          <div className="bg-orange-100/60 dark:bg-orange-950/20 px-4 py-2 border-b border-orange-200 dark:border-orange-900/50 flex justify-between items-center">
+                            <span className="font-bold text-orange-700 dark:text-orange-400 flex items-center gap-1.5">
+                              💸 Kassir bergan qarz (Tog'ridan-tog'ri qarz)
+                            </span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">Sana: {sana}, Vaqt: {vaqt}</span>
+                          </div>
+                          <div className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase block mb-1">Izoh / Sabab:</span>
+                              <p className="text-sm text-gray-800 dark:text-gray-200 font-medium whitespace-normal break-words max-w-[400px]">
+                                {record.comment || 'Izoh yozilmagan'}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase block mb-1">Qarz summasi:</span>
+                              <span className="font-black text-red-600 dark:text-red-400 text-xl">-{formatCurrency(record.total_amount, lang)} so'm</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
                       <div key={`sale_${record.id}`} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                         <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -681,7 +788,157 @@ export default memo(function Debts({ isActive }) {
           </div>
         </div>
       )}
-      
+
+      {/* Manual Debt Addition Modal */}
+      {manualDebtModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 dark:bg-black/40 backdrop-blur-sm rounded-lg">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-6 w-[450px] max-w-full transition-colors">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                💸 Qarz qo'shish (Kassir)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setManualDebtModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualDebt} className="space-y-4">
+              {/* Type Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
+                  Mijoz turi
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setManualDebtType('existing')}
+                    className={`py-2 rounded-xl text-sm font-bold border transition-colors cursor-pointer ${
+                      manualDebtType === 'existing'
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                        : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    Mavjud mijoz
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualDebtType('new')}
+                    className={`py-2 rounded-xl text-sm font-bold border transition-colors cursor-pointer ${
+                      manualDebtType === 'new'
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                        : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    Yangi mijoz
+                  </button>
+                </div>
+              </div>
+
+              {/* Customer Selection or Form */}
+              {manualDebtType === 'existing' ? (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                    Mijozni tanlang <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={selectedCustomerId}
+                    onChange={(e) => setSelectedCustomerId(e.target.value)}
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">-- Mijozni tanlang --</option>
+                    {customers.map(cust => (
+                      <option key={cust.id} value={cust.id}>
+                        {cust.name} {cust.phone ? `(${cust.phone})` : ''} - Joriy qarz: {formatCurrency(cust.total_debt, lang)} so'm
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                      Mijoz ismi <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Ism kiriting..."
+                      value={newCustomerName}
+                      onChange={(e) => setNewCustomerName(e.target.value)}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                      Telefon raqami
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Telefon raqami..."
+                      value={newCustomerPhone}
+                      onChange={(e) => setNewCustomerPhone(e.target.value)}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Amount */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  Qarz summasi (so'mda) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required
+                  type="text"
+                  placeholder="0"
+                  value={formatPriceInput(manualDebtAmount)}
+                  onChange={(e) => setManualDebtAmount(e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                />
+              </div>
+
+              {/* Comment */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  Izoh / Qarz sababi <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  required
+                  placeholder="Masalan: Naqd pul berildi, tovar nasiyaga berildi, avans so'radi..."
+                  value={manualDebtComment}
+                  onChange={(e) => setManualDebtComment(e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setManualDebtModal(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-bold rounded-xl text-sm transition-colors cursor-pointer"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  disabled={processing}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer"
+                >
+                  {processing ? 'Saqlanmoqda...' : 'Saqlash'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Alert Modal */}
       <AlertModal 
         isOpen={!!alertModal}
