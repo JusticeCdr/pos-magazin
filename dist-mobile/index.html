@@ -2,7 +2,12 @@
 <html lang="uz" class="h-full">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#020617">
+  <link rel="manifest" href="/mobile/manifest.json">
   <title>xxMpos Mobile POS</title>
   <!-- html5-qrcode library for camera barcode/QR scanning -->
   <script src="/js/html5-qrcode.min.js" type="text/javascript"></script>
@@ -35,7 +40,12 @@
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body { height: 100%; overflow: hidden; }
+    html, body {
+      height: 100%;
+      height: 100dvh;
+      height: -webkit-fill-available;
+      overflow: hidden;
+    }
 
     body {
       font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -484,7 +494,7 @@
   <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] w-11/12 max-w-sm pointer-events-none flex flex-col gap-2"></div>
 
   <!-- ================= LOGIN SCREEN ================= -->
-  <div id="screen-login" class="flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950">
+  <div id="screen-login" class="flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950" style="height:100dvh; height:-webkit-fill-available; min-height:100dvh;">
     <div class="flex flex-col items-center mt-12">
       <!-- Logo/Icon -->
       <div class="w-20 h-20 flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/10">
@@ -837,7 +847,7 @@
   </div>
 
   <!-- ================= MAIN APPLICATION SHELL ================= -->
-  <div id="app-shell" class="hidden flex flex-col h-full bg-slate-950" style="display:none; flex-direction:column; height:100vh; background:#020617;">
+  <div id="app-shell" class="hidden flex flex-col h-full bg-slate-950" style="display:none; flex-direction:column; height:100dvh; height:100vh; height:-webkit-fill-available; background:#020617; overflow:hidden;">
     <!-- Top Header -->
     <header class="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800/80 shrink-0" style="display:flex; justify-content:space-between; align-items:center; padding:1rem 1.5rem; background:#0f172a; border-bottom:1px solid #1e293b; flex-shrink:0;">
       <div class="flex items-center gap-3">
@@ -865,11 +875,18 @@
           <p id="header-cashier" class="text-xs text-slate-400 font-medium">Admin</p>
         </div>
       </div>
-      <button onclick="logout()" class="p-2 text-slate-400 hover:text-red-400 active:scale-90 transition-all rounded-lg bg-slate-800/40 border border-slate-800">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
-        </svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <button onclick="toggleFullscreen()" title="To'liq ekran" class="p-2 text-indigo-400 hover:text-white active:scale-90 transition-all rounded-lg bg-slate-800/40 border border-slate-800 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+          </svg>
+        </button>
+        <button onclick="logout()" title="Chiqish" class="p-2 text-slate-400 hover:text-red-400 active:scale-90 transition-all rounded-lg bg-slate-800/40 border border-slate-800">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+          </svg>
+        </button>
+      </div>
     </header>
 
     <!-- Main Screens Container -->
@@ -1312,53 +1329,53 @@
     </main>
 
     <!-- Navigation Bar -->
-    <nav class="flex justify-around items-center px-1 py-3 bg-slate-900 border-t border-slate-850 shrink-0" style="display:flex; justify-content:space-around; align-items:center; padding:0.75rem 0.25rem; background:#0f172a; border-top:1px solid #1e293b; flex-shrink:0;">
+    <nav class="flex justify-around items-center px-1 py-2 bg-slate-900 border-t border-slate-850 shrink-0 z-30" style="display:flex; justify-content:space-around; align-items:center; padding:0.5rem 0.25rem; padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px)); background:#0f172a; border-top:1px solid #1e293b; flex-shrink:0;">
       <!-- Nav Dashboard -->
-      <button onclick="switchTab('dashboard')" id="nav-btn-dashboard" class="flex flex-col items-center gap-1 py-1 text-slate-450 active:scale-90 transition-all w-20">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6">
+      <button onclick="switchTab('dashboard')" id="nav-btn-dashboard" class="flex flex-col items-center justify-center gap-1 py-1 px-0.5 text-slate-450 active:scale-90 transition-all flex-1 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0">
           <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z" />
         </svg>
-        <span class="text-[10px] font-bold tracking-wider">Hisobot</span>
+        <span class="text-[10px] font-bold tracking-wider truncate w-full text-center">Hisobot</span>
       </button>
 
       <!-- Nav Warehouse -->
-      <button onclick="switchTab('warehouse')" id="nav-btn-warehouse" class="flex flex-col items-center gap-1 py-1 text-slate-450 active:scale-90 transition-all w-20">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6">
+      <button onclick="switchTab('warehouse')" id="nav-btn-warehouse" class="flex flex-col items-center justify-center gap-1 py-1 px-0.5 text-slate-450 active:scale-90 transition-all flex-1 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0">
           <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
         </svg>
-        <span class="text-[10px] font-bold tracking-wider">Sklad</span>
+        <span class="text-[10px] font-bold tracking-wider truncate w-full text-center">Sklad</span>
       </button>
 
       <!-- Nav Cashier -->
-      <button onclick="switchTab('cashier')" id="nav-btn-cashier" class="flex flex-col items-center gap-1 py-1 text-slate-450 active:scale-90 transition-all w-20">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6">
+      <button onclick="switchTab('cashier')" id="nav-btn-cashier" class="flex flex-col items-center justify-center gap-1 py-1 px-0.5 text-slate-450 active:scale-90 transition-all flex-1 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5h16.5M5.25 4.5V2.25a.75.75 0 0 1 .75-.75h12a.75.75 0 0 1 .75.75V4.5m-15 0h15m-15 0v14.25m15 0v-14.25M6.75 22.5h10.5a2.25 2.25 0 0 0 2.25-2.25V18.75m-15 0v-14.25" />
         </svg>
-        <span class="text-[10px] font-bold tracking-wider">Kassa</span>
+        <span class="text-[10px] font-bold tracking-wider truncate w-full text-center">Kassa</span>
       </button>
 
       <!-- Nav History -->
-      <button onclick="switchTab('history')" id="nav-btn-history" class="flex flex-col items-center gap-1 py-1 text-slate-450 active:scale-90 transition-all w-20">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6">
+      <button onclick="switchTab('history')" id="nav-btn-history" class="flex flex-col items-center justify-center gap-1 py-1 px-0.5 text-slate-450 active:scale-90 transition-all flex-1 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
         </svg>
-        <span class="text-[10px] font-bold tracking-wider">Tarix</span>
+        <span class="text-[10px] font-bold tracking-wider truncate w-full text-center">Tarix</span>
       </button>
 
       <!-- Nav Debts -->
-      <button onclick="switchTab('debts')" id="nav-btn-debts" class="flex flex-col items-center gap-1 py-1 text-slate-450 active:scale-90 transition-all w-14">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6">
+      <button onclick="switchTab('debts')" id="nav-btn-debts" class="flex flex-col items-center justify-center gap-1 py-1 px-0.5 text-slate-450 active:scale-90 transition-all flex-1 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A2.25 2.25 0 0 1 12.75 21.5h-1.5a2.25 2.25 0 0 1-2.25-2.263V19.13m0-.003a9.37 9.37 0 0 1 2.625.372c.983.242 2.015.372 3.078.372Zm0 0v-.003c.4-1.113.685-2.16 1.186-3.07M9.086 19.128A9.337 9.337 0 0 1 4.965 18.17a4.125 4.125 0 0 1 7.533-2.493M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6.75 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0ZM3.75 12.75a2.625 2.625 0 1 1 5.25 0 2.625 2.625 0 0 1-5.25 0Z" />
         </svg>
-        <span class="text-[10px] font-bold tracking-wider">Qarzlar</span>
+        <span class="text-[10px] font-bold tracking-wider truncate w-full text-center">Qarzlar</span>
       </button>
 
       <!-- Nav Bashoratchi -->
-      <button onclick="switchTab('bashoratchi')" id="nav-btn-bashoratchi" class="flex flex-col items-center gap-1 py-1 text-slate-450 active:scale-90 transition-all w-14">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-6 h-6">
+      <button onclick="switchTab('bashoratchi')" id="nav-btn-bashoratchi" class="flex flex-col items-center justify-center gap-1 py-1 px-0.5 text-slate-450 active:scale-90 transition-all flex-1 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
         </svg>
-        <span class="text-[10px] font-bold tracking-wider text-purple-400">AI</span>
+        <span class="text-[10px] font-bold tracking-wider text-purple-400 truncate w-full text-center">AI</span>
       </button>
     </nav>
   </div>
@@ -1532,6 +1549,34 @@
           <div>
             <label class="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Sotish narxi (UZS) *</label>
             <input type="text" inputmode="numeric" id="edit-prod-sell" placeholder="0" oninput="formatMoneyInput(this)" class="w-full bg-slate-950 border border-slate-850 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all">
+          </div>
+        </div>
+
+        <!-- Dollar bilan olish (Edit) -->
+        <div class="p-3 bg-amber-500/5 border border-amber-500/20 rounded-2xl space-y-3">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <div class="relative">
+              <input type="checkbox" id="edit-prod-use-usd" onchange="onEditProdUsdToggle()" class="sr-only peer">
+              <div class="w-10 h-6 bg-slate-700 peer-checked:bg-amber-500 rounded-full transition-all"></div>
+              <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all peer-checked:translate-x-4"></div>
+            </div>
+            <span class="text-sm font-bold text-amber-400">💵 Dollar bilan oldim</span>
+          </label>
+          <div id="edit-prod-usd-fields" class="hidden space-y-3 pt-1">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Narxi ($)</label>
+                <input type="number" step="0.01" id="edit-prod-buy-usd" placeholder="0.00" min="0" oninput="onEditProdUsdPriceChange()" class="w-full bg-slate-950 border border-amber-500/30 focus:border-amber-400 rounded-xl px-3 py-2.5 text-sm font-bold text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all">
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Kurs (UZS/$)</label>
+                <input type="number" id="edit-prod-usd-rate" placeholder="12800" min="1" oninput="onEditProdUsdPriceChange()" class="w-full bg-slate-950 border border-amber-500/30 focus:border-amber-400 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all">
+              </div>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-slate-400">
+              <span>Hisoblangan olish narxi:</span>
+              <span id="edit-prod-usd-calc-result" class="font-bold text-white">—</span>
+            </div>
           </div>
         </div>
 
@@ -3603,6 +3648,30 @@
       updatePinDots();
     }
 
+    function toggleFullscreen(forceEnter = false) {
+      try {
+        const docEl = document.documentElement;
+        const isFS = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+        if (!isFS || forceEnter) {
+          if (docEl.requestFullscreen) {
+            docEl.requestFullscreen().catch(() => {});
+          } else if (docEl.webkitRequestFullscreen) {
+            docEl.webkitRequestFullscreen();
+          } else if (docEl.msRequestFullscreen) {
+            docEl.msRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+          }
+        }
+      } catch (_) {}
+    }
+
     async function submitPin() {
       try {
         const res = await fetch(`${API_URL}/api/login`, {
@@ -3618,6 +3687,7 @@
           document.getElementById('header-cashier').innerText = state.cashier.name;
           showToast(`Xush kelibsiz, ${state.cashier.name}!`);
           showScreen('app');
+          toggleFullscreen(true);
         } else {
           showToast('Noto\'g\'ri PIN-kod!', 'error');
           clearPinDots();
@@ -4155,6 +4225,35 @@
 
     function onKirimBuyChange() { /* UZS field changed manually, keep as-is */ }
 
+    function onEditProdUsdToggle() {
+      const checked = document.getElementById('edit-prod-use-usd').checked;
+      const fields = document.getElementById('edit-prod-usd-fields');
+      if (checked) {
+        fields.classList.remove('hidden');
+        const rateInput = document.getElementById('edit-prod-usd-rate');
+        if (state.usdRate > 0 && !rateInput.value) rateInput.value = state.usdRate;
+        onEditProdUsdPriceChange();
+      } else {
+        fields.classList.add('hidden');
+        document.getElementById('edit-prod-usd-calc-result').textContent = '\u2014';
+      }
+    }
+
+    function onEditProdUsdPriceChange() {
+      if (!document.getElementById('edit-prod-use-usd').checked) return;
+      const usdAmt = parseFloat(document.getElementById('edit-prod-buy-usd').value) || 0;
+      const rate   = parseFloat(document.getElementById('edit-prod-usd-rate').value) || 0;
+      const result = document.getElementById('edit-prod-usd-calc-result');
+      if (usdAmt > 0 && rate > 0) {
+        const uzs = Math.round(usdAmt * rate);
+        result.textContent = uzs.toLocaleString('ru-RU') + ' UZS';
+        const buyInput = document.getElementById('edit-prod-buy');
+        buyInput.value = uzs.toLocaleString('ru-RU');
+      } else {
+        result.textContent = '\u2014';
+      }
+    }
+
     function openKirimModal() {
       if (!state.usdRate) {
         try { state.usdRate = parseFloat(localStorage.getItem('usd_rate')) || 0; } catch(_) {}
@@ -4449,18 +4548,21 @@
       
       state.cashierProducts.forEach(prod => {
         // Check if item is already in cart
+        const stock = prod.stock != null ? parseFloat(prod.stock) : 0;
         const inCart = state.cart.find(c => c.id === prod.id);
         const cartQty = inCart ? inCart.qty : 0;
+        const isOutOfStock = stock <= 0;
+        const isCartMaxed = cartQty >= stock;
         
         const itemHtml = `
-          <div onclick="addCartItem(${JSON.stringify(prod).replace(/"/g, '&quot;')})" class="p-4 bg-slate-900 border border-slate-850 rounded-2xl flex justify-between items-center active:bg-slate-805 active:scale-98 transition-all">
+          <div onclick="addCartItem(${JSON.stringify(prod).replace(/"/g, '&quot;')})" class="p-4 ${isOutOfStock ? 'bg-slate-900/40 border-slate-850 opacity-60' : 'bg-slate-900 border-slate-850 active:bg-slate-805 active:scale-98'} border rounded-2xl flex justify-between items-center transition-all">
             <div class="flex flex-col min-w-0">
               <span class="text-sm font-bold text-white truncate">${prod.name}</span>
-              <span class="text-xs text-slate-500 font-semibold mt-1">Narxi: <span class="text-indigo-400 font-bold">${Math.round(prod.sell_price).toLocaleString('ru-RU')} UZS</span> | Qoldiq: ${prod.stock}</span>
+              <span class="text-xs text-slate-500 font-semibold mt-1">Narxi: <span class="text-indigo-400 font-bold">${Math.round(prod.sell_price).toLocaleString('ru-RU')} UZS</span> | Qoldiq: <span class="${isOutOfStock ? 'text-rose-400 font-bold' : ''}">${stock}</span></span>
             </div>
             <div class="shrink-0 flex items-center gap-2">
-              ${cartQty > 0 ? `<span class="px-2.5 py-1 bg-indigo-600 font-black text-xs text-white rounded-lg">${cartQty} ta</span>` : ''}
-              <div class="w-10 h-10 rounded-xl bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center active:scale-90 transition-all">
+              ${isOutOfStock ? `<span class="px-2 py-1 bg-rose-500/20 text-rose-400 font-bold text-[10px] rounded-lg">Tugagan</span>` : (cartQty > 0 ? `<span class="px-2.5 py-1 ${isCartMaxed ? 'bg-orange-600' : 'bg-indigo-600'} font-black text-xs text-white rounded-lg">${cartQty} ta</span>` : '')}
+              <div class="w-10 h-10 rounded-xl ${isOutOfStock ? 'bg-slate-800 text-slate-600 border-slate-800' : 'bg-indigo-600/10 border-indigo-500/20 text-indigo-400 active:scale-90'} border flex items-center justify-center transition-all">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -4497,7 +4599,20 @@
 
     // ================= CART MANAGEMENT =================
     function addCartItem(prod) {
+      const stock = prod.stock != null ? parseFloat(prod.stock) : 0;
+      if (stock <= 0) {
+        showToast(`"${prod.name}" omborda qolmagan!`, 'error');
+        return;
+      }
+
       const exists = state.cart.find(c => c.id === prod.id);
+      const currentQty = exists ? exists.qty : 0;
+
+      if (currentQty + 1 > stock) {
+        showToast(`"${prod.name}" dan omborda faqat ${stock} ta bor!`, 'error');
+        return;
+      }
+
       if (exists) {
         exists.qty += 1;
       } else {
@@ -4508,6 +4623,7 @@
           buy_price: prod.buy_price,
           discount: prod.discount || 0,
           unit: prod.unit || 'dona',
+          stock: stock,
           qty: 1
         });
       }
@@ -4543,6 +4659,7 @@
       state.cart.forEach((item, index) => {
         const itemDisc = Math.round((item.sell_price * item.qty) * ((item.discount || 0) / 100));
         const itemTotal = (item.sell_price * item.qty) - itemDisc;
+        const isMaxStock = item.stock != null && item.qty >= parseFloat(item.stock);
 
         const itemHtml = `
           <div class="p-4 bg-slate-950 border border-slate-850 rounded-2xl flex flex-col gap-2">
@@ -4560,9 +4677,9 @@
               
               <!-- Quantity adjustment -->
               <div class="flex items-center gap-2">
-                <button onclick="updateQty(${index}, -0.5)" class="w-7 h-7 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center font-bold text-slate-300">-</button>
+                <button onclick="updateQty(${index}, -0.5)" class="w-7 h-7 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center font-bold text-slate-300 active:scale-95">-</button>
                 <input type="number" step="any" value="${item.qty}" onchange="setQty(${index}, this.value)" class="w-14 bg-slate-900 border border-slate-800 rounded-lg text-center text-xs font-bold py-1 text-white focus:outline-none">
-                <button onclick="updateQty(${index}, 0.5)" class="w-7 h-7 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center font-bold text-slate-300">+</button>
+                <button onclick="updateQty(${index}, 0.5)" ${isMaxStock ? 'disabled class="w-7 h-7 bg-slate-900/40 border border-slate-850 rounded-lg flex items-center justify-center font-bold text-slate-600 cursor-not-allowed"' : 'class="w-7 h-7 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center font-bold text-slate-300 active:scale-95"'}>+</button>
               </div>
             </div>
 
@@ -4585,6 +4702,13 @@
     function updateQty(index, amount) {
       const item = state.cart[index];
       if (item) {
+        if (amount > 0) {
+          const maxStock = item.stock != null ? parseFloat(item.stock) : Infinity;
+          if (item.qty + amount > maxStock) {
+            showToast(`Omborda yetarli mahsulot yo'q! (Mavjud: ${maxStock} ta)`, 'error');
+            return;
+          }
+        }
         item.qty += amount;
         if (item.qty <= 0) {
           state.cart.splice(index, 1);
@@ -4597,8 +4721,13 @@
 
     function setQty(index, value) {
       const item = state.cart[index];
-      const qty = parseFloat(value) || 0;
+      let qty = parseFloat(value) || 0;
       if (item) {
+        const maxStock = item.stock != null ? parseFloat(item.stock) : Infinity;
+        if (qty > maxStock) {
+          showToast(`Omborda yetarli mahsulot yo'q! (Mavjud: ${maxStock} ta)`, 'error');
+          qty = maxStock;
+        }
         if (qty <= 0) {
           state.cart.splice(index, 1);
         } else {
@@ -5201,12 +5330,33 @@
       document.getElementById('edit-prod-unit').value = prod.unit || 'dona';
       document.getElementById('edit-prod-discount').value = prod.discount !== undefined ? prod.discount : 0;
       
+      // USD fields population
+      const usdCheckbox = document.getElementById('edit-prod-use-usd');
+      const usdFields = document.getElementById('edit-prod-usd-fields');
+      if (prod.buy_price_usd > 0) {
+        usdCheckbox.checked = true;
+        usdFields.classList.remove('hidden');
+        document.getElementById('edit-prod-buy-usd').value = prod.buy_price_usd;
+        document.getElementById('edit-prod-usd-rate').value = prod.usd_rate || state.usdRate || 12800;
+        onEditProdUsdPriceChange();
+      } else {
+        usdCheckbox.checked = false;
+        usdFields.classList.add('hidden');
+        document.getElementById('edit-prod-buy-usd').value = '';
+        document.getElementById('edit-prod-usd-rate').value = state.usdRate || '';
+        document.getElementById('edit-prod-usd-calc-result').textContent = '—';
+      }
+
       document.getElementById('modal-edit-product').classList.remove('hidden');
     }
 
     function closeEditProductModal() {
       document.getElementById('modal-edit-product').classList.add('hidden');
       document.getElementById('edit-product-form').reset();
+      const usdFields = document.getElementById('edit-prod-usd-fields');
+      if (usdFields) usdFields.classList.add('hidden');
+      const usdCalcResult = document.getElementById('edit-prod-usd-calc-result');
+      if (usdCalcResult) usdCalcResult.textContent = '—';
     }
 
     async function submitEditProduct(e) {
@@ -5233,6 +5383,15 @@
         return;
       }
 
+      const useUsd = document.getElementById('edit-prod-use-usd').checked;
+      const buyUsd = useUsd ? (parseFloat(document.getElementById('edit-prod-buy-usd').value) || 0) : 0;
+      const usdRate = useUsd ? (parseFloat(document.getElementById('edit-prod-usd-rate').value) || 0) : 0;
+
+      if (useUsd && (!buyUsd || !usdRate)) {
+        showToast('Iltimos, dollar narxi va kursini kiriting!', 'error');
+        return;
+      }
+
       const barcode = document.getElementById('edit-prod-barcode').value;
       const buy_price = parseFloat(buyStr) || 0;
       const sell_price = parseFloat(sellStr) || 0;
@@ -5240,7 +5399,18 @@
       const unit = document.getElementById('edit-prod-unit').value;
       const discount = parseFloat(document.getElementById('edit-prod-discount').value) || 0;
 
-      const payload = { id, name, barcode, buy_price, sell_price, stock, unit, discount };
+      const payload = { 
+        id, 
+        name, 
+        barcode, 
+        buy_price, 
+        sell_price, 
+        stock, 
+        unit, 
+        discount, 
+        buy_price_usd: buyUsd, 
+        usd_rate: usdRate 
+      };
 
       try {
         const res = await fetch(`${API_URL}/api/products/edit`, {

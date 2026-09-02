@@ -2,8 +2,25 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { exec, execSync } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
-function getOrCreateSSLKeys() {
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+function sendUpdateStatus(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking-for-update'));
+autoUpdater.on('update-available', (info) => sendUpdateStatus('update-available', info));
+autoUpdater.on('update-not-available', (info) => sendUpdateStatus('update-not-available', info));
+autoUpdater.on('download-progress', (progressObj) => sendUpdateStatus('download-progress', Math.round(progressObj.percent || 0)));
+autoUpdater.on('update-downloaded', (info) => sendUpdateStatus('update-downloaded', info));
+autoUpdater.on('error', (err) => sendUpdateStatus('update-error', err ? err.message : 'Yangilanishlarni tekshirishda xatolik'));
+
+async function getOrCreateSSLKeys() {
   const userDataDir = app.getPath('userData');
   const keyPath = path.join(userDataDir, 'ssl.key');
   const certPath = path.join(userDataDir, 'ssl.crt');
@@ -16,20 +33,23 @@ function getOrCreateSSLKeys() {
   }
 
   console.log('Generating self-signed SSL certificate...');
+  logError('Generating self-signed SSL certificate...');
   try {
     const selfsigned = require('selfsigned');
     const attrs = [{ name: 'commonName', value: 'xxmpos.local' }];
-    const pems = selfsigned.generate(attrs, { days: 3650 }); // 10 years validity
+    const pems = await selfsigned.generate(attrs, { days: 3650 }); // 10 years validity
 
     fs.writeFileSync(keyPath, pems.private);
     fs.writeFileSync(certPath, pems.cert);
 
+    logError('Self-signed SSL certificate generated successfully');
     return {
       key: pems.private,
       cert: pems.cert
     };
   } catch (err) {
     console.error('Failed to generate dynamic SSL:', err);
+    logError(`Failed to generate dynamic SSL: ${err.stack || err}`);
     return { key: '', cert: '' };
   }
 }
@@ -381,6 +401,7 @@ const {
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
+const { sendTelegramBackup, getTelegramChatIdFromUpdates } = require('./telegramBackup');
 
 // ── Logging System ───────────────────────────────────────────────────────────
 function logError(message) {
@@ -733,7 +754,7 @@ async function printCancellationSlip(tableName, staffName) {
 }
 
 // ── Express.js server & Socket.io ─────────────────────────────────────────────
-function startExpressServer() {
+async function startExpressServer() {
   try {
     const express = require('express');
     const expressApp = express();
@@ -826,6 +847,20 @@ function startExpressServer() {
         return res.json({ success: true, data: publicSettings });
       } else {
         return res.status(500).json({ success: false, error: result.error });
+      }
+    });
+
+    // API: Backup to Telegram Group
+    expressApp.post('/api/backup/send-telegram', async (req, res) => {
+      try {
+        const result = await sendTelegramBackup();
+        if (result.success) {
+          return res.json({ success: true, message: "Baza guruhga yuborildi", details: result });
+        } else {
+          return res.status(400).json({ success: false, error: result.error });
+        }
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
       }
     });
 
@@ -1134,7 +1169,7 @@ function startExpressServer() {
     
     // API: Add product stock or create new product
     expressApp.post('/api/products/add', authMiddleware, (req, res) => {
-      const { name, barcode, buy_price, sell_price, stock, unit, discount } = req.body;
+      const { name, barcode, buy_price, sell_price, stock, unit, discount, buy_price_usd, usd_rate } = req.body;
       if (!name) {
         return res.status(400).json({ success: false, error: 'Product name is required' });
       }
@@ -1147,6 +1182,8 @@ function startExpressServer() {
         stock: parseFloat(stock) || 0,
         unit: unit || 'dona',
         discount: parseFloat(discount) || 0,
+        buy_price_usd: parseFloat(buy_price_usd) || 0,
+        usd_rate: parseFloat(usd_rate) || 0,
         userName: req.cashier.name + ' (Mobil)'
       };
       
@@ -1619,7 +1656,7 @@ function startExpressServer() {
 
     // API: Edit product
     expressApp.post('/api/products/edit', authMiddleware, (req, res) => {
-      const { id, name, barcode, buy_price, sell_price, stock, unit, discount } = req.body;
+      const { id, name, barcode, buy_price, sell_price, stock, unit, discount, buy_price_usd, usd_rate } = req.body;
       if (!id) {
         return res.status(400).json({ success: false, error: 'Product ID is required' });
       }
@@ -1641,6 +1678,8 @@ function startExpressServer() {
         stock: parseFloat(stock) || 0, // This is addedQty in updateProduct
         unit: unit || 'dona',
         discount: parseFloat(discount) || 0,
+        buy_price_usd: parseFloat(buy_price_usd) || 0,
+        usd_rate: parseFloat(usd_rate) || 0,
         userName: req.cashier.name + ' (Mobil)'
       };
 
@@ -2005,7 +2044,7 @@ function startExpressServer() {
     let httpsServer;
     try {
       const https = require('https');
-      const sslKeys = getOrCreateSSLKeys();
+      const sslKeys = await getOrCreateSSLKeys();
       if (sslKeys.key && sslKeys.cert) {
         httpsServer = https.createServer(sslKeys, expressApp);
         httpsServer.listen(4001, '0.0.0.0', () => {
@@ -2014,6 +2053,7 @@ function startExpressServer() {
         });
       } else {
         console.error("❌ Failed to load SSL keys, HTTPS server not started");
+        logError("Failed to load SSL keys, HTTPS server not started");
       }
     } catch (httpsErr) {
       console.error("❌ Failed to start HTTPS server:", httpsErr);
@@ -2250,6 +2290,9 @@ if (!gotTheLock) {
         try {
           await autoBackupDB();
         } catch (err) {}
+        try {
+          await sendTelegramBackup();
+        } catch (err) {}
       });
     }
     return result;
@@ -2259,6 +2302,35 @@ if (!gotTheLock) {
   safeHandle('get-all-sales-history', (_, opts) => getAllSalesHistory(opts ?? {}));
   safeHandle('optimize-database',     () => optimizeDatabase());
   safeHandle('auto-backup-db',        () => autoBackupDB());
+  safeHandle('send-telegram-backup', (evt, opts) => sendTelegramBackup(opts));
+  safeHandle('get-telegram-chat-id', (evt, token) => getTelegramChatIdFromUpdates(token));
+
+  // ── AutoUpdater Handlers ───────────────────────────────────────────────────
+  safeHandle('get-app-version', () => app.getVersion());
+  safeHandle('check-update', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return { success: true, updateInfo: result ? result.updateInfo : null };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  safeHandle('start-download', async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+  safeHandle('install-update', () => {
+    try {
+      autoUpdater.quitAndInstall(false, true);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 
   safeHandle('export-sale-excel', async (_, saleDetails) => {
     try {

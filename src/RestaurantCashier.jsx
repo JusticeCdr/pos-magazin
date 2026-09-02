@@ -459,7 +459,7 @@ function AddZoneModal({ onAdd, onClose }) {
 
 /* ── Restaurant Cashier (main component) ───────────────────────────────────── */
 export default function RestaurantCashier({ isActive }) {
-  const { t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts, globalCustomers: customers } = useApp();
+  const { t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts, globalCustomers: customers, allowMobileQr } = useApp();
 
   // Zone & table selection
   const [zones, setZones] = useState(DEFAULT_ZONES);
@@ -1564,44 +1564,73 @@ export default function RestaurantCashier({ isActive }) {
                 </p>
 
                 {localIps.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-6">
                     {localIps.map((ip, idx) => {
+                      const mainUrl = `http://${ip}:${expressPort}`;
                       const waiterUrl = `http://${ip}:${expressPort}/mobile`;
                       return (
-                        <div key={idx} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-150 dark:border-gray-755 flex flex-col items-center gap-3">
-                          <span className="text-xs font-black px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-md">
-                            IP: {ip}
+                        <div key={idx} className="space-y-3">
+                          <span className="text-xs font-black px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg inline-block">
+                            Lokal IP: {ip}
                           </span>
-                          <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
-                            <QRCodeSVG
-                              value={waiterUrl}
-                              size={140}
-                              level="M"
-                              includeMargin={false}
-                              fgColor="#0f172a"
-                              bgColor="#ffffff"
-                            />
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Card 1: Kompyuter / Planshet (Har doim turaveradi) */}
+                            <div className="p-4 bg-white dark:bg-gray-800/60 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                                🖥️ Planshet / Komp
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-gray-100">
+                                <QRCodeSVG value={mainUrl} size={140} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                              </div>
+                              <a href={mainUrl} target="_blank" rel="noreferrer"
+                                className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 block text-center">
+                                {mainUrl}
+                              </a>
+                              <button type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(mainUrl);
+                                  setAlertModal({ title: "Muvaffaqiyatli", message: "Asosiy havola nusxalandi!", type: "success" });
+                                }}
+                                className="w-full py-1.5 px-3 text-[11px] font-bold bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
+                            </div>
+
+                            {/* Card 2: Telefondan kirish (Afitsiantlar) */}
+                            {allowMobileQr ? (
+                              <div className="p-4 bg-orange-50/30 dark:bg-orange-950/10 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex flex-col items-center gap-3 shadow-sm">
+                                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">
+                                  📱 Telefondan kirish (Afitsiant)
+                                </span>
+                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-orange-100">
+                                  <QRCodeSVG value={waiterUrl} size={140} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                                </div>
+                                <a href={waiterUrl} target="_blank" rel="noreferrer"
+                                  className="text-[11px] font-mono font-bold text-orange-600 dark:text-orange-400 break-all underline hover:text-orange-500 block text-center">
+                                  {waiterUrl}
+                                </a>
+                                <button type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(waiterUrl);
+                                    setAlertModal({ title: "Muvaffaqiyatli", message: "Mobil havola nusxalandi!", type: "success" });
+                                  }}
+                                  className="w-full py-1.5 px-3 text-[11px] font-bold bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-900/40 rounded-xl transition-colors cursor-pointer">
+                                  📋 Nusxalash
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-center gap-2">
+                                <span className="text-2xl">🔒</span>
+                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                                  Telefondan kirish QR kodi yashiringan
+                                </span>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                  Sozlamalardan xxMpos7532. PIN kodi orqali ruxsat berilganda ko'rinadi.
+                                </p>
+                              </div>
+                            )}
                           </div>
-                          <div className="text-center w-full">
-                            <a
-                              href={waiterUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 block"
-                            >
-                              {waiterUrl}
-                            </a>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(waiterUrl);
-                              setAlertModal({ title: "Muvaffaqiyatli", message: "Havola nusxalandi!", type: "success" });
-                            }}
-                            className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
-                          >
-                            📋 Havolani nusxalash
-                          </button>
                         </div>
                       );
                     })}
@@ -1614,59 +1643,61 @@ export default function RestaurantCashier({ isActive }) {
               </div>
 
               {/* Tashqi Tarmoq (Ngrok / Internet) Section */}
-              <div className="space-y-3 pt-2">
-                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/60 pb-2 flex items-center gap-2">
-                  <span className="text-blue-500">🌐</span> Tashqi tarmoq (Internet / Ngrok) — Masofaviy nazorat
-                </h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Internet orqali dunyoning istalgan nuqtasidan ulanish uchun (WiFi shart emas).
-                </p>
+              {allowMobileQr && (
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/60 pb-2 flex items-center gap-2">
+                    <span className="text-blue-500">🌐</span> Tashqi tarmoq (Internet / Ngrok) — Masofaviy nazorat
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    Internet orqali dunyoning istalgan nuqtasidan ulanish uchun (WiFi shart emas).
+                  </p>
 
-                {ngrokUrl ? (() => {
-                  const normalizedNgrok = ngrokUrl.replace(/\/$/, '') + '/mobile';
-                  return (
-                    <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
-                      <span className="text-xs font-black px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-md">
-                        Faol Tunnel
-                      </span>
-                      <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
-                        <QRCodeSVG
-                          value={normalizedNgrok}
-                          size={140}
-                          level="M"
-                          includeMargin={false}
-                          fgColor="#0f172a"
-                          bgColor="#ffffff"
-                        />
-                      </div>
-                      <div className="text-center w-full">
-                        <a
-                          href={normalizedNgrok}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-450 break-all underline hover:text-emerald-500 block"
+                  {ngrokUrl ? (() => {
+                    const normalizedNgrok = ngrokUrl.replace(/\/$/, '') + '/mobile';
+                    return (
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
+                        <span className="text-xs font-black px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-md">
+                          Faol Tunnel
+                        </span>
+                        <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
+                          <QRCodeSVG
+                            value={normalizedNgrok}
+                            size={140}
+                            level="M"
+                            includeMargin={false}
+                            fgColor="#0f172a"
+                            bgColor="#ffffff"
+                          />
+                        </div>
+                        <div className="text-center w-full">
+                          <a
+                            href={normalizedNgrok}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-450 break-all underline hover:text-emerald-500 block"
+                          >
+                            {normalizedNgrok}
+                          </a>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(normalizedNgrok);
+                            setAlertModal({ title: "Muvaffaqiyatli", message: "Havola nusxalandi!", type: "success" });
+                          }}
+                          className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-755 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
                         >
-                          {normalizedNgrok}
-                        </a>
+                          📋 Havolani nusxalash
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(normalizedNgrok);
-                          setAlertModal({ title: "Muvaffaqiyatli", message: "Havola nusxalandi!", type: "success" });
-                        }}
-                        className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-755 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
-                      >
-                        📋 Havolani nusxalash
-                      </button>
+                    );
+                  })() : (
+                    <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold">
+                      ℹ️ Tashqi tunnel (Ngrok) yoqilmagan. Uni yoqish uchun Sozlamalar -{'>'} Tarmoq sozlamalari bo'limiga o'ting.
                     </div>
-                  );
-                })() : (
-                  <div className="p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold">
-                    ℹ️ Tashqi tunnel (Ngrok) yoqilmagan. Uni yoqish uchun Sozlamalar -{'>'} Tarmoq sozlamalari bo'limiga o'ting.
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer */}

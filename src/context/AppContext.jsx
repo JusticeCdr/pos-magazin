@@ -80,7 +80,15 @@ export function AppProvider({ children }) {
   const [storeName, setStoreName] = useState("Mening Do'konim");
   const [businessType, setBusinessType] = useState('retail');
   const [terminalMode, setTerminalMode] = useState(false);
+  const [allowMobileQr, setAllowMobileQr] = useState(false);
   const [usdRate, setUsdRate] = useState(12800);
+
+  const updateAllowMobileQr = async (val) => {
+    setAllowMobileQr(val);
+    if (window.api) {
+      await window.api.updateSetting({ key: 'allow_mobile_qr', value: val ? 'true' : 'false' });
+    }
+  };
   const [shopLogo, setShopLogoState] = useState(() => {
     return localStorage.getItem('shopLogoBase64') || '';
   });
@@ -138,6 +146,7 @@ export function AppProvider({ children }) {
           if (res.data.store_name) setStoreName(res.data.store_name);
           if (res.data.business_type) setBusinessType(res.data.business_type);
           if (res.data.terminal_mode) setTerminalMode(res.data.terminal_mode === 'true');
+          if (res.data.allow_mobile_qr !== undefined) setAllowMobileQr(res.data.allow_mobile_qr === 'true');
           if (res.data.usd_rate) setUsdRate(parseFloat(res.data.usd_rate) || 12800);
            if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
           if (res.data.label_printer_name) localStorage.setItem('labelPrinterName', res.data.label_printer_name);
@@ -225,6 +234,7 @@ export function AppProvider({ children }) {
       theme, toggleTheme, lang, toggleLang, t,
       currentUser, setCurrentUser, storeName, setStoreName, businessType, setBusinessType, shopLogo, setShopLogo, receiptLogo, setReceiptLogo,
       terminalMode, updateTerminalMode,
+      allowMobileQr, setAllowMobileQr, updateAllowMobileQr,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded,
       usdRate, setUsdRate

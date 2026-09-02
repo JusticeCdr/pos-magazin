@@ -4,7 +4,7 @@ import { useApp } from './context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
 
 export default memo(function Settings() {
-  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate } = useApp();
+  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate, allowMobileQr, updateAllowMobileQr } = useApp();
   const isAdmin = currentUser?.pin === 'xxMpos7532.' || currentUser?.role === 'admin';
 
   const [cashiers, setCashiers] = useState([]);
@@ -178,6 +178,18 @@ export default memo(function Settings() {
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [ngrokError, setNgrokError] = useState('');
   const [ngrokLoading, setNgrokLoading] = useState(false); // true while tunnel is starting
+  const [telegramBotToken, setTelegramBotToken] = useState('8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [isSendingTelegramBackup, setIsSendingTelegramBackup] = useState(false);
+  const [isDetectingTelegramChatId, setIsDetectingTelegramChatId] = useState(false);
+  const [appVersion, setAppVersion] = useState('v1.5.0');
+  const [updateState, setUpdateState] = useState('idle'); // 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [updateError, setUpdateError] = useState('');
+  const [showMobileQrPinModal, setShowMobileQrPinModal] = useState(false);
+  const [mobileQrPinInput, setMobileQrPinInput] = useState('');
+  const [mobileQrPinError, setMobileQrPinError] = useState('');
   const [localIp, setLocalIp] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [telegramUrl, setTelegramUrl] = useState('');
@@ -371,6 +383,8 @@ export default memo(function Settings() {
         if (res.data.ngrok_token) setNgrokToken(res.data.ngrok_token);
         if (res.data.ngrok_domain) setNgrokDomain(res.data.ngrok_domain);
         if (res.data.gemini_api_key) setGeminiApiKey(res.data.gemini_api_key);
+        if (res.data.telegram_bot_token) setTelegramBotToken(res.data.telegram_bot_token);
+        if (res.data.telegram_chat_id) setTelegramChatId(res.data.telegram_chat_id);
         if (res.data.usd_rate) setNewUsdRate(res.data.usd_rate);
         if (res.data.auto_usd_rate) setAutoUsdRate(res.data.auto_usd_rate === '1');
         
@@ -615,6 +629,23 @@ export default memo(function Settings() {
     }
   };
 
+  const handleConfirmMobileQrPin = async () => {
+    if (mobileQrPinInput !== 'xxMpos7532.') {
+      setMobileQrPinError('Maxfiy PIN kod noto\'g\'ri!');
+      return;
+    }
+    const newStatus = !allowMobileQr;
+    await updateAllowMobileQr(newStatus);
+    setShowMobileQrPinModal(false);
+    setMobileQrPinInput('');
+    setMobileQrPinError('');
+    setToastMsg(
+      newStatus
+        ? 'Telefondan kirish QR kodiga ruxsat berildi! Kassa oynasida ko\'rinadi.'
+        : 'Telefondan kirish QR kodi taqiqlandi! Kassa oynasidan yashirildi.'
+    );
+  };
+
   const handleSaveGeminiKey = async () => {
     if (!window.api) return;
     try {
@@ -622,6 +653,137 @@ export default memo(function Settings() {
       setToastMsg('Gemini API kaliti saqlandi!');
     } catch (err) {
       setToastMsg('Kalitni saqlashda xatolik: ' + err.message);
+    }
+  };
+
+  const handleSaveTelegramBackupSettings = async () => {
+    if (!window.api) return;
+    try {
+      await window.api.updateSetting({ key: 'telegram_bot_token', value: telegramBotToken.trim() });
+      await window.api.updateSetting({ key: 'telegram_chat_id', value: telegramChatId.trim() });
+      setToastMsg('Telegram sozlamalari saqlandi!');
+    } catch (err) {
+      setToastMsg('Sozlamalarni saqlashda xatolik: ' + err.message);
+    }
+  };
+
+  const handleDetectTelegramChatId = async () => {
+    if (!window.api) return;
+    setIsDetectingTelegramChatId(true);
+    try {
+      const res = await window.api.getTelegramChatId(telegramBotToken.trim());
+      if (res && res.success && res.chatId) {
+        setTelegramChatId(res.chatId);
+        await window.api.updateSetting({ key: 'telegram_chat_id', value: res.chatId });
+        await window.api.updateSetting({ key: 'telegram_bot_token', value: telegramBotToken.trim() });
+        setToastMsg(`Guruh ID si topildi va saqlandi: ${res.chatId} (${res.chatTitle || ''})`);
+      } else {
+        setToastMsg(res?.error || "Guruh ID si topilmadi. Botni guruhga qo'shib /id deb yuboring.");
+      }
+    } catch (err) {
+      setToastMsg("ID aniqlashda xatolik: " + err.message);
+    } finally {
+      setIsDetectingTelegramChatId(false);
+    }
+  };
+
+  const handleSendTelegramBackup = async () => {
+    if (!window.api || isSendingTelegramBackup) return;
+    setIsSendingTelegramBackup(true);
+    try {
+      await window.api.updateSetting({ key: 'telegram_bot_token', value: telegramBotToken.trim() });
+      await window.api.updateSetting({ key: 'telegram_chat_id', value: telegramChatId.trim() });
+
+      const res = await window.api.sendTelegramBackup({
+        botToken: telegramBotToken.trim(),
+        chatId: telegramChatId.trim()
+      });
+
+      if (res && res.success) {
+        setToastMsg("Baza muvaffaqiyatli Telegram guruhga yuborildi!");
+      } else {
+        setToastMsg("Xatolik: " + (res?.error || "Telegramga yuborib bo'lmadi"));
+      }
+    } catch (err) {
+      setToastMsg("IPC xatoligi: " + err.message);
+    } finally {
+      setIsSendingTelegramBackup(false);
+    }
+  };
+
+  useEffect(() => {
+    if (window.api && window.api.getAppVersion) {
+      window.api.getAppVersion().then(ver => {
+        if (ver) setAppVersion(`v${ver}`);
+      }).catch(() => {});
+    }
+
+    if (window.api && window.api.onUpdateStatus) {
+      window.api.onUpdateStatus((status, data) => {
+        if (status === 'checking-for-update') {
+          setUpdateState('checking');
+          setUpdateError('');
+        } else if (status === 'update-available') {
+          setUpdateState('available');
+          setUpdateInfo(data);
+          setUpdateError('');
+        } else if (status === 'update-not-available') {
+          setUpdateState('not-available');
+          setUpdateError('');
+        } else if (status === 'download-progress') {
+          setUpdateState('downloading');
+          setDownloadPercent(typeof data === 'number' ? data : (data?.percent || 0));
+        } else if (status === 'update-downloaded') {
+          setUpdateState('downloaded');
+        } else if (status === 'update-error') {
+          setUpdateState('error');
+          setUpdateError(typeof data === 'string' ? data : (data?.message || 'Xatolik yuz berdi'));
+        }
+      });
+    }
+  }, []);
+
+  const handleCheckForUpdates = async () => {
+    if (!window.api || !window.api.checkUpdate) {
+      setToastMsg("Kassa versiyasi brauzer rejimida auto-update qila olmaydi");
+      return;
+    }
+    setUpdateState('checking');
+    setUpdateError('');
+    try {
+      const res = await window.api.checkUpdate();
+      if (!res.success) {
+        setUpdateState('error');
+        setUpdateError(res.error || "Yangilanishlarni tekshirishda xatolik");
+      }
+    } catch (err) {
+      setUpdateState('error');
+      setUpdateError(err.message);
+    }
+  };
+
+  const handleStartDownload = async () => {
+    if (!window.api || !window.api.startDownload) return;
+    setUpdateState('downloading');
+    setDownloadPercent(0);
+    try {
+      const res = await window.api.startDownload();
+      if (!res.success) {
+        setUpdateState('error');
+        setUpdateError(res.error || "Yuklab olishni boshlashda xatolik");
+      }
+    } catch (err) {
+      setUpdateState('error');
+      setUpdateError(err.message);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!window.api || !window.api.installUpdate) return;
+    try {
+      await window.api.installUpdate();
+    } catch (err) {
+      setToastMsg("O'rnatishda xatolik: " + err.message);
     }
   };
 
@@ -862,6 +1024,66 @@ export default memo(function Settings() {
 
   return (
     <div className="flex flex-col gap-6 transition-colors pb-6 relative">
+      {/* Mobile QR Connection Permission PIN Modal */}
+      {showMobileQrPinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-3 mb-4 text-blue-600 dark:text-blue-400">
+              <span className="text-2xl">🔐</span>
+              <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                Telefondan kirish ruxsati
+              </h3>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm font-medium">
+              {allowMobileQr
+                ? "Telefondan kirish QR kodi va havolasini KASSA OYNASIDAN YASHIRISH uchun maxfiy PIN kodni kiriting:"
+                : "Telefondan kirish QR kodi va havolasini KASSA OYNASIDA KO'RSATISH uchun maxfiy PIN kodni kiriting:"}
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
+                Maxfiy PIN kod (xxMpos7532.):
+              </label>
+              <input 
+                type="password" 
+                value={mobileQrPinInput}
+                onChange={e => {
+                  setMobileQrPinInput(e.target.value);
+                  setMobileQrPinError('');
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleConfirmMobileQrPin();
+                }}
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 text-center font-bold text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
+                placeholder="xxMpos7532."
+                autoFocus
+              />
+              {mobileQrPinError && (
+                <p className="text-xs text-rose-500 font-bold mt-2 text-center">
+                  {mobileQrPinError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowMobileQrPinModal(false);
+                  setMobileQrPinInput('');
+                  setMobileQrPinError('');
+                }}
+                className="flex-1 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-xl transition-colors cursor-pointer"
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={handleConfirmMobileQrPin}
+                className="flex-1 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-md cursor-pointer"
+              >
+                Tasdiqlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Toast Notification (Replaces alert()) */}
       {toastMsg && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-900 text-white px-6 py-3 rounded-lg shadow-2xl font-medium animate-bounce">
@@ -1106,6 +1328,126 @@ export default memo(function Settings() {
               </div>
             </div>
           )}
+
+          {/* Dastur versiyasi va avto-yangilanish (AutoUpdater) */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
+                  <RefreshCw size={22} className={updateState === 'checking' ? 'animate-spin' : ''} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                    Dastur versiyasi va avto-yangilanish
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Joriy versiya: <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{appVersion}</span>
+                  </p>
+                </div>
+              </div>
+
+              {updateState === 'idle' && (
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  className="px-4 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  Yangilanishlarni tekshirish
+                </button>
+              )}
+            </div>
+
+            {/* Status Messages */}
+            {updateState === 'checking' && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center gap-3 text-xs font-medium text-gray-600 dark:text-gray-300">
+                <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span>Tekshirilmoqda...</span>
+              </div>
+            )}
+
+            {updateState === 'not-available' && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+                <span>✅ Sizda eng so'nggi versiya o'rnatilgan ({appVersion})</span>
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  className="text-[11px] underline hover:opacity-80"
+                >
+                  Qayta tekshirish
+                </button>
+              </div>
+            )}
+
+            {updateState === 'available' && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-amber-800 dark:text-amber-300 block">
+                      🚀 Yangi versiya mavjud: v{updateInfo?.version || 'yangi'}!
+                    </span>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                      Dasturga yangi imkoniyatlar va xavfsizlik yangilanishlari qo'shilgan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartDownload}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    Yuklab olish
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {updateState === 'downloading' && (
+              <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-xl space-y-2">
+                <div className="flex justify-between text-xs font-bold text-blue-700 dark:text-blue-300">
+                  <span>Yuklanmoqda: {downloadPercent}%...</span>
+                  <span>{downloadPercent}%</span>
+                </div>
+                <div className="w-full bg-blue-200 dark:bg-blue-900/50 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${downloadPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {updateState === 'downloaded' && (
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 block">
+                    🎉 Yangilanish yuklab olindi!
+                  </span>
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                    Dasturni qayta ishga tushirib yangi versiyaga o'tishingiz mumkin. Ma'lumotlaringiz to'liq saqlanadi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleInstallUpdate}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                >
+                  <span>O'rnatish va qayta ishga tushirish</span>
+                </button>
+              </div>
+            )}
+
+            {updateState === 'error' && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-center justify-between">
+                <span>❌ Xatolik: {updateError}</span>
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  className="text-[11px] font-bold underline hover:opacity-80 shrink-0"
+                >
+                  Qayta urinish
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Store Name Configuration */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
@@ -1589,6 +1931,37 @@ export default memo(function Settings() {
                 </div>
               </div>
 
+              {/* Telefondan kirish QR kodi va havolasi ruxsati */}
+              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                    <span className="text-blue-500">📲</span>
+                    Telefondan kirish QR kodi (Kassa oynasida ko'rsatish)
+                  </h4>
+                  <span className={`text-xs px-2.5 py-1 font-bold rounded-lg shrink-0 ${allowMobileQr ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'}`}>
+                    {allowMobileQr ? 'Ruxsat berilgan' : 'Ruxsat berilmagan'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                  Kassa va restoran oyna panellarida telefondan ulanish QR kodi va havolasi tugmasini ko'rsatish yoki yashirish. Sozlamani o'zgartirish uchun maxfiy PIN kod (xxMpos7532.) talab etiladi.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileQrPinModal(true);
+                    setMobileQrPinInput('');
+                    setMobileQrPinError('');
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    allowMobileQr
+                      ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                      : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                  }`}
+                >
+                  {allowMobileQr ? "Ruxsatni bekor qilish va yashirish (xxMpos7532.)" : "Ruxsat berish va ko'rsatish (xxMpos7532.)"}
+                </button>
+              </div>
+
               {/* Masofaviy boshqaruv (Telefon uchun) */}
               {isUnlocked && (
                 <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
@@ -1907,6 +2280,98 @@ export default memo(function Settings() {
                   </h3>
 
                 <div className="space-y-4">
+                  {/* Telegram Guruhga Zaxiralash */}
+                  <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10 space-y-4">
+                    <div className="flex items-center justify-between gap-3 border-b border-blue-100 dark:border-blue-900/30 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">✈️</span>
+                        <div>
+                          <h4 className="font-bold text-gray-900 dark:text-white text-sm">
+                            Telegram guruhga zaxiralash (Telegram Bot API)
+                          </h4>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            SQLite baza faylini avtomatik Telegram guruhga yuborish.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                          Telegram Bot Token:
+                        </label>
+                        <input
+                          type="text"
+                          value={telegramBotToken}
+                          onChange={e => setTelegramBotToken(e.target.value)}
+                          placeholder="8621843458:AAGBnjR3Lw..."
+                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                            Telegram Group Chat ID:
+                          </label>
+                          <button
+                            type="button"
+                            disabled={isDetectingTelegramChatId}
+                            onClick={handleDetectTelegramChatId}
+                            className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            {isDetectingTelegramChatId ? (
+                              <span className="w-3 h-3 border border-blue-500 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <span>🔍 ID ni aniqlash (/id)</span>
+                            )}
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={telegramChatId}
+                          onChange={e => setTelegramChatId(e.target.value)}
+                          placeholder="Masalan: -100xxxxxxxxxx"
+                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        💡 Guruh ID sini avto-aniqlash uchun: botni Telegram guruhga qo'shib, guruhda <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded font-bold text-blue-600 dark:text-blue-400">/id</code> yuboring va "ID ni aniqlash" tugmasini bosing.
+                      </p>
+
+                      <div className="flex gap-2 w-full sm:w-auto shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleSaveTelegramBackupSettings}
+                          className="px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Saqlash
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSendingTelegramBackup}
+                          onClick={handleSendTelegramBackup}
+                          className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
+                        >
+                          {isSendingTelegramBackup ? (
+                            <>
+                              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Yuborilmoqda...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>✈️ Telegram guruhga zaxiralash</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                     <div>
                       <h4 className="font-semibold text-gray-900 dark:text-gray-100">{t('exportDb')}</h4>

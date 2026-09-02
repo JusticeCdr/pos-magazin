@@ -218,8 +218,17 @@ function initDB() {
   if (!db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('gemini_api_key', '')").run();
   }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'telegram_bot_token'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_bot_token', '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'telegram_chat_id'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_chat_id', '')").run();
+  }
   if (!db.prepare("SELECT value FROM settings WHERE key = 'terminal_mode'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('terminal_mode', 'false')").run();
+  }
+  if (!db.prepare("SELECT value FROM settings WHERE key = 'allow_mobile_qr'").get()) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('allow_mobile_qr', 'false')").run();
   }
   if (!db.prepare("SELECT value FROM settings WHERE key = 'telegram_url'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_url', '')").run();
@@ -978,9 +987,9 @@ function addProduct(product) {
     if (product.name || barcode) {
       let existing = null;
       if (barcode) {
-        existing = db.prepare('SELECT id, stock, name, discount FROM products WHERE LOWER(name) = LOWER(?) OR barcode = ?').get(product.name, barcode);
+        existing = db.prepare('SELECT id, stock, name, discount, buy_price, cost_price FROM products WHERE LOWER(name) = LOWER(?) OR barcode = ?').get(product.name, barcode);
       } else {
-        existing = db.prepare('SELECT id, stock, name, discount FROM products WHERE LOWER(name) = LOWER(?)').get(product.name);
+        existing = db.prepare('SELECT id, stock, name, discount, buy_price, cost_price FROM products WHERE LOWER(name) = LOWER(?)').get(product.name);
       }
 
       if (existing) {
@@ -991,11 +1000,28 @@ function addProduct(product) {
         
         const buyPriceUsd = parseFloat(product.buy_price_usd) || 0;
         const usdRate = parseFloat(product.usd_rate) || 0;
+
+        const oldQty = existing.stock || 0;
+        const oldCostPrice = existing.cost_price || existing.buy_price || 0;
+
+        // AVCO Calculation
+        let newAvgCost = oldCostPrice;
+        if (addedQty > 0) {
+          const oldTotalValue = oldQty * oldCostPrice;
+          const newTotalValue = addedQty * newBuyPrice;
+          const totalQty = oldQty + addedQty;
+          if (totalQty > 0) {
+            newAvgCost = Math.round((oldTotalValue + newTotalValue) / totalQty);
+          }
+        } else {
+          newAvgCost = newBuyPrice > 0 ? newBuyPrice : oldCostPrice;
+        }
+
         db.prepare(`
           UPDATE products 
           SET stock = stock + ?, buy_price = ?, cost_price = ?, sell_price = ?, unit = ?, discount = ?, type = ?, group_id = ?, buy_price_usd = ?, usd_rate = ?
           WHERE id = ?
-        `).run(addedQty, newBuyPrice, newBuyPrice, newSellPrice, product.unit || 'dona', discount, product.type || 'ready_dish', product.group_id || null, buyPriceUsd, usdRate, existing.id);
+        `).run(addedQty, newBuyPrice, newAvgCost, newSellPrice, product.unit || 'dona', discount, product.type || 'ready_dish', product.group_id || null, buyPriceUsd, usdRate, existing.id);
         
         if (addedQty > 0) {
           logInventory({
@@ -1004,7 +1030,7 @@ function addProduct(product) {
             actionType: 'kirim',
             quantityChanged: +addedQty,
             userName: product.userName || '',
-            note: product.note || 'Mavjud tovar ustiga qo\'shildi'
+            note: product.note || `Mavjud tovar ustiga qo'shildi. Eski qoldiq: ${oldQty}, Yangi qoldiq: ${oldQty + addedQty}. Yangi o'rtacha tannarx: ${newAvgCost}`
           });
         }
         updateDependentDishesStocks(existing.id);
@@ -1081,7 +1107,7 @@ function batchAddProducts(products) {
 
 function updateProduct(id, product) {
   try {
-    const existing = db.prepare('SELECT stock, discount FROM products WHERE id = ?').get(id);
+    const existing = db.prepare('SELECT stock, discount, buy_price, cost_price FROM products WHERE id = ?').get(id);
     const oldQty = existing ? existing.stock : 0;
     const addedQty = parseFloat(product.stock) || 0;
     const newQty = oldQty + addedQty;
@@ -1095,6 +1121,22 @@ function updateProduct(id, product) {
     const buyPriceUsd = parseFloat(product.buy_price_usd) || 0;
     const usdRate = parseFloat(product.usd_rate) || 0;
 
+    const newBuyPrice = typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0);
+    const oldCostPrice = existing ? (existing.cost_price || existing.buy_price || 0) : 0;
+
+    // AVCO Calculation
+    let newAvgCost = oldCostPrice;
+    if (addedQty > 0) {
+      const oldTotalValue = oldQty * oldCostPrice;
+      const newTotalValue = addedQty * newBuyPrice;
+      const totalQty = oldQty + addedQty;
+      if (totalQty > 0) {
+        newAvgCost = Math.round((oldTotalValue + newTotalValue) / totalQty);
+      }
+    } else {
+      newAvgCost = oldCostPrice > 0 ? oldCostPrice : newBuyPrice;
+    }
+
     const stmt = db.prepare(`
       UPDATE products 
       SET name = ?, barcode = ?, buy_price = ?, cost_price = ?, sell_price = ?, stock = ?, unit = ?, discount = ?, printer_destination = ?, business_type = ?, category = ?, type = ?, group_id = ?, buy_price_usd = ?, usd_rate = ?
@@ -1104,8 +1146,8 @@ function updateProduct(id, product) {
     stmt.run(
       product.name,
       barcode,
-      typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0),
-      typeof product.buy_price === 'string' ? (parseInt(product.buy_price.replace(/\D/g, '')) || 0) : (parseFloat(product.buy_price) || 0), // cost_price gets buy_price
+      newBuyPrice,
+      newAvgCost,
       typeof product.sell_price === 'string' ? (parseInt(product.sell_price.replace(/\D/g, '')) || 0) : (parseFloat(product.sell_price) || 0),
       newQty,
       product.unit || 'dona',
@@ -1830,9 +1872,9 @@ function getReports(startDateISO, endDateISO) {
     totalDebtIssued = Math.max(0, totalDebtIssued - debtReduction);
 
     // 2. Total Profit Calculation
-    // Profit = (sell_price - buy_price) * (qty - refunded_qty) - discount_amount
+    // Profit = (sell_price - cost_price) * (qty - refunded_qty) - discount_amount
     const profitRow = db.prepare(`
-      SELECT SUM((si.price - IFNULL(p.buy_price, 0)) * (si.qty - si.refunded_qty)) as total_profit
+      SELECT SUM((si.price - COALESCE(NULLIF(p.cost_price, 0), p.buy_price, 0)) * (si.qty - si.refunded_qty)) as total_profit
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
@@ -1879,7 +1921,7 @@ function getReports(startDateISO, endDateISO) {
 
     // Calculate current warehouse valuation (only positive stock items count as assets)
     const valuation = db.prepare(`
-      SELECT SUM(IFNULL(buy_price, 0) * stock) as total_buy,
+      SELECT SUM(COALESCE(NULLIF(cost_price, 0), buy_price, 0) * stock) as total_buy,
              SUM(IFNULL(sell_price, 0) * stock) as total_sell
       FROM products
       WHERE business_type = ? AND stock > 0
@@ -2793,7 +2835,7 @@ function getTodayStats() {
     `).get();
 
     const profitRow = db.prepare(`
-      SELECT COALESCE(SUM((si.price - IFNULL(p.buy_price, 0)) * si.qty), 0) as gross_profit
+      SELECT COALESCE(SUM((si.price - COALESCE(NULLIF(p.cost_price, 0), p.buy_price, 0)) * si.qty), 0) as gross_profit
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id
@@ -3017,7 +3059,7 @@ async function getAiInsights() {
       SELECT 
         p.name, 
         SUM(si.qty - si.refunded_qty) as total_sold, 
-        SUM((si.qty - si.refunded_qty) * si.price - (p.buy_price * (si.qty - si.refunded_qty))) as total_profit,
+        SUM((si.qty - si.refunded_qty) * si.price - (COALESCE(NULLIF(p.cost_price, 0), p.buy_price, 0) * (si.qty - si.refunded_qty))) as total_profit,
         p.stock
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
@@ -3042,7 +3084,7 @@ async function getAiInsights() {
     `).get();
 
     const profitRow = db.prepare(`
-      SELECT SUM((si.price - IFNULL(p.buy_price, 0)) * (si.qty - si.refunded_qty)) as total_profit
+      SELECT SUM((si.price - COALESCE(NULLIF(p.cost_price, 0), p.buy_price, 0)) * (si.qty - si.refunded_qty)) as total_profit
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       LEFT JOIN products p ON p.id = si.product_id

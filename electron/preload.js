@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('api', {
   importDB:      ()        => ipcRenderer.invoke('import-db'),
   optimizeDatabase: ()     => ipcRenderer.invoke('optimize-database'),
   autoBackupDB:  ()        => ipcRenderer.invoke('auto-backup-db'),
+  sendTelegramBackup: (opts) => ipcRenderer.invoke('send-telegram-backup', opts),
+  getTelegramChatId: (token) => ipcRenderer.invoke('get-telegram-chat-id', token),
   writeOffProduct: (data)  => ipcRenderer.invoke('write-off-product', data),
   getWriteOffs:  ()        => ipcRenderer.invoke('get-write-offs'),
   getInventoryLogs: (opts) => ipcRenderer.invoke('get-inventory-logs', opts),
@@ -78,6 +80,17 @@ contextBridge.exposeInMainWorld('api', {
   getActivation: ()        => ipcRenderer.invoke('get-activation'),
   saveActivation:(fingerprint) => ipcRenderer.invoke('save-activation', fingerprint),
   clearActivation:()       => ipcRenderer.invoke('clear-activation'),
+  getAppVersion: ()        => ipcRenderer.invoke('get-app-version'),
+  checkUpdate:   ()        => ipcRenderer.invoke('check-update'),
+  startDownload: ()        => ipcRenderer.invoke('start-download'),
+  installUpdate: ()        => ipcRenderer.invoke('install-update'),
+  onUpdateStatus:(callback) => {
+    const channels = ['checking-for-update', 'update-available', 'update-not-available', 'download-progress', 'update-downloaded', 'update-error'];
+    channels.forEach(ch => {
+      ipcRenderer.removeAllListeners(ch);
+      ipcRenderer.on(ch, (_, data) => callback(ch, data));
+    });
+  },
   onMobileSalePrinted: (callback) => {
     ipcRenderer.removeAllListeners('mobile-sale-printed');
     ipcRenderer.on('mobile-sale-printed', (_, data) => callback(data));

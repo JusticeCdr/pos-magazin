@@ -1,0 +1,9 @@
+{
+  "short_name": "xxMpos",
+  "name": "xxMpos Mobile POS",
+  "start_url": "/mobile/",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "display": "standalone",
+  "orientation": "portrait"
+}
