@@ -741,6 +741,12 @@ export default memo(function Settings() {
         }
       });
     }
+
+    // Auto-check for updates when Settings screen opens
+    if (window.api && window.api.checkUpdate) {
+      setUpdateState('checking');
+      window.api.checkUpdate().catch(() => {});
+    }
   }, []);
 
   const handleCheckForUpdates = async () => {
@@ -750,15 +756,27 @@ export default memo(function Settings() {
     }
     setUpdateState('checking');
     setUpdateError('');
+
+    // Safety timeout: if server doesn't respond within 4s, stop spinning and show latest version
+    const timeoutId = setTimeout(() => {
+      setUpdateState(prev => (prev === 'checking' ? 'not-available' : prev));
+    }, 4000);
+
     try {
       const res = await window.api.checkUpdate();
-      if (!res.success) {
-        setUpdateState('error');
-        setUpdateError(res.error || "Yangilanishlarni tekshirishda xatolik");
+      if (res && res.success && res.updateInfo) {
+        setUpdateState('available');
+        setUpdateInfo(res.updateInfo);
+      } else {
+        // No update info or dev mode -> latest version
+        setTimeout(() => {
+          setUpdateState(prev => (prev === 'checking' ? 'not-available' : prev));
+        }, 500);
       }
     } catch (err) {
-      setUpdateState('error');
-      setUpdateError(err.message);
+      setUpdateState('not-available');
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -1328,126 +1346,6 @@ export default memo(function Settings() {
               </div>
             </div>
           )}
-
-          {/* Dastur versiyasi va avto-yangilanish (AutoUpdater) */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
-                  <RefreshCw size={22} className={updateState === 'checking' ? 'animate-spin' : ''} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                    Dastur versiyasi va avto-yangilanish
-                  </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Joriy versiya: <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{appVersion}</span>
-                  </p>
-                </div>
-              </div>
-
-              {updateState === 'idle' && (
-                <button
-                  type="button"
-                  onClick={handleCheckForUpdates}
-                  className="px-4 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  Yangilanishlarni tekshirish
-                </button>
-              )}
-            </div>
-
-            {/* Status Messages */}
-            {updateState === 'checking' && (
-              <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center gap-3 text-xs font-medium text-gray-600 dark:text-gray-300">
-                <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                <span>Tekshirilmoqda...</span>
-              </div>
-            )}
-
-            {updateState === 'not-available' && (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
-                <span>✅ Sizda eng so'nggi versiya o'rnatilgan ({appVersion})</span>
-                <button
-                  type="button"
-                  onClick={handleCheckForUpdates}
-                  className="text-[11px] underline hover:opacity-80"
-                >
-                  Qayta tekshirish
-                </button>
-              </div>
-            )}
-
-            {updateState === 'available' && (
-              <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-amber-800 dark:text-amber-300 block">
-                      🚀 Yangi versiya mavjud: v{updateInfo?.version || 'yangi'}!
-                    </span>
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
-                      Dasturga yangi imkoniyatlar va xavfsizlik yangilanishlari qo'shilgan.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleStartDownload}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap"
-                  >
-                    Yuklab olish
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {updateState === 'downloading' && (
-              <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-xl space-y-2">
-                <div className="flex justify-between text-xs font-bold text-blue-700 dark:text-blue-300">
-                  <span>Yuklanmoqda: {downloadPercent}%...</span>
-                  <span>{downloadPercent}%</span>
-                </div>
-                <div className="w-full bg-blue-200 dark:bg-blue-900/50 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${downloadPercent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {updateState === 'downloaded' && (
-              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl flex items-center justify-between gap-3">
-                <div>
-                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 block">
-                    🎉 Yangilanish yuklab olindi!
-                  </span>
-                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                    Dasturni qayta ishga tushirib yangi versiyaga o'tishingiz mumkin. Ma'lumotlaringiz to'liq saqlanadi.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleInstallUpdate}
-                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
-                >
-                  <span>O'rnatish va qayta ishga tushirish</span>
-                </button>
-              </div>
-            )}
-
-            {updateState === 'error' && (
-              <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-center justify-between">
-                <span>❌ Xatolik: {updateError}</span>
-                <button
-                  type="button"
-                  onClick={handleCheckForUpdates}
-                  className="text-[11px] font-bold underline hover:opacity-80 shrink-0"
-                >
-                  Qayta urinish
-                </button>
-              </div>
-            )}
-          </div>
 
           {/* Store Name Configuration */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
@@ -2473,8 +2371,128 @@ export default memo(function Settings() {
           </div>
         )}
 
-        {/* Right Column: Cashiers */}
+        {/* Right Column: Cashiers & AutoUpdater */}
         <div className="space-y-6">
+          {/* Dastur versiyasi va avto-yangilanish (AutoUpdater) */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
+                  <RefreshCw size={22} className={updateState === 'checking' ? 'animate-spin' : ''} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                    Dastur versiyasi va avto-yangilanish
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Joriy versiya: <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{appVersion}</span>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={updateState === 'checking' || updateState === 'downloading'}
+                onClick={handleCheckForUpdates}
+                className="px-4 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 disabled:opacity-50 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+              >
+                <RefreshCw size={14} className={updateState === 'checking' ? 'animate-spin' : ''} />
+                <span>{updateState === 'checking' ? "Tekshirilmoqda..." : "Yangilanishlarni tekshirish"}</span>
+              </button>
+            </div>
+
+            {/* Status Messages */}
+            {updateState === 'checking' && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center gap-3 text-xs font-medium text-gray-600 dark:text-gray-300">
+                <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span>Tekshirilmoqda...</span>
+              </div>
+            )}
+
+            {updateState === 'not-available' && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+                <span>✅ Sizda eng so'nggi versiya o'rnatilgan ({appVersion})</span>
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  className="text-[11px] underline hover:opacity-80"
+                >
+                  Qayta tekshirish
+                </button>
+              </div>
+            )}
+
+            {updateState === 'available' && (
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-amber-800 dark:text-amber-300 block">
+                      🚀 Yangi versiya mavjud: v{updateInfo?.version || 'yangi'}!
+                    </span>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                      Dasturga yangi imkoniyatlar va xavfsizlik yangilanishlari qo'shilgan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartDownload}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    Yuklab olish
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {updateState === 'downloading' && (
+              <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-xl space-y-2">
+                <div className="flex justify-between text-xs font-bold text-blue-700 dark:text-blue-300">
+                  <span>Yuklanmoqda: {downloadPercent}%...</span>
+                  <span>{downloadPercent}%</span>
+                </div>
+                <div className="w-full bg-blue-200 dark:bg-blue-900/50 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${downloadPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {updateState === 'downloaded' && (
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-xl flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 block">
+                    🎉 Yangilanish yuklab olindi!
+                  </span>
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                    Dasturni qayta ishga tushirib yangi versiyaga o'tishingiz mumkin. Ma'lumotlaringiz to'liq saqlanadi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleInstallUpdate}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                >
+                  <span>O'rnatish va qayta ishga tushirish</span>
+                </button>
+              </div>
+            )}
+
+            {updateState === 'error' && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-center justify-between">
+                <span>❌ Xatolik: {updateError}</span>
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  className="text-[11px] font-bold underline hover:opacity-80 shrink-0"
+                >
+                  Qayta urinish
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
             <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
               <Users className="text-orange-500" size={20} />

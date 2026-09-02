@@ -451,10 +451,36 @@ function getMachineId() {
 async function autoBackupDB() {
   try {
     const dbSrc = getDBPath();
-    const backupDir = path.join(app.getPath('desktop'), 'pos_backups');
+    // Primary directory on C: drive (C:\xxMpos_Backups)
+    let backupDir = 'C:\\xxMpos_Backups';
+    try {
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+    } catch (_) {
+      // Fallback to AppData on C: drive if direct C:\ root creation is blocked by Windows permissions
+      backupDir = path.join(app.getPath('userData'), 'pos_backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+    }
 
-    // Ensure the backup directory exists
-    await fs.promises.mkdir(backupDir, { recursive: true });
+    // Migrate existing backups from Desktop to C: drive so no old backups are ever lost
+    const desktopBackupDir = path.join(app.getPath('desktop'), 'pos_backups');
+    if (fs.existsSync(desktopBackupDir) && desktopBackupDir !== backupDir) {
+      try {
+        const desktopFiles = await fs.promises.readdir(desktopBackupDir);
+        for (const file of desktopFiles) {
+          if (file.startsWith('pos_backup_') && file.endsWith('.db')) {
+            const src = path.join(desktopBackupDir, file);
+            const dest = path.join(backupDir, file);
+            if (!fs.existsSync(dest)) {
+              await fs.promises.copyFile(src, dest);
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     // Name: pos_backup_2026-05-24_14-30-00.db (Local time, no colons allowed in Windows)
     const now = new Date();
@@ -2309,9 +2335,18 @@ if (!gotTheLock) {
   safeHandle('get-app-version', () => app.getVersion());
   safeHandle('check-update', async () => {
     try {
+      if (!app.isPackaged) {
+        // In dev mode, emit update-not-available immediately so UI doesn't spin endlessly
+        sendUpdateStatus('update-not-available');
+        return { success: true, updateInfo: null };
+      }
       const result = await autoUpdater.checkForUpdates();
+      if (!result || !result.updateInfo) {
+        sendUpdateStatus('update-not-available');
+      }
       return { success: true, updateInfo: result ? result.updateInfo : null };
     } catch (err) {
+      sendUpdateStatus('update-not-available');
       return { success: false, error: err.message };
     }
   });
