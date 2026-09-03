@@ -56,7 +56,9 @@ function initDB() {
   try { db.exec("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'dona';"); } catch (_) {}
   try { db.exec("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0;"); } catch (_) {} 
   try { db.exec("ALTER TABLE products ADD COLUMN buy_price_usd REAL DEFAULT 0;"); } catch (_) {}
-  try { db.exec("ALTER TABLE products ADD COLUMN usd_rate REAL DEFAULT 0;"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN discount REAL DEFAULT 0;"); } catch (_) {}
+  try { db.exec("ALTER TABLE products ADD COLUMN is_stopped INTEGER DEFAULT 0;"); } catch (_) {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_products_stopped ON products(is_stopped);"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN cashier_name TEXT DEFAULT 'Kassir';"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN is_closed INTEGER DEFAULT 0;"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN status TEXT DEFAULT 'completed';"); } catch (_) {}
@@ -442,9 +444,15 @@ function initDB() {
   try { db.exec("ALTER TABLE sales ADD COLUMN waiter_name TEXT"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN waiter_percentage REAL DEFAULT 0"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN waiter_commission REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN service_fee_percent REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN service_fee_amount REAL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE sales ADD COLUMN is_takeaway INTEGER DEFAULT 0"); } catch (_) {}
   try { db.exec("ALTER TABLE sales ADD COLUMN comment TEXT DEFAULT ''"); } catch (_) {}
   try { db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('terminal_mode', '0')"); } catch (_) {}
+  try { db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cafe_service_percent', '10')"); } catch (_) {}
+  try { db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cafe_service_enabled', 'true')"); } catch (_) {}
   try { db.exec("ALTER TABLE waiters ADD COLUMN salary REAL NOT NULL DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE cashiers ADD COLUMN percentage REAL NOT NULL DEFAULT 0"); } catch (_) {}
 
   // Create attendance table
   db.exec(`
@@ -476,6 +484,10 @@ function initDB() {
   try { db.exec("ALTER TABLE products ADD COLUMN type TEXT DEFAULT 'ready_dish'"); } catch (_) {}
   try { db.exec("ALTER TABLE products ADD COLUMN group_id INTEGER"); } catch (_) {}
   try { db.exec("ALTER TABLE restaurant_order_items ADD COLUMN added_at DATETIME DEFAULT CURRENT_TIMESTAMP"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_orders ADD COLUMN order_number INTEGER"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_orders ADD COLUMN kitchen_status TEXT NOT NULL DEFAULT 'preparing'"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'dine_in'"); } catch (_) {}
+  try { db.exec("ALTER TABLE restaurant_orders ADD COLUMN ready_at DATETIME"); } catch (_) {}
 
   // Insert default cashiers if empty
   const cashierCount = db.prepare("SELECT COUNT(*) as count FROM cashiers").get().count;
@@ -837,20 +849,20 @@ function verifyPin(pin) {
 
 function getCashiers() {
   try {
-    const rows = db.prepare("SELECT id, name, pin, role, salary FROM cashiers ORDER BY id ASC").all();
+    const rows = db.prepare("SELECT id, name, pin, role, salary, percentage FROM cashiers ORDER BY id ASC").all();
     return { success: true, data: rows };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-function addCashier(name, pin, role = 'cashier', salary = 0) {
+function addCashier(name, pin, role = 'cashier', salary = 0, percentage = 0) {
   try {
     // Check if pin exists
     const exists = db.prepare("SELECT id FROM cashiers WHERE pin = ?").get(pin);
     if (exists) return { success: false, error: 'pin_exists' };
     
-    db.prepare("INSERT INTO cashiers (name, pin, role, salary) VALUES (?, ?, ?, ?)").run(name, pin, role, salary);
+    db.prepare("INSERT INTO cashiers (name, pin, role, salary, percentage) VALUES (?, ?, ?, ?, ?)").run(name, pin, role, salary, percentage);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -921,17 +933,93 @@ function getActiveBusinessType() {
   }
 }
 
-function getProducts() {
-  const bType = getActiveBusinessType();
-  if (bType === 'restaurant') {
-    return db.prepare('SELECT * FROM products ORDER BY id DESC').all();
+function attachStopStatusToProducts(products) {
+  if (!products || products.length === 0) return products;
+  try {
+    const allIngredients = db.prepare(`
+      SELECT i.parent_product_id, i.ingredient_product_id, i.quantity, p.name, p.stock, p.unit, p.is_stopped
+      FROM product_ingredients i
+      JOIN products p ON i.ingredient_product_id = p.id
+    `).all();
+
+    const ingredientsByParent = {};
+    for (const ing of allIngredients) {
+      if (!ingredientsByParent[ing.parent_product_id]) {
+        ingredientsByParent[ing.parent_product_id] = [];
+      }
+      ingredientsByParent[ing.parent_product_id].push(ing);
+    }
+
+    for (const p of products) {
+      p.is_stopped = p.is_stopped ? 1 : 0;
+      p.stop_reason = null;
+
+      if (p.is_stopped === 1) {
+        p.stop_reason = "Stop-listda";
+      } else if (p.business_type === 'restaurant' && p.type === 'ready_dish') {
+        const ings = ingredientsByParent[p.id];
+        if (ings && ings.length > 0) {
+          for (const ing of ings) {
+            if (ing.is_stopped === 1) {
+              p.is_stopped = 1;
+              p.stop_reason = `Tarkibidagi "${ing.name}" stop-listda`;
+              break;
+            } else if (ing.stock <= 0 && ing.quantity > 0) {
+              p.is_stopped = 1;
+              p.stop_reason = `Tarkibidagi "${ing.name}" tugagan (0 ${ing.unit || 'dona'})`;
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("attachStopStatusToProducts error:", err);
   }
-  return db.prepare('SELECT * FROM products WHERE business_type = ? ORDER BY id DESC').all(bType);
+  return products;
 }
 
-// Always returns only restaurant menu items (used by waiter mobile app)
+function toggleProductStop(productId, isStopped) {
+  try {
+    const val = isStopped ? 1 : 0;
+    db.prepare('UPDATE products SET is_stopped = ? WHERE id = ?').run(val, productId);
+
+    const prod = db.prepare('SELECT name, type, business_type FROM products WHERE id = ?').get(productId);
+    if (prod) {
+      logInventory({
+        productId,
+        productName: prod.name,
+        actionType: isStopped ? 'stop_list' : 'stop_list_ochildi',
+        quantityChanged: 0,
+        userName: 'Admin/Kassa',
+        note: isStopped ? 'Mahsulot stop-listga kiritildi' : 'Mahsulot stop-listdan chiqarildi'
+      });
+
+      // If it's an ingredient or dish, update dependent dishes stocks
+      updateDependentDishesStocks(productId);
+    }
+
+    return { success: true, is_stopped: val };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getProducts() {
+  const bType = getActiveBusinessType();
+  let rows;
+  if (bType === 'restaurant') {
+    rows = db.prepare('SELECT * FROM products ORDER BY id DESC').all();
+  } else {
+    rows = db.prepare('SELECT * FROM products WHERE business_type = ? ORDER BY id DESC').all(bType);
+  }
+  return attachStopStatusToProducts(rows);
+}
+
+// Always returns only restaurant sellable menu items (used by waiter mobile app and restaurant cashier)
 function getRestaurantOnlyProducts() {
-  return db.prepare("SELECT * FROM products WHERE business_type = 'restaurant' ORDER BY category ASC, name ASC").all();
+  const rows = db.prepare("SELECT * FROM products WHERE business_type = 'restaurant' AND (type != 'raw_material' OR type IS NULL) ORDER BY category ASC, name ASC").all();
+  return attachStopStatusToProducts(rows);
 }
 
 
@@ -1285,18 +1373,19 @@ function searchProduct(query) {
     const byBarcode = db.prepare(
       'SELECT * FROM products WHERE barcode = ? LIMIT 1'
     ).all(term);
-    if (byBarcode.length > 0) return byBarcode;
+    if (byBarcode.length > 0) return attachStopStatusToProducts(byBarcode);
 
     // Fallback: name LIKE search
-    return db.prepare(
+    const rows = db.prepare(
       "SELECT * FROM products WHERE my_lower(name) LIKE my_lower(?) ORDER BY name LIMIT 20"
     ).all(`%${term}%`);
+    return attachStopStatusToProducts(rows);
   } catch (err) {
     return [];
   }
 }
 
-function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kassir', discountPercent = 0, device = 'desktop', waiterId = null, comment = '') {
+function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kassir', discountPercent = 0, device = 'desktop', waiterId = null, comment = '', serviceFeePercent = 0, serviceFeeAmount = 0, isTakeaway = 0) {
   try {
     db.exec('BEGIN TRANSACTION');
 
@@ -1312,7 +1401,21 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     }, 0);
 
     const discountAmount = Math.round((subtotal * pct) / 100);
-    const finalTotal = subtotal - discountAmount;
+    const subtotalAfterDiscount = subtotal - discountAmount;
+
+    // Service fee calculation (0 if takeaway/saboy)
+    const isSaboy = isTakeaway === 1 || isTakeaway === true;
+    let actualServicePercent = isSaboy ? 0 : (parseFloat(serviceFeePercent) || 0);
+    let actualServiceAmount = 0;
+    if (!isSaboy) {
+      if (serviceFeeAmount && parseFloat(serviceFeeAmount) > 0) {
+        actualServiceAmount = parseFloat(serviceFeeAmount);
+      } else if (actualServicePercent > 0) {
+        actualServiceAmount = Math.round((subtotalAfterDiscount * actualServicePercent) / 100);
+      }
+    }
+
+    const finalTotal = subtotalAfterDiscount + actualServiceAmount;
     let customerId = null;
 
     // 1. Handle Customer & Debt
@@ -1354,7 +1457,7 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
       if (w) {
         waiterName = w.name;
         waiterPercentage = w.percentage || 0;
-        waiterCommission = Math.round((finalTotal * waiterPercentage) / 100);
+        waiterCommission = Math.round((subtotalAfterDiscount * waiterPercentage) / 100);
       }
     }
 
@@ -1362,11 +1465,13 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
       INSERT INTO sales (
         total_amount, payment_method, customer_id, cashier_name, 
         shift_receipt_number, original_total, discount_percent, discount_amount, 
+        service_fee_percent, service_fee_amount, is_takeaway,
         device, waiter_id, waiter_name, waiter_percentage, waiter_commission, comment, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       finalTotal, paymentMethod, customerId, cashierName, 
       shiftReceiptNumber, originalTotal, pct, discountAmount, 
+      actualServicePercent, actualServiceAmount, isSaboy ? 1 : 0,
       device, waiterId, waiterName, waiterPercentage, waiterCommission, comment || '',
       getLocalTimeStr()
     );
@@ -1384,18 +1489,27 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
     const saleNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}${discountLabel})${device === 'mobile' ? ' (Mobil)' : ''}`;
 
     for (const item of cartItems) {
-      // Check recipe ingredients stock level!
+      // Check stop-list for product itself
+      const prodCheck = db.prepare('SELECT id, name, is_stopped FROM products WHERE id = ?').get(item.id);
+      if (prodCheck && prodCheck.is_stopped === 1) {
+        throw new Error(`stock_error:${prodCheck.name} stop-listda! Uni sotish taqiqlangan.`);
+      }
+
+      // Check recipe ingredients stock level and stop-list!
       const ingredients = db.prepare(`
-        SELECT i.ingredient_product_id, i.quantity, p.name, p.stock, p.unit
+        SELECT i.ingredient_product_id, i.quantity, p.name, p.stock, p.unit, p.is_stopped
         FROM product_ingredients i
         JOIN products p ON i.ingredient_product_id = p.id
         WHERE i.parent_product_id = ?
       `).all(item.id);
 
       for (const ing of ingredients) {
+        if (ing.is_stopped === 1) {
+          throw new Error(`stock_error:Tarkibidagi "${ing.name}" stop-listda! Uni sotish taqiqlangan.`);
+        }
         const requiredQty = ing.quantity * item.qty;
         if (ing.stock < requiredQty) {
-          throw new Error(`stock_error:Tarkibdagi ${ing.name}:${requiredQty}:${ing.stock}`);
+          throw new Error(`stock_error:Tarkibidagi "${ing.name}" yetarli emas (Kerak: ${requiredQty}, Mavjud: ${ing.stock})`);
         }
       }
 
@@ -1961,7 +2075,7 @@ function getReports(startDateISO, endDateISO) {
     `).all(startDateISO, endDateISO);
 
     const cashiersList = db.prepare(`
-      SELECT id, name, role, salary FROM cashiers
+      SELECT id, name, role, salary, percentage FROM cashiers
     `).all();
 
     const waitersList = db.prepare(`
@@ -2008,14 +2122,31 @@ function getReports(startDateISO, endDateISO) {
       waiterCommMap[row.waiter_id] = row.comm;
     }
 
+    // Calculate total service fees collected
+    const serviceFeesRow = db.prepare(`
+      SELECT SUM(service_fee_amount) as total_service_fees
+      FROM sales
+      WHERE created_at >= ? AND created_at <= ? AND status != 'refunded'
+    `).get(startDateISO, endDateISO);
+    const totalServiceFees = serviceFeesRow?.total_service_fees || 0;
+
     let totalSalaries = 0;
+    let totalStaffCommissions = 0;
+
     for (const c of cashiersList) {
       const presentDays = cashierAttMap[c.id] || 0;
       c.present_days = presentDays;
       c.earned_salary = (c.salary / 30) * presentDays;
-      c.total_earned = c.earned_salary;
+      if (c.percentage > 0) {
+        c.commissions = Math.round((totalRevenue * c.percentage) / 100);
+      } else {
+        c.commissions = 0;
+      }
+      c.total_earned = c.earned_salary + c.commissions;
       totalSalaries += c.earned_salary;
+      totalStaffCommissions += c.commissions;
     }
+
     for (const w of waitersList) {
       const presentDays = waiterAttMap[w.id] || 0;
       w.present_days = presentDays;
@@ -2030,7 +2161,8 @@ function getReports(startDateISO, endDateISO) {
       FROM sales
       WHERE created_at >= ? AND created_at <= ? AND status != 'refunded'
     `).get(startDateISO, endDateISO);
-    const totalCommissions = commissionsRow?.total_commissions || 0;
+    const totalWaitersCommissions = commissionsRow?.total_commissions || 0;
+    const totalCommissions = totalWaitersCommissions + totalStaffCommissions;
 
     const netProfit = totalProfit - totalExpenses - totalSalaries - totalCommissions;
 
@@ -2053,6 +2185,7 @@ function getReports(startDateISO, endDateISO) {
         waitersList,
         totalSalaries,
         totalCommissions,
+        totalServiceFees,
         netProfit
       }
     };
@@ -3280,7 +3413,31 @@ function getRestaurantTables() {
           JOIN waiters w ON o.waiter_id = w.id 
           WHERE o.table_id = t.id AND o.status = 'active' 
           LIMIT 1
-        ) as waiter_name
+        ) as waiter_name,
+        (
+          SELECT o.kitchen_status 
+          FROM restaurant_orders o 
+          WHERE o.table_id = t.id AND o.status = 'active' 
+          LIMIT 1
+        ) as kitchen_status,
+        (
+          SELECT o.order_number 
+          FROM restaurant_orders o 
+          WHERE o.table_id = t.id AND o.status = 'active' 
+          LIMIT 1
+        ) as order_number,
+        (
+          SELECT o.id 
+          FROM restaurant_orders o 
+          WHERE o.table_id = t.id AND o.status = 'active' 
+          LIMIT 1
+        ) as order_id,
+        (
+          SELECT o.ready_at 
+          FROM restaurant_orders o 
+          WHERE o.table_id = t.id AND o.status = 'active' 
+          LIMIT 1
+        ) as ready_at
       FROM restaurant_tables t
       ORDER BY t.id ASC
     `).all();
@@ -3367,7 +3524,7 @@ function deleteRestaurantZone(name) {
 
 function getActiveOrderForTable(tableId) {
   try {
-    const order = db.prepare("SELECT id, waiter_id, total_amount, status, created_at FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    const order = db.prepare("SELECT id, table_id, waiter_id, total_amount, status, kitchen_status, order_number, order_type, ready_at, created_at FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
     if (!order) {
       return { success: true, data: null };
     }
@@ -3400,24 +3557,56 @@ function saveRestaurantOrder(tableId, waiterId, cartItems) {
       return { success: true };
     }
 
+    // Check stop-list for all cart items
+    for (const item of cartItems) {
+      const p = db.prepare('SELECT id, name, is_stopped FROM products WHERE id = ?').get(item.id);
+      if (p && p.is_stopped === 1) {
+        throw new Error(`"${p.name}" stop-listda! Uni buyurtmaga qo'shib bo'lmaydi.`);
+      }
+      if (p) {
+        const ings = db.prepare(`
+          SELECT p.name, p.is_stopped
+          FROM product_ingredients i
+          JOIN products p ON i.ingredient_product_id = p.id
+          WHERE i.parent_product_id = ?
+        `).all(p.id);
+        for (const ing of ings) {
+          if (ing.is_stopped === 1) {
+            throw new Error(`"${p.name}" taomi tarkibidagi "${ing.name}" stop-listda! Uni buyurtmaga qo'shib bo'lmaydi.`);
+          }
+        }
+      }
+    }
+
     // Calculate total amount
     let totalAmount = 0;
     for (const item of cartItems) {
       totalAmount += (item.qty * item.price);
     }
     
+    const table = db.prepare("SELECT name, zone FROM restaurant_tables WHERE id = ?").get(tableId);
+    const orderType = (table && table.zone === 'Dostavka') ? 'takeaway' : 'dine_in';
+
     // Check if there is an active order
-    let order = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    let order = db.prepare("SELECT id, order_number, kitchen_status FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
     let orderId;
+    let orderNumber;
     if (order) {
       orderId = order.id;
+      orderNumber = order.order_number;
+      if (!orderNumber) {
+        const lastOrd = db.prepare("SELECT order_number FROM restaurant_orders WHERE order_number IS NOT NULL ORDER BY id DESC LIMIT 1").get();
+        orderNumber = (lastOrd && lastOrd.order_number >= 1 && lastOrd.order_number < 999) ? lastOrd.order_number + 1 : 1;
+      }
       // Update order
-      db.prepare("UPDATE restaurant_orders SET total_amount = ?, waiter_id = ? WHERE id = ?").run(totalAmount, waiterId, orderId);
+      db.prepare("UPDATE restaurant_orders SET total_amount = ?, waiter_id = ?, order_type = ?, order_number = ? WHERE id = ?").run(totalAmount, waiterId, orderType, orderNumber, orderId);
       // Delete old items
       db.prepare("DELETE FROM restaurant_order_items WHERE order_id = ?").run(orderId);
     } else {
-      // Insert new order
-      const info = db.prepare("INSERT INTO restaurant_orders (table_id, waiter_id, total_amount, status) VALUES (?, ?, ?, 'active')").run(tableId, waiterId, totalAmount);
+      // Insert new order with cyclic number 1..999
+      const lastOrd = db.prepare("SELECT order_number FROM restaurant_orders WHERE order_number IS NOT NULL ORDER BY id DESC LIMIT 1").get();
+      orderNumber = (lastOrd && lastOrd.order_number >= 1 && lastOrd.order_number < 999) ? lastOrd.order_number + 1 : 1;
+      const info = db.prepare("INSERT INTO restaurant_orders (table_id, waiter_id, total_amount, status, kitchen_status, order_number, order_type) VALUES (?, ?, ?, 'active', 'preparing', ?, ?)").run(tableId, waiterId, totalAmount, orderNumber, orderType);
       orderId = info.lastInsertRowid;
     }
     
@@ -3434,7 +3623,7 @@ function saveRestaurantOrder(tableId, waiterId, cartItems) {
     
     db.prepare("COMMIT").run();
     
-    return { success: true, orderId };
+    return { success: true, orderId, orderNumber };
   } catch (err) {
     try { db.prepare("ROLLBACK").run(); } catch (_) {}
     return { success: false, error: err.message };
@@ -3455,7 +3644,7 @@ function deleteTableIfDelivery(tableId) {
   }
 }
 
-function closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment = '') {
+function closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment = '', serviceFeePercent = 0, serviceFeeAmount = 0, isTakeaway = 0) {
   try {
     // Find active order
     const orderRes = getActiveOrderForTable(tableId);
@@ -3463,6 +3652,9 @@ function closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo,
       return { success: false, error: 'No active order for this table' };
     }
     const { order, items } = orderRes.data;
+
+    const table = db.prepare("SELECT name, zone FROM restaurant_tables WHERE id = ?").get(tableId);
+    const isDeliveryOrTakeaway = isTakeaway || (table && table.zone === 'Dostavka') ? 1 : 0;
     
     // Call processSale
     const cartItems = items.map(it => ({
@@ -3475,14 +3667,26 @@ function closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo,
     }));
     
     // 1. Execute standard checkout first (this performs stock check and deduction)
-    const saleResult = processSale(cartItems, paymentMethod, customerInfo, cashierName, discountPercent, 'mobile', order.waiter_id, comment);
+    const saleResult = processSale(
+      cartItems,
+      paymentMethod,
+      customerInfo,
+      cashierName,
+      discountPercent,
+      'mobile',
+      order.waiter_id,
+      comment,
+      isDeliveryOrTakeaway ? 0 : serviceFeePercent,
+      isDeliveryOrTakeaway ? 0 : serviceFeeAmount,
+      isDeliveryOrTakeaway
+    );
     
     if (saleResult && saleResult.success) {
       // 2. If checkout succeeded, run a transaction to close restaurant order and free table
       db.prepare("BEGIN TRANSACTION").run();
       try {
         // Mark order as completed
-        db.prepare("UPDATE restaurant_orders SET status = 'completed' WHERE id = ?").run(order.id);
+        db.prepare("UPDATE restaurant_orders SET status = 'completed', kitchen_status = 'completed' WHERE id = ?").run(order.id);
         
         // Mark table as free, reset locks, printed status, and opened_at
         db.prepare("UPDATE restaurant_tables SET status = 'free', is_printed = 0, locked_by = NULL, opened_at = NULL WHERE id = ?").run(tableId);
@@ -3532,20 +3736,27 @@ function transferRestaurantTable(fromTableId, toTableId) {
       return { success: false, error: 'Buyurtma topilmadi' };
     }
 
+    const activeTargetOrder = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(toTableId);
     const targetTable = db.prepare("SELECT status FROM restaurant_tables WHERE id = ?").get(toTableId);
-    if (targetTable && targetTable.status === 'occupied') {
+    if (activeTargetOrder || (targetTable && targetTable.status === 'occupied')) {
       db.prepare("ROLLBACK").run();
       return { success: false, error: 'Nishon stol band' };
     }
 
-    const fromTable = db.prepare("SELECT opened_at FROM restaurant_tables WHERE id = ?").get(fromTableId);
+    const fromTable = db.prepare("SELECT opened_at, is_printed, zone FROM restaurant_tables WHERE id = ?").get(fromTableId);
     const openedAt = fromTable ? fromTable.opened_at : null;
+    const isPrinted = fromTable ? fromTable.is_printed : 0;
 
     db.prepare("UPDATE restaurant_orders SET table_id = ? WHERE id = ?").run(toTableId, order.id);
-    db.prepare("UPDATE restaurant_tables SET status = 'free', opened_at = NULL WHERE id = ?").run(fromTableId);
-    db.prepare("UPDATE restaurant_tables SET status = 'occupied', opened_at = ? WHERE id = ?").run(openedAt, toTableId);
+    db.prepare("UPDATE restaurant_tables SET status = 'free', opened_at = NULL, is_printed = 0, locked_by = NULL WHERE id = ?").run(fromTableId);
+    db.prepare("UPDATE restaurant_tables SET status = 'occupied', opened_at = ?, is_printed = ?, locked_by = NULL WHERE id = ?").run(openedAt, isPrinted, toTableId);
 
     db.prepare("COMMIT").run();
+
+    if (fromTable && fromTable.zone === 'Dostavka') {
+      deleteTableIfDelivery(fromTableId);
+    }
+
     return { success: true };
   } catch (err) {
     try { db.prepare("ROLLBACK").run(); } catch (_) {}
@@ -3852,14 +4063,20 @@ function setTablePrePrinted(tableId, isPrinted) {
   }
 }
 
-function getWaitersReport(startDateISO, endDateISO, waiterId = null) {
+function getWaitersReport(startDateISO, endDateISO, waiterId = null, period = null) {
   try {
+    const isCurrentShift = (startDateISO === 'shift' || period === 'shift');
     const sanitizeDate = (d) => {
       if (!d) return d;
       return d.replace('T', ' ').replace('Z', '').substring(0, 19);
     };
-    const start = sanitizeDate(startDateISO);
-    const end = sanitizeDate(endDateISO);
+    const start = isCurrentShift ? null : sanitizeDate(startDateISO);
+    const end = isCurrentShift ? null : sanitizeDate(endDateISO);
+
+    const dateFilter = isCurrentShift
+      ? "s.is_closed = 0"
+      : "s.created_at >= ? AND s.created_at <= ?";
+    const dateParams = isCurrentShift ? [] : [start, end];
 
     if (waiterId) {
       // 1. Consolidated stats for single waiter
@@ -3868,34 +4085,38 @@ function getWaitersReport(startDateISO, endDateISO, waiterId = null) {
           w.id,
           w.name,
           w.percentage,
+          w.salary,
           COUNT(s.id) as total_receipts,
           IFNULL(SUM(s.total_amount), 0) as total_sales,
           IFNULL(SUM(s.waiter_commission), 0) as total_commission
         FROM waiters w
-        LEFT JOIN sales s ON s.waiter_id = w.id AND s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+        LEFT JOIN sales s ON s.waiter_id = w.id AND ${dateFilter} AND s.status != 'refunded'
         WHERE w.id = ?
         GROUP BY w.id
-      `).get(start, end, waiterId);
+      `).get(...dateParams, waiterId);
 
       // 2. Detailed list of receipts
       const receipts = db.prepare(`
         SELECT 
-          id,
-          shift_receipt_number,
-          total_amount,
-          payment_method,
-          created_at,
-          waiter_percentage,
-          waiter_commission
-        FROM sales
-        WHERE waiter_id = ? AND created_at >= ? AND created_at <= ? AND status != 'refunded'
-        ORDER BY created_at DESC
-      `).all(waiterId, start, end);
+          s.id,
+          s.shift_receipt_number,
+          s.total_amount,
+          s.payment_method,
+          s.created_at,
+          s.waiter_percentage,
+          s.waiter_commission,
+          s.service_fee_percent,
+          s.service_fee_amount,
+          s.is_takeaway
+        FROM sales s
+        WHERE s.waiter_id = ? AND ${dateFilter} AND s.status != 'refunded'
+        ORDER BY s.created_at DESC
+      `).all(waiterId, ...dateParams);
 
       return { 
         success: true, 
         data: { 
-          waiter: stats || { id: waiterId, name: 'Ochirilgan ofitsiant', percentage: 0, total_receipts: 0, total_sales: 0, total_commission: 0 }, 
+          waiter: stats || { id: waiterId, name: 'Ochirilgan ofitsiant', percentage: 0, salary: 0, total_receipts: 0, total_sales: 0, total_commission: 0 }, 
           receipts 
         } 
       };
@@ -3906,29 +4127,31 @@ function getWaitersReport(startDateISO, endDateISO, waiterId = null) {
           w.id,
           w.name,
           w.percentage,
+          w.salary,
           COUNT(s.id) as total_receipts,
           IFNULL(SUM(s.total_amount), 0) as total_sales,
           IFNULL(SUM(s.waiter_commission), 0) as total_commission
         FROM waiters w
-        LEFT JOIN sales s ON s.waiter_id = w.id AND s.created_at >= ? AND s.created_at <= ? AND s.status != 'refunded'
+        LEFT JOIN sales s ON s.waiter_id = w.id AND ${dateFilter} AND s.status != 'refunded'
         GROUP BY w.id
         ORDER BY total_sales DESC
-      `).all(start, end);
+      `).all(...dateParams);
 
       // Also get deleted waiters who have sales in this period
       const deletedRows = db.prepare(`
         SELECT 
-          waiter_id as id,
-          waiter_name as name,
-          waiter_percentage as percentage,
-          COUNT(id) as total_receipts,
-          IFNULL(SUM(total_amount), 0) as total_sales,
-          IFNULL(SUM(waiter_commission), 0) as total_commission
-        FROM sales
-        WHERE waiter_id IS NOT NULL AND waiter_id NOT IN (SELECT id FROM waiters) AND created_at >= ? AND created_at <= ? AND status != 'refunded'
-        GROUP BY waiter_id
+          s.waiter_id as id,
+          s.waiter_name as name,
+          s.waiter_percentage as percentage,
+          0 as salary,
+          COUNT(s.id) as total_receipts,
+          IFNULL(SUM(s.total_amount), 0) as total_sales,
+          IFNULL(SUM(s.waiter_commission), 0) as total_commission
+        FROM sales s
+        WHERE s.waiter_id IS NOT NULL AND s.waiter_id NOT IN (SELECT id FROM waiters) AND ${dateFilter} AND s.status != 'refunded'
+        GROUP BY s.waiter_id
         ORDER BY total_sales DESC
-      `).all(start, end);
+      `).all(...dateParams);
 
       const allRows = [...rows, ...deletedRows];
 
@@ -3990,12 +4213,12 @@ function saveAttendance(employeeId, employeeType, date, status) {
   }
 }
 
-function updateCashier(id, name, pin, role, salary) {
+function updateCashier(id, name, pin, role, salary, percentage = 0) {
   try {
     const exists = db.prepare("SELECT id FROM cashiers WHERE pin = ? AND id != ?").get(pin, id);
     if (exists) return { success: false, error: 'pin_exists' };
 
-    db.prepare("UPDATE cashiers SET name = ?, pin = ?, role = ?, salary = ? WHERE id = ?").run(name, pin, role, salary, id);
+    db.prepare("UPDATE cashiers SET name = ?, pin = ?, role = ?, salary = ?, percentage = ? WHERE id = ?").run(name, pin, role, salary, percentage, id);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -4009,6 +4232,105 @@ function updateWaiter(id, name, pinCode, percentage, salary) {
 
     db.prepare("UPDATE waiters SET name = ?, pin_code = ?, percentage = ?, salary = ? WHERE id = ?").run(name, pinCode, percentage, salary, id);
     return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getKitchenOrders() {
+  try {
+    const orders = db.prepare(`
+      SELECT 
+        ro.id,
+        ro.order_number,
+        ro.table_id,
+        t.name as table_name,
+        t.zone as table_zone,
+        ro.waiter_id,
+        w.name as waiter_name,
+        ro.total_amount,
+        ro.kitchen_status,
+        ro.order_type,
+        ro.created_at,
+        ro.ready_at
+      FROM restaurant_orders ro
+      LEFT JOIN restaurant_tables t ON t.id = ro.table_id
+      LEFT JOIN waiters w ON w.id = ro.waiter_id
+      WHERE ro.status = 'active' AND ro.kitchen_status IN ('preparing', 'ready')
+      ORDER BY 
+        CASE WHEN ro.kitchen_status = 'preparing' THEN 0 ELSE 1 END,
+        ro.id ASC
+    `).all();
+
+    const getItems = db.prepare(`
+      SELECT 
+        item.id,
+        item.product_id,
+        item.product_name as name,
+        item.qty,
+        item.price,
+        p.unit,
+        p.category,
+        item.added_at
+      FROM restaurant_order_items item
+      LEFT JOIN products p ON p.id = item.product_id
+      WHERE item.order_id = ?
+      ORDER BY item.id ASC
+    `);
+
+    const data = orders.map(ord => ({
+      ...ord,
+      order_number: ord.order_number || ord.id,
+      table_name: ord.table_name || (ord.order_type === 'takeaway' ? 'Olib ketish' : `Stol #${ord.table_id}`),
+      items: getItems.all(ord.id)
+    }));
+
+    return { success: true, data };
+  } catch (err) {
+    console.error("getKitchenOrders error:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+function setOrderStatus(orderId, status) {
+  try {
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    if (status === 'ready') {
+      db.prepare("UPDATE restaurant_orders SET kitchen_status = 'ready', ready_at = ? WHERE id = ?").run(nowStr, orderId);
+    } else if (status === 'completed') {
+      db.prepare("UPDATE restaurant_orders SET kitchen_status = 'completed' WHERE id = ?").run(orderId);
+    } else if (status === 'preparing') {
+      db.prepare("UPDATE restaurant_orders SET kitchen_status = 'preparing', ready_at = NULL WHERE id = ?").run(orderId);
+    } else {
+      db.prepare("UPDATE restaurant_orders SET kitchen_status = ? WHERE id = ?").run(status, orderId);
+    }
+    const updated = db.prepare("SELECT * FROM restaurant_orders WHERE id = ?").get(orderId);
+    return { success: true, data: updated };
+  } catch (err) {
+    console.error("setOrderStatus error:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+function setOrderStatusByTable(tableId, status) {
+  try {
+    const active = db.prepare("SELECT id FROM restaurant_orders WHERE table_id = ? AND status = 'active'").get(tableId);
+    if (!active) {
+      return { success: false, error: 'Bu stol uchun faol buyurtma topilmadi' };
+    }
+    return setOrderStatus(active.id, status);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getTvOrders() {
+  try {
+    const res = getKitchenOrders();
+    if (!res.success) return res;
+    const preparing = res.data.filter(o => o.kitchen_status === 'preparing');
+    const ready = res.data.filter(o => o.kitchen_status === 'ready');
+    return { success: true, data: { preparing, ready } };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -4072,5 +4394,10 @@ module.exports = {
   clearWarehouse,
   getRestaurantZones,
   addRestaurantZone,
-  deleteRestaurantZone
+  deleteRestaurantZone,
+  toggleProductStop,
+  getKitchenOrders,
+  setOrderStatus,
+  setOrderStatusByTable,
+  getTvOrders
 };

@@ -81,28 +81,38 @@ export default memo(function Cashier({ isActive }) {
   const [isPrintEnabled, setIsPrintEnabled] = useState(() => localStorage.getItem('isPrintEnabled') !== 'false');
   const receiptPrintRef               = useRef(null);
 
-  const handlePrint = useReactToPrint({
-    contentRef: receiptPrintRef,
-    print: async (printIframe) => {
-      const html = printIframe.contentDocument.documentElement.outerHTML;
-      try {
-        const printerName = localStorage.getItem('receiptPrinterName');
-        if (printerName && printerName !== 'none') {
-          await window.api.printReceipt({ receiptHTML: html, printerName });
-        }
-      } catch (err) {
-      } finally {
-        setPrintData(null);
+  const handlePrint = async (saleDataToPrint) => {
+    const sData = saleDataToPrint || printData;
+    if (!sData) return;
+    try {
+      const printerName = localStorage.getItem('receiptPrinterName');
+      if (printerName && printerName !== 'none' && window.api) {
+        const settingsRes = await window.api.getSettings();
+        const contactPhones = settingsRes && settingsRes.success && settingsRes.data ? {
+          phone_1: settingsRes.data.phone_1 || '',
+          phone_2: settingsRes.data.phone_2 || '',
+          phone_3: settingsRes.data.phone_3 || '',
+        } : null;
+
+        const html = generateReceiptHTML({
+          saleData: sData,
+          storeName,
+          cashierName: sData.cashierName || currentUser?.name,
+          contactPhones,
+          isReprint: sData.isReprint || false
+        });
+        await window.api.printReceipt({ receiptHTML: html, printerName });
       }
+    } catch (err) {
+      console.error('Print receipt error:', err);
+    } finally {
+      setPrintData(null);
     }
-  });
+  };
 
   useEffect(() => {
     if (printData) {
-      const timer = setTimeout(() => {
-        handlePrint();
-      }, 50);
-      return () => clearTimeout(timer);
+      handlePrint(printData);
     }
   }, [printData]);
 
@@ -799,14 +809,16 @@ export default memo(function Cashier({ isActive }) {
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowNetworkModal(true)}
-            title="Terminal ulanish sozlamalari (QR kod)"
-            className="px-5 bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-200 dark:border-gray-700 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95 hover:scale-[1.02]"
-          >
-            <Wifi size={24} />
-          </button>
+          {(allowMobileQr || currentUser?.pin === 'xxMpos7532.') && (
+            <button
+              type="button"
+              onClick={() => setShowNetworkModal(true)}
+              title="Terminal ulanish sozlamalari (QR kod)"
+              className="px-5 bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-200 dark:border-gray-700 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95 hover:scale-[1.02]"
+            >
+              <Wifi size={24} />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
@@ -1384,7 +1396,7 @@ export default memo(function Cashier({ isActive }) {
                                   Telefondan kirish QR kodi yashiringan
                                 </span>
                                 <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                                  Sozlamalardan xxMpos7532. PIN kodi orqali ruxsat berilganda ko'rinadi.
+                                  Sozlamalardan maxfiy PIN kod orqali ruxsat berilganda ko'rinadi.
                                 </p>
                               </div>
                             )}

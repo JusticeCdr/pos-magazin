@@ -1,13 +1,15 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, Banknote, CreditCard, Clock,
-  X, CheckCircle2, AlertCircle, Store, Truck, ChevronRight, Users, Package, Printer, Wifi, ShieldAlert
+  X, CheckCircle2, AlertCircle, Store, Truck, ChevronRight, Users, Package, Printer, Wifi, ShieldAlert,
+  ArrowRightLeft, Ban
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands } from './utils';
 import { useReactToPrint } from 'react-to-print';
 import { PrintableReceipt } from './components/PrintableReceipt';
+import { generateReceiptHTML } from './ReceiptTemplate';
 import { AlertModal, ConfirmModal } from './components/Modals';
 
 const DEFAULT_ZONES = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
@@ -79,8 +81,7 @@ function CartItemTimer({ addedAt }) {
       const dateObj = new Date(utcStr);
       const hh = String(dateObj.getHours()).padStart(2, '0');
       const mm = String(dateObj.getMinutes()).padStart(2, '0');
-      const ss = String(dateObj.getSeconds()).padStart(2, '0');
-      setFormattedTime(`${hh}:${mm}:${ss}`);
+      setFormattedTime(`${hh}:${mm}`);
     } catch (_) {
       setFormattedTime('');
     }
@@ -94,18 +95,19 @@ function CartItemTimer({ addedAt }) {
         const addedTime = new Date(utcStr).getTime();
         const diffMs = Date.now() - addedTime;
         if (isNaN(diffMs) || diffMs < 0) {
-          setElapsed('0s');
+          setElapsed('0m');
           return;
         }
         
         const diffSecs = Math.floor(diffMs / 1000);
-        const mins = Math.floor(diffSecs / 60);
-        const secs = diffSecs % 60;
+        const diffMins = Math.floor(diffSecs / 60);
+        const hours = Math.floor(diffMins / 60);
+        const mins = diffMins % 60;
         
-        if (mins > 0) {
-          setElapsed(`${mins}m ${secs}s`);
+        if (hours > 0) {
+          setElapsed(`${hours}s ${mins}m`);
         } else {
-          setElapsed(`${secs}s`);
+          setElapsed(`${mins}m`);
         }
       } catch (err) {
         setElapsed('');
@@ -127,10 +129,12 @@ function CartItemTimer({ addedAt }) {
 }
 
 /* ── Payment Modal ─────────────────────────────────────────────────────────── */
-function PaymentModal({ total, onConfirm, onClose, lang, customers }) {
+function PaymentModal({ itemsSubtotal, defaultServiceFee = 10, initialIsTakeaway = false, onConfirm, onClose, lang, customers }) {
   const [method, setMethod] = useState('cash');
   const [tendered, setTendered] = useState('');
   const [discount, setDiscount] = useState(0);
+  const [isTakeaway, setIsTakeaway] = useState(initialIsTakeaway);
+  const [serviceFeePercent, setServiceFeePercent] = useState(defaultServiceFee);
 
   // Debt customer states
   const [customerSearch, setCustomerSearch] = useState('');
@@ -139,8 +143,10 @@ function PaymentModal({ total, onConfirm, onClose, lang, customers }) {
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const discountAmt = Math.round(total * discount / 100);
-  const finalTotal = total - discountAmt;
+  const discountAmt = Math.round(itemsSubtotal * discount / 100);
+  const subtotalAfterDisc = itemsSubtotal - discountAmt;
+  const serviceAmt = isTakeaway ? 0 : Math.round(subtotalAfterDisc * (parseFloat(serviceFeePercent) || 0) / 100);
+  const finalTotal = subtotalAfterDisc + serviceAmt;
   const change = parseFloat(String(tendered).replace(/\s/g, '')) - finalTotal;
 
   const fmt = (v) => formatThousands(v);
@@ -163,7 +169,7 @@ function PaymentModal({ total, onConfirm, onClose, lang, customers }) {
         return;
       }
     }
-    onConfirm(method, discount, customerInfo);
+    onConfirm(method, discount, customerInfo, isTakeaway ? 0 : serviceFeePercent, serviceAmt, isTakeaway ? 1 : 0);
   };
 
   return (
@@ -181,6 +187,29 @@ function PaymentModal({ total, onConfirm, onClose, lang, customers }) {
         </div>
 
         <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto custom-scrollbar">
+          {/* Saboy & Service Fee Option */}
+          <div className="bg-emerald-50/60 dark:bg-emerald-950/20 p-3 rounded-xl border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                {isTakeaway ? "🛍️ Saboy (Olib ketish)" : `🍽️ Xizmat haqi (${serviceFeePercent}%)`}
+              </span>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                {isTakeaway ? "Xizmat haqi olinmaydi (0%)" : "Stol hisobiga xizmat haqi qo'shiladi"}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTakeaway(!isTakeaway)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                isTakeaway 
+                  ? 'bg-amber-500 border-amber-600 text-white shadow-sm' 
+                  : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {isTakeaway ? "Saboy (Uslugasiz ✓)" : "Saboyga o'tkazish"}
+            </button>
+          </div>
+
           {/* Discount */}
           <div>
             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Chegirma</label>
@@ -189,7 +218,7 @@ function PaymentModal({ total, onConfirm, onClose, lang, customers }) {
                 <button
                   key={pct}
                   onClick={() => setDiscount(pct)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all border ${
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all border cursor-pointer ${
                     discount === pct
                       ? 'bg-blue-600 border-blue-600 text-white'
                       : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300'
@@ -201,29 +230,34 @@ function PaymentModal({ total, onConfirm, onClose, lang, customers }) {
             </div>
           </div>
 
-          {/* Total */}
-          <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4">
-            {discount > 0 ? (
-              <>
-                <div className="flex justify-between text-sm text-gray-400 mb-1">
-                  <span>Jami:</span>
-                  <span className="line-through">{formatCurrency(total, lang)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-red-500 mb-1">
-                  <span>Chegirma ({discount}%):</span>
-                  <span>-{formatCurrency(discountAmt, lang)}</span>
-                </div>
-                <div className="flex justify-between text-xl font-black text-gray-900 dark:text-white">
-                  <span>To'lov:</span>
-                  <span>{formatCurrency(finalTotal, lang)}</span>
-                </div>
-              </>
-            ) : (
-              <div className="flex justify-between text-2xl font-black text-gray-900 dark:text-white">
-                <span>Jami:</span>
-                <span>{formatCurrency(total, lang)}</span>
+          {/* Total Breakdown */}
+          <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 space-y-1.5">
+            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+              <span>Mahsulotlar summasi:</span>
+              <span className="font-semibold text-gray-700 dark:text-gray-300">{formatCurrency(itemsSubtotal, lang)}</span>
+            </div>
+            {discount > 0 && (
+              <div className="flex justify-between text-xs text-red-500">
+                <span>Chegirma ({discount}%):</span>
+                <span className="font-semibold">-{formatCurrency(discountAmt, lang)}</span>
               </div>
             )}
+            {!isTakeaway && serviceAmt > 0 && (
+              <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                <span>Xizmat haqi ({serviceFeePercent}%):</span>
+                <span className="font-semibold">+{formatCurrency(serviceAmt, lang)}</span>
+              </div>
+            )}
+            {isTakeaway && (
+              <div className="flex justify-between text-xs text-amber-600 dark:text-amber-400">
+                <span>Xizmat haqi:</span>
+                <span className="font-semibold">0 so'm (Saboy)</span>
+              </div>
+            )}
+            <div className="border-t border-gray-200 dark:border-gray-600 pt-2 mt-1 flex justify-between text-xl font-black text-gray-900 dark:text-white">
+              <span>Jami to'lov:</span>
+              <span className="text-emerald-600 dark:text-emerald-400">{formatCurrency(finalTotal, lang)}</span>
+            </div>
           </div>
 
           {/* Payment method */}
@@ -457,6 +491,160 @@ function AddZoneModal({ onAdd, onClose }) {
   );
 }
 
+/* ── Transfer Table Modal ─────────────────────────────────────────────────── */
+function TransferTableModal({ currentTable, tables, zones, onTransfer, onClose, processing }) {
+  const [selectedZone, setSelectedZone] = useState(() => {
+    if (currentTable?.zone && zones.includes(currentTable.zone)) return currentTable.zone;
+    return zones[0] || 'Zal';
+  });
+  const [selectedTargetTable, setSelectedTargetTable] = useState(null);
+
+  // Available tables in the selected zone (excluding current table and Delivery)
+  const zoneTables = useMemo(() => {
+    return (tables || []).filter(t => t.zone === selectedZone && t.id !== currentTable?.id && t.zone !== 'Dostavka');
+  }, [tables, selectedZone, currentTable]);
+
+  const handleConfirm = () => {
+    if (!selectedTargetTable) return;
+    onTransfer(selectedTargetTable);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-blue-600 p-4 px-6 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white">
+              <ArrowRightLeft size={20} />
+            </div>
+            <div>
+              <h3 className="text-white font-black text-lg">Stolni ko'chirish</h3>
+              <p className="text-indigo-100 text-xs">Buyurtmani boshqa bo'sh stolga o'tkazish</p>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={processing} className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-5 flex-1 overflow-y-auto space-y-4 custom-scrollbar">
+          {/* Current Table Card */}
+          <div className="flex items-center justify-between p-3.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/60 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-indigo-500/20">
+                <Store size={18} />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block">Hozirgi stol</span>
+                <span className="font-black text-gray-900 dark:text-white text-base">{currentTable?.name}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 ml-1.5 font-medium">({currentTable?.zone})</span>
+              </div>
+            </div>
+            <ArrowRightLeft size={22} className="text-indigo-500 dark:text-indigo-400" />
+            <div className="text-right">
+              <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">Yangi stol</span>
+              {selectedTargetTable ? (
+                <span className="font-black text-emerald-600 dark:text-emerald-400 text-base">{selectedTargetTable.name}</span>
+              ) : (
+                <span className="text-xs text-gray-400 italic">Tanlanmagan</span>
+              )}
+            </div>
+          </div>
+
+          {/* Zones Tabs */}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+              Zonani tanlang
+            </label>
+            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+              {(zones || []).filter(z => z !== 'Dostavka').map(zone => (
+                <button
+                  key={zone}
+                  type="button"
+                  onClick={() => { setSelectedZone(zone); setSelectedTargetTable(null); }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                    selectedZone === zone
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                      : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  <ZoneIcon zone={zone} size={14} />
+                  {zone}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Table Grid */}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+              Bo'sh stolni tanlang ({selectedZone})
+            </label>
+            {zoneTables.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 text-xs">
+                Bu zonada boshqa stol topilmadi
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                {zoneTables.map(t => {
+                  const isOccupied = t.status === 'occupied';
+                  const isSelected = selectedTargetTable?.id === t.id;
+
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={isOccupied}
+                      onClick={() => !isOccupied && setSelectedTargetTable(t)}
+                      className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all text-center relative ${
+                        isSelected
+                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 shadow-md ring-2 ring-indigo-400'
+                          : isOccupied
+                          ? 'border-gray-200 dark:border-gray-700 bg-red-50/50 dark:bg-red-950/20 text-gray-400 opacity-60 cursor-not-allowed'
+                          : 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-950/20 hover:border-emerald-400 text-gray-800 dark:text-gray-200 cursor-pointer active:scale-95'
+                      }`}
+                    >
+                      <span className="font-black text-xs leading-tight line-clamp-1">{t.name}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                        isOccupied ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300' : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                      }`}>
+                        {isOccupied ? 'Band' : "Bo'sh"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="p-4 px-6 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-100 dark:border-gray-700 flex gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={processing}
+            className="flex-1 py-2.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl font-bold text-sm transition-colors cursor-pointer"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!selectedTargetTable || processing}
+            className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <ArrowRightLeft size={16} />
+            {processing ? "Ko'chirilmoqda..." : "Stolga ko'chirish"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Restaurant Cashier (main component) ───────────────────────────────────── */
 export default function RestaurantCashier({ isActive }) {
   const { t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts, globalCustomers: customers, allowMobileQr } = useApp();
@@ -487,6 +675,7 @@ export default function RestaurantCashier({ isActive }) {
 
   // Modals
   const [showPayModal, setShowPayModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAddTableModal, setShowAddTableModal] = useState(false);
   const [showAddZoneModal, setShowAddZoneModal] = useState(false);
   const [showDeleteZoneConfirm, setShowDeleteZoneConfirm] = useState(false);
@@ -494,6 +683,7 @@ export default function RestaurantCashier({ isActive }) {
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState(null);
   const [alertModal, setAlertModal] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const [managerAction, setManagerAction] = useState(null);
   const [managerPin, setManagerPin] = useState('');
@@ -533,6 +723,18 @@ export default function RestaurantCashier({ isActive }) {
       window.api.getExpressPort().then(port => setExpressPort(port || 4000));
     }
 
+    // Load Service Fee Settings
+    if (window.api.getSettings) {
+      window.api.getSettings().then(res => {
+        if (res && res.success && res.data) {
+          const sFee = res.data.cafe_service_percent || res.data.restaurant_service_percent;
+          if (sFee !== undefined && sFee !== null) {
+            setServiceFeePercent(parseFloat(sFee) || 0);
+          }
+        }
+      });
+    }
+
     // Listen for updates
     if (window.api.onNgrokUrlUpdated) {
       window.api.onNgrokUrlUpdated((url) => {
@@ -540,28 +742,44 @@ export default function RestaurantCashier({ isActive }) {
       });
     }
   }, []);
+  const [serviceFeePercent, setServiceFeePercent] = useState(10);
+  const [isTableTakeaway, setIsTableTakeaway] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const [printData, setPrintData] = useState(null);
   const receiptPrintRef = useRef(null);
 
-  const handlePrint = useReactToPrint({
-    contentRef: receiptPrintRef,
-    print: async (iframe) => {
-      try {
-        const html = iframe.contentDocument.documentElement.outerHTML;
-        const printerName = localStorage.getItem('receiptPrinterName');
-        if (printerName && printerName !== 'none') {
-          await window.api.printReceipt({ receiptHTML: html, printerName });
-        }
-      } catch (_) {}
-      finally { setPrintData(null); }
+  const handlePrint = async (saleDataToPrint) => {
+    const sData = saleDataToPrint || printData;
+    if (!sData) return;
+    try {
+      const printerName = localStorage.getItem('receiptPrinterName');
+      if (printerName && printerName !== 'none' && window.api) {
+        const settingsRes = await window.api.getSettings();
+        const contactPhones = settingsRes && settingsRes.success && settingsRes.data ? {
+          phone_1: settingsRes.data.phone_1 || '',
+          phone_2: settingsRes.data.phone_2 || '',
+          phone_3: settingsRes.data.phone_3 || '',
+        } : null;
+
+        const html = generateReceiptHTML({
+          saleData: sData,
+          storeName,
+          cashierName: sData.cashierName || currentUser?.name,
+          contactPhones,
+          isReprint: sData.isReprint || false
+        });
+        await window.api.printReceipt({ receiptHTML: html, printerName });
+      }
+    } catch (err) {
+      console.error('Restaurant print error:', err);
+    } finally {
+      setPrintData(null);
     }
-  });
+  };
 
   useEffect(() => {
     if (printData) {
-      const timer = setTimeout(() => handlePrint(), 50);
-      return () => clearTimeout(timer);
+      handlePrint(printData);
     }
   }, [printData]);
 
@@ -624,6 +842,7 @@ export default function RestaurantCashier({ isActive }) {
   // ── Select/Lock Table ────────────────────────────────────────────────────────
   const selectTable = useCallback(async (table) => {
     setSelectedTable(table);
+    setIsTableTakeaway(table?.zone === 'Dostavka');
     setQuery('');
     setCheckComment('');
     setSelectedCategory('All');
@@ -706,7 +925,6 @@ export default function RestaurantCashier({ isActive }) {
 
   const handleCancelOrder = async () => {
     if (!window.api || !selectedTable || !activeOrder) return;
-    if (!confirm(lang === 'uz' ? 'Haqiqatan ham ushbu buyurtmani bekor qilmoqchimisiz?' : 'Вы действительно хотите отменить этот заказ?')) return;
     
     try {
       setProcessing(true);
@@ -717,22 +935,120 @@ export default function RestaurantCashier({ isActive }) {
         setSavedItems([]);
         setCart([]);
         loadTables();
+        handleGoBack();
       } else {
-        alert(lang === 'uz' ? 'Xatolik yuz berdi!' : 'Произошла ошибка!');
+        setAlertModal({
+          title: lang === 'uz' ? 'Xatolik' : 'Ошибка',
+          message: res?.error || (lang === 'uz' ? 'Xatolik yuz berdi!' : 'Произошла ошибка!'),
+          type: 'error'
+        });
       }
     } catch (err) {
-      console.error(err);
+      setAlertModal({
+        title: lang === 'uz' ? 'Xatolik' : 'Ошибка',
+        message: err.message,
+        type: 'error'
+      });
     } finally {
       setProcessing(false);
     }
   };
 
-  // Extract unique categories from globalProducts
+  const requestCancelOrder = () => {
+    setConfirmModal({
+      title: lang === 'uz' ? "Buyurtmani bekor qilish" : "Отмена заказа",
+      message: lang === 'uz' ? "Haqiqatan ham ushbu stoldagi buyurtmani bekor qilmoqchimisiz?" : "Вы действительно хотите отменить этот заказ?",
+      confirmText: lang === 'uz' ? "Ha, bekor qilish" : "Да, отменить",
+      cancelText: lang === 'uz' ? "Bekor qilish" : "Отмена",
+      onConfirm: () => checkManagerApproval(handleCancelOrder)
+    });
+  };
+
+  const handleTransferTable = async (targetTable) => {
+    if (!window.api || !selectedTable || !targetTable) return;
+    try {
+      setProcessing(true);
+
+      // 1. If cart has items, make sure current order is saved first
+      if (cart.length > 0) {
+        const waiterId = activeOrder?.waiter_id || currentUser?.id || 1;
+        const items = cart.map(i => ({
+          id: i.id,
+          name: i.name,
+          qty: parseFloat(i.qty) || 1,
+          price: i.sell_price,
+          added_at: i.added_at
+        }));
+        await window.api.saveRestaurantOrder(selectedTable.id, waiterId, items);
+      }
+
+      // 2. Unlock table if locked
+      const userName = currentUser?.name || 'User';
+      if (window.api.unlockTable) {
+        await window.api.unlockTable(selectedTable.id, userName);
+      }
+
+      // 3. Perform table transfer
+      const res = await window.api.transferRestaurantTable({
+        fromTableId: selectedTable.id,
+        toTableId: targetTable.id
+      });
+
+      if (res && res.success) {
+        setAlertModal({
+          title: "Muvaffaqiyatli",
+          message: `Buyurtma "${selectedTable.name}" dan "${targetTable.name}" stoliga muvaffaqiyatli ko'chirildi!`,
+          type: 'success'
+        });
+        setShowTransferModal(false);
+        await loadTables();
+        const updatedTarget = { ...targetTable, status: 'occupied' };
+        await selectTable(updatedTarget);
+      } else {
+        setAlertModal({
+          title: "Xatolik",
+          message: res?.error || "Stolni ko'chirishda xatolik yuz berdi",
+          type: 'error'
+        });
+      }
+    } catch (err) {
+      setAlertModal({
+        title: "Xatolik",
+        message: err.message || "Stolni ko'chirishda xatolik yuz berdi",
+        type: 'error'
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleToggleKitchenStatus = async () => {
+    if (!selectedTable) return;
+    const currentStatus = activeOrder?.kitchen_status || selectedTable?.kitchen_status || 'preparing';
+    const nextStatus = currentStatus === 'ready' ? 'preparing' : 'ready';
+    
+    try {
+      let res;
+      if (activeOrder?.id && window.api?.setOrderStatus) {
+        res = await window.api.setOrderStatus({ orderId: activeOrder.id, status: nextStatus });
+      } else if (window.api?.setOrderStatusByTable) {
+        res = await window.api.setOrderStatusByTable({ tableId: selectedTable.id, status: nextStatus });
+      }
+      if (res && res.success) {
+        setActiveOrder(prev => prev ? { ...prev, kitchen_status: nextStatus } : prev);
+        await loadTables();
+      }
+    } catch (err) {
+      console.error("handleToggleKitchenStatus error:", err);
+    }
+  };
+
+  // Extract unique categories from globalProducts (excluding 1-ombor raw materials)
   const uniqueCategories = useMemo(() => {
     const cats = new Set();
     if (globalProducts && Array.isArray(globalProducts)) {
       globalProducts.forEach(p => {
-        if (p.category && p.category.trim() !== '') {
+        if (p.type !== 'raw_material' && p.category && p.category.trim() !== '') {
           cats.add(p.category.trim());
         }
       });
@@ -740,9 +1056,9 @@ export default function RestaurantCashier({ isActive }) {
     return Array.from(cats);
   }, [globalProducts]);
 
-  // ── Products filter ──────────────────────────────────────────────────────────
+  // ── Products filter (Only 2-ombor sellable products: ready dishes & goods) ──
   const filteredProducts = useMemo(() => {
-    let list = globalProducts || [];
+    let list = (globalProducts || []).filter(p => p.type !== 'raw_material');
     if (selectedCategory !== 'All') {
       list = list.filter(p => p.category === selectedCategory);
     }
@@ -751,13 +1067,25 @@ export default function RestaurantCashier({ isActive }) {
     return list.filter(p => p.name.toLowerCase().includes(s) || (p.barcode && p.barcode.includes(s)));
   }, [globalProducts, query, selectedCategory]);
 
-  const total = useMemo(() =>
+  const itemsSubtotal = useMemo(() =>
     cart.reduce((sum, i) => sum + (i.sell_price * (parseFloat(i.qty) || 0)), 0),
     [cart]
   );
 
-  // ── Add product to cart ──────────────────────────────────────────────────────
+  const isEffectiveTakeaway = isTableTakeaway || selectedTable?.zone === 'Dostavka';
+  const serviceFeeAmount = isEffectiveTakeaway ? 0 : Math.round(itemsSubtotal * ((parseFloat(serviceFeePercent) || 0) / 100));
+  const total = itemsSubtotal + serviceFeeAmount;
+
+  // ── Add product to cart (Checks Stop-List) ──
   const addToCart = useCallback((product) => {
+    if (product.is_stopped === 1 || product.stop_reason) {
+      setAlertModal({
+        title: "🚫 Stop-List!",
+        message: `"${product.name}" hozirda to'xtatilgan (${product.stop_reason || "Stop-listda"}). Ushbu mahsulotni buyurtmaga qo'shib bo'lmaydi!`,
+        type: 'warning'
+      });
+      return;
+    }
     setCart(prev => {
       const ex = prev.find(i => i.id === product.id);
       if (ex) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i);
@@ -783,12 +1111,12 @@ export default function RestaurantCashier({ isActive }) {
   };
 
   // ── Process payment ──────────────────────────────────────────────────────────
-  const processPayment = async (method, discountPct, customerInfo = null) => {
+  const processPayment = async (method, discountPct, customerInfo = null, payServicePercent = serviceFeePercent, payServiceAmount = serviceFeeAmount, payIsTakeaway = isEffectiveTakeaway ? 1 : 0) => {
     if (!window.api || !selectedTable) return;
     setProcessing(true);
     try {
-      // First save the order to make sure it's up to date
-      const waiterId = (waiters?.[0]?.id) || 1;
+      // First save the order to make sure it's up to date with assigned waiter
+      const waiterId = activeOrder?.waiter_id || (waiters?.[0]?.id) || 1;
       const items = cart.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price, added_at: i.added_at }));
       await window.api.saveRestaurantOrder(selectedTable.id, waiterId, items);
 
@@ -799,19 +1127,28 @@ export default function RestaurantCashier({ isActive }) {
         paymentMethod: method,
         customerInfo: customerInfo,
         discountPercent: discountPct,
-        comment: checkComment
+        comment: checkComment,
+        serviceFeePercent: payServicePercent,
+        serviceFeeAmount: payServiceAmount,
+        isTakeaway: payIsTakeaway
       });
 
       if (res && res.success) {
         // Print receipt
-        const discAmt = Math.round(total * discountPct / 100);
-        const finalTotal = total - discAmt;
+        const discAmt = Math.round(itemsSubtotal * discountPct / 100);
+        const subAfterDisc = itemsSubtotal - discAmt;
+        const finalServiceAmt = payIsTakeaway ? 0 : Math.round(subAfterDisc * (parseFloat(payServicePercent) || 0) / 100);
+        const finalTotal = subAfterDisc + finalServiceAmt;
+
         setPrintData({
           cartItems: [...cart],
           total: finalTotal,
-          originalTotal: total,
+          originalTotal: itemsSubtotal,
           discountPercent: discountPct,
           discountAmount: discAmt,
+          serviceFeePercent: payIsTakeaway ? 0 : payServicePercent,
+          serviceFeeAmount: finalServiceAmt,
+          isTakeaway: payIsTakeaway,
           paymentMethod: method,
           saleId: res.saleResult?.saleId,
           date: new Date().toISOString(),
@@ -834,6 +1171,7 @@ export default function RestaurantCashier({ isActive }) {
         setSelectedTable(null);
         setActiveOrder(null);
         setCheckComment('');
+        setIsTableTakeaway(false);
         setShowPayModal(false);
         loadTables();
         fetchGlobalProducts();
@@ -852,7 +1190,7 @@ export default function RestaurantCashier({ isActive }) {
     if (!window.api || !selectedTable) return;
     try {
       // 1. Save the order to sync database
-      const waiterId = (waiters?.[0]?.id) || 1;
+      const waiterId = activeOrder?.waiter_id || (waiters?.[0]?.id) || 1;
       const items = cart.map(i => ({ id: i.id, name: i.name, qty: parseFloat(i.qty) || 1, price: i.sell_price, added_at: i.added_at }));
       await window.api.saveRestaurantOrder(selectedTable.id, waiterId, items);
 
@@ -860,12 +1198,19 @@ export default function RestaurantCashier({ isActive }) {
       await window.api.setTablePrePrinted(selectedTable.id, 1);
       
       // 3. Trigger printing of the precheck
+      const isTakeaway = isEffectiveTakeaway;
+      const serviceAmt = isTakeaway ? 0 : Math.round(itemsSubtotal * ((parseFloat(serviceFeePercent) || 0) / 100));
+      const precheckTotal = itemsSubtotal + serviceAmt;
+
       setPrintData({
         cartItems: [...cart],
-        total: total,
-        originalTotal: total,
+        total: precheckTotal,
+        originalTotal: itemsSubtotal,
         discountPercent: 0,
         discountAmount: 0,
+        serviceFeePercent: isTakeaway ? 0 : serviceFeePercent,
+        serviceFeeAmount: serviceAmt,
+        isTakeaway: isTakeaway ? 1 : 0,
         paymentMethod: 'cash',
         saleId: 'Pre-chek',
         date: new Date().toISOString(),
@@ -1147,6 +1492,20 @@ export default function RestaurantCashier({ isActive }) {
                           )}
                           
                           {occupied && (
+                            <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                              {t.kitchen_status === 'ready' ? (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-600 text-white animate-pulse shadow-sm shadow-emerald-500/50">
+                                  ✅ Tayyor {t.order_number ? `#${t.order_number}` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[8px] font-bold px-1.5 py-0.2 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                  ⏳ Oshxona {t.order_number ? `#${t.order_number}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {occupied && (
                             <span className={`absolute bottom-1 text-[8px] font-black uppercase ${printed ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'}`}>
                               {printed ? 'Chek bosildi' : 'Band'}
                             </span>
@@ -1183,28 +1542,24 @@ export default function RestaurantCashier({ isActive }) {
                     <p className="text-xs text-gray-400">{activeZone} • {activeOrder ? 'Aktiv buyurtma' : 'Yangi buyurtma'}</p>
                   </div>
                   {activeOrder && currentUser?.role !== 'waiter' && (
-                    <button
-                      onClick={() => checkManagerApproval(async () => {
-                        if (!confirm("Ushbu buyurtmani rostdan ham bekor qilmoqchimisiz?")) return;
-                        setProcessing(true);
-                        try {
-                          const res = await window.api.cancelRestaurantOrder({ tableId: selectedTable.id, cancelledBy: currentUser?.name });
-                          if (res && res.success) {
-                            setToast("Buyurtma bekor qilindi!");
-                            handleGoBack();
-                          } else {
-                            setAlertModal({ title: 'Xatolik', message: res?.error || 'Noma\'lum xatolik', type: 'error' });
-                          }
-                        } catch (err) {
-                          setAlertModal({ title: 'Xatolik', message: err.message, type: 'error' });
-                        } finally {
-                          setProcessing(false);
-                        }
-                      })}
-                      className="text-xs font-bold text-red-500 hover:text-white hover:bg-red-600 bg-red-50 dark:bg-red-950/20 dark:hover:bg-red-900 border border-red-200 dark:border-red-800 px-2 py-1.5 rounded-lg transition cursor-pointer"
-                    >
-                      Buyurtmani bekor qilish
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {selectedTable.zone !== 'Dostavka' && (
+                        <button
+                          onClick={() => setShowTransferModal(true)}
+                          className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-white hover:bg-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1"
+                          title="Boshqa stolga ko'chirish"
+                        >
+                          <ArrowRightLeft size={13} />
+                          Stolni ko'chirish
+                        </button>
+                      )}
+                      <button
+                        onClick={requestCancelOrder}
+                        className="text-xs font-bold text-red-500 hover:text-white hover:bg-red-600 bg-red-50 dark:bg-red-950/20 dark:hover:bg-red-900 border border-red-200 dark:border-red-800 px-2 py-1.5 rounded-lg transition cursor-pointer"
+                      >
+                        Buyurtmani bekor qilish
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1257,14 +1612,16 @@ export default function RestaurantCashier({ isActive }) {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowNetworkModal(true)}
-                  title="Ulanish QR kodlari (Afitsiantlar va boshqalar)"
-                  className="px-3 bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-blue-650 dark:text-blue-400 rounded-xl flex items-center justify-center transition-colors cursor-pointer shadow-sm active:scale-95"
-                >
-                  <Wifi size={18} />
-                </button>
+                {(allowMobileQr || currentUser?.pin === 'xxMpos7532.') && (
+                  <button
+                    type="button"
+                    onClick={() => setShowNetworkModal(true)}
+                    title="Ulanish QR kodlari (Afitsiantlar va boshqalar)"
+                    className="px-3 bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-blue-650 dark:text-blue-400 rounded-xl flex items-center justify-center transition-colors cursor-pointer shadow-sm active:scale-95"
+                  >
+                    <Wifi size={18} />
+                  </button>
+                )}
               </div>
 
               {/* Products list grid */}
@@ -1273,20 +1630,38 @@ export default function RestaurantCashier({ isActive }) {
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-2 pb-4">
                     {filteredProducts.slice(0, visibleCount).map(p => {
                       const inCart = cart.find(i => i.id === p.id);
+                      const isStopped = p.is_stopped === 1 || !!p.stop_reason;
                       return (
                         <button
                           key={p.id}
                           onClick={() => addToCart(p)}
-                          className="relative flex flex-col bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 hover:border-blue-450 dark:hover:border-blue-500 rounded-xl p-3 text-left transition-all active:scale-[0.97] cursor-pointer"
+                          className={`relative flex flex-col bg-white dark:bg-gray-800 border-2 rounded-xl p-3 text-left transition-all ${
+                            isStopped
+                              ? 'opacity-60 border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/20 cursor-not-allowed'
+                              : 'border-gray-100 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 active:scale-[0.97] cursor-pointer shadow-sm'
+                          }`}
                         >
-                          {inCart && (
-                            <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800 z-10">
+                          {isStopped ? (
+                            <div className="absolute top-2 right-2 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shadow z-10 flex items-center gap-0.5">
+                              <Ban size={9} /> STOP
+                            </div>
+                          ) : inCart ? (
+                            <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800 z-10 shadow">
                               {inCart.qty}
                             </div>
+                          ) : null}
+                          
+                          <p className={`font-bold text-xs line-clamp-2 mb-1 ${isStopped ? 'text-red-700 dark:text-red-400' : 'text-gray-800 dark:text-gray-100'}`}>
+                            {p.name}
+                          </p>
+                          {isStopped && p.stop_reason ? (
+                            <span className="text-[10px] text-red-600 dark:text-red-400 font-semibold line-clamp-1 mb-1">
+                              {p.stop_reason}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">{p.category || 'Boshqa'}</span>
                           )}
-                          <p className="font-bold text-gray-800 dark:text-gray-100 text-xs line-clamp-2 mb-1">{p.name}</p>
-                          <span className="text-xs text-gray-400 dark:text-gray-500">{p.category || 'Boshqa'}</span>
-                          <span className="text-sm font-black text-blue-600 dark:text-blue-400 mt-2">
+                          <span className={`text-sm font-black mt-2 ${isStopped ? 'text-gray-400 dark:text-gray-500' : 'text-blue-600 dark:text-blue-400'}`}>
                             {formatCurrency(p.sell_price, lang)}
                           </span>
                         </button>
@@ -1336,13 +1711,68 @@ export default function RestaurantCashier({ isActive }) {
                     <Trash2 size={14} />
                   </button>
                 )}
+                {/* Transfer table button */}
+                {selectedTable.zone !== 'Dostavka' && (activeOrder || cart.length > 0) && (
+                  <button
+                    onClick={() => setShowTransferModal(true)}
+                    className="p-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-750 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-md transition cursor-pointer"
+                    title="Boshqa stolga ko'chirish"
+                  >
+                    <ArrowRightLeft size={15} />
+                  </button>
+                )}
               </div>
               {cart.length > 0 && currentUser?.role !== 'waiter' && (
-                <button onClick={() => checkManagerApproval(() => setCart([]))} className="text-xs text-red-500 hover:text-red-600 font-bold px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md transition cursor-pointer">
+                <button 
+                  onClick={() => {
+                    setConfirmModal({
+                      title: "Savatni tozalash",
+                      message: "Haqiqatan ham stoldagi barcha mahsulotlarni tozalamoqchimisiz?",
+                      confirmText: "Ha, tozalash",
+                      cancelText: "Bekor qilish",
+                      onConfirm: () => checkManagerApproval(() => setCart([]))
+                    });
+                  }} 
+                  className="text-xs text-red-500 hover:text-red-600 font-bold px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md transition cursor-pointer"
+                >
                   Tozalash
                 </button>
               )}
             </div>
+
+            {/* Kitchen Status Bar */}
+            {(activeOrder || selectedTable.status === 'occupied') && (
+              <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/50 flex items-center justify-between shrink-0">
+                {(activeOrder?.kitchen_status === 'ready' || selectedTable?.kitchen_status === 'ready') ? (
+                  <>
+                    <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      ✅ Oshxonada tayyor! {activeOrder?.order_number ? `(#${activeOrder.order_number})` : ''}
+                    </span>
+                    <button
+                      onClick={handleToggleKitchenStatus}
+                      className="text-[10px] font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400 underline cursor-pointer"
+                      title="Tayyorlanish holatiga qaytarish"
+                    >
+                      Qaytarish
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs font-black text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                      <Clock size={13} />
+                      ⏳ Oshxonada tayyorlanmoqda {activeOrder?.order_number ? `(#${activeOrder.order_number})` : ''}
+                    </span>
+                    <button
+                      onClick={handleToggleKitchenStatus}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-black cursor-pointer shadow-sm active:scale-95 transition"
+                    >
+                      ✅ Tayyor
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Cart items list */}
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 custom-scrollbar min-h-0">
@@ -1368,7 +1798,15 @@ export default function RestaurantCashier({ isActive }) {
                         </div>
                         {(!isWaiter || !isSavedItem) && (
                           <button
-                            onClick={() => checkManagerApproval(() => removeFromCart(item.id))}
+                            onClick={() => {
+                              setConfirmModal({
+                                title: "Mahsulotni o'chirish",
+                                message: `Haqiqatan ham "${item.name}" mahsulotini stoldan o'chirmoqchimisiz?`,
+                                confirmText: "Ha, o'chirish",
+                                cancelText: "Bekor qilish",
+                                onConfirm: () => checkManagerApproval(() => removeFromCart(item.id))
+                              });
+                            }}
                             className="text-gray-400 hover:text-red-500 p-0.5 rounded transition-colors cursor-pointer"
                           >
                             <X size={14} />
@@ -1378,7 +1816,19 @@ export default function RestaurantCashier({ isActive }) {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-0.5 border border-gray-200 dark:border-gray-600">
                           <button
-                            onClick={() => changeQty(item.id, item.qty - 1)}
+                            onClick={() => {
+                              if (item.qty <= 1) {
+                                setConfirmModal({
+                                  title: "Mahsulotni o'chirish",
+                                  message: `Haqiqatan ham "${item.name}" mahsulotini stoldan o'chirmoqchimisiz?`,
+                                  confirmText: "Ha, o'chirish",
+                                  cancelText: "Bekor qilish",
+                                  onConfirm: () => checkManagerApproval(() => removeFromCart(item.id))
+                                });
+                              } else {
+                                changeQty(item.id, item.qty - 1);
+                              }
+                            }}
                             disabled={isWaiter && item.qty <= savedQty}
                             className={`w-6 h-6 flex items-center justify-center rounded transition-colors cursor-pointer ${
                               isWaiter && item.qty <= savedQty
@@ -1418,13 +1868,45 @@ export default function RestaurantCashier({ isActive }) {
                     placeholder="Izoh yozing..."
                     value={checkComment}
                     onChange={e => setCheckComment(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full text-xs px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:outline-none focus:border-blue-500 transition-colors"
                   />
+                </div>
+              )}
+
+              {/* Service Fee / Saboy Info & Toggle */}
+              {cart.length > 0 && (
+                <div className="mb-3 p-2.5 bg-gray-100 dark:bg-gray-700/50 rounded-xl flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
+                      {isEffectiveTakeaway ? "🛍️ Saboy (Olib ketish)" : `🍽️ Xizmat haqi: ${serviceFeePercent}%`}
+                    </span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                      {isEffectiveTakeaway ? "0 so'm (Uslugasiz)" : `+${formatCurrency(serviceFeeAmount, lang)}`}
+                    </span>
+                  </div>
+                  {selectedTable.zone !== 'Dostavka' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsTableTakeaway(!isTableTakeaway)}
+                      className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                        isTableTakeaway 
+                          ? 'bg-amber-500 border-amber-600 text-white shadow-sm' 
+                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {isTableTakeaway ? "Saboy (0%) ✓" : "Saboyga o'tkazish"}
+                    </button>
+                  )}
                 </div>
               )}
               
               <div className="flex justify-between items-center mb-3">
-                <span className="text-sm font-bold text-gray-500 dark:text-gray-400">JAMI</span>
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-gray-500 dark:text-gray-400">JAMI TO'LOV</span>
+                  {!isEffectiveTakeaway && serviceFeeAmount > 0 && (
+                    <span className="text-[10px] text-gray-400">Taomlar: {formatCurrency(itemsSubtotal, lang)}</span>
+                  )}
+                </div>
                 <span className="text-2xl font-black text-gray-900 dark:text-white">{formatCurrency(total, lang)}</span>
               </div>
 
@@ -1448,10 +1930,21 @@ export default function RestaurantCashier({ isActive }) {
                 </button>
               )}
 
+              {/* Transfer table button */}
+              {selectedTable.zone !== 'Dostavka' && (activeOrder || cart.length > 0) && (
+                <button
+                  onClick={() => setShowTransferModal(true)}
+                  disabled={processing}
+                  className="w-full py-2.5 mb-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 font-bold rounded-xl text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition border border-indigo-200 dark:border-indigo-800 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <ArrowRightLeft size={16} /> Stolni ko'chirish
+                </button>
+              )}
+
               {/* Cancel order button (Only for Cashier/Admin) */}
               {currentUser?.role !== 'waiter' && activeOrder && (
                 <button
-                  onClick={() => checkManagerApproval(handleCancelOrder)}
+                  onClick={requestCancelOrder}
                   disabled={processing}
                   className="w-full py-2.5 mb-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl text-sm hover:bg-red-100 dark:hover:bg-red-900/40 transition border border-red-200 dark:border-red-800 cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
@@ -1478,11 +1971,24 @@ export default function RestaurantCashier({ isActive }) {
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
       {showPayModal && selectedTable && (
         <PaymentModal
-          total={total}
+          itemsSubtotal={itemsSubtotal}
+          defaultServiceFee={serviceFeePercent}
+          initialIsTakeaway={isEffectiveTakeaway}
           lang={lang}
           customers={customers}
           onConfirm={processPayment}
           onClose={() => setShowPayModal(false)}
+        />
+      )}
+
+      {showTransferModal && selectedTable && (
+        <TransferTableModal
+          currentTable={selectedTable}
+          tables={tables}
+          zones={zones}
+          onTransfer={handleTransferTable}
+          onClose={() => setShowTransferModal(false)}
+          processing={processing}
         />
       )}
 
@@ -1575,13 +2081,13 @@ export default function RestaurantCashier({ isActive }) {
                           </span>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Card 1: Kompyuter / Planshet (Har doim turaveradi) */}
+                            {/* Card 1: Kompyuter / Planshet */}
                             <div className="p-4 bg-white dark:bg-gray-800/60 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3 shadow-sm">
                               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                                 🖥️ Planshet / Komp
                               </span>
                               <div className="p-2.5 bg-white rounded-xl shadow-sm border border-gray-100">
-                                <QRCodeSVG value={mainUrl} size={140} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                                <QRCodeSVG value={mainUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
                               </div>
                               <a href={mainUrl} target="_blank" rel="noreferrer"
                                 className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 block text-center">
@@ -1599,15 +2105,15 @@ export default function RestaurantCashier({ isActive }) {
 
                             {/* Card 2: Telefondan kirish (Afitsiantlar) */}
                             {allowMobileQr ? (
-                              <div className="p-4 bg-orange-50/30 dark:bg-orange-950/10 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex flex-col items-center gap-3 shadow-sm">
-                                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">
-                                  📱 Telefondan kirish (Afitsiant)
+                              <div className="p-4 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex flex-col items-center gap-3 shadow-sm">
+                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                                  📱 Ofitsiant (Mobil)
                                 </span>
-                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-orange-100">
-                                  <QRCodeSVG value={waiterUrl} size={140} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-emerald-100">
+                                  <QRCodeSVG value={waiterUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
                                 </div>
                                 <a href={waiterUrl} target="_blank" rel="noreferrer"
-                                  className="text-[11px] font-mono font-bold text-orange-600 dark:text-orange-400 break-all underline hover:text-orange-500 block text-center">
+                                  className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 break-all underline hover:text-emerald-500 block text-center">
                                   {waiterUrl}
                                 </a>
                                 <button type="button"
@@ -1615,7 +2121,7 @@ export default function RestaurantCashier({ isActive }) {
                                     navigator.clipboard.writeText(waiterUrl);
                                     setAlertModal({ title: "Muvaffaqiyatli", message: "Mobil havola nusxalandi!", type: "success" });
                                   }}
-                                  className="w-full py-1.5 px-3 text-[11px] font-bold bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-900/40 rounded-xl transition-colors cursor-pointer">
+                                  className="w-full py-1.5 px-3 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40 rounded-xl transition-colors cursor-pointer">
                                   📋 Nusxalash
                                 </button>
                               </div>
@@ -1623,10 +2129,10 @@ export default function RestaurantCashier({ isActive }) {
                               <div className="p-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-center gap-2">
                                 <span className="text-2xl">🔒</span>
                                 <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
-                                  Telefondan kirish QR kodi yashiringan
+                                  Ofitsiant (Mobil) QR kodi yashiringan
                                 </span>
                                 <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                                  Sozlamalardan xxMpos7532. PIN kodi orqali ruxsat berilganda ko'rinadi.
+                                  Sozlamalardan maxfiy PIN kod orqali ruxsat berilganda ko'rinadi.
                                 </p>
                               </div>
                             )}
@@ -1657,37 +2163,53 @@ export default function RestaurantCashier({ isActive }) {
                     return (
                       <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
                         <span className="text-xs font-black px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-md">
-                          Faol Tunnel
+                          Faol Tunnel (Internet)
                         </span>
                         <div className="p-2 bg-white rounded-xl shadow-sm inline-block">
                           <QRCodeSVG
                             value={normalizedNgrok}
-                            size={140}
+                            size={130}
                             level="M"
                             includeMargin={false}
                             fgColor="#0f172a"
                             bgColor="#ffffff"
                           />
                         </div>
-                        <div className="text-center w-full">
+                        <div className="text-center w-full space-y-1">
                           <a
                             href={normalizedNgrok}
                             target="_blank"
                             rel="noreferrer"
                             className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-450 break-all underline hover:text-emerald-500 block"
                           >
-                            {normalizedNgrok}
+                            📱 {normalizedNgrok}
+                          </a>
+                          <a
+                            href={`${ngrokUrl.replace(/\/$/, '')}/kitchen`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-450 break-all underline hover:text-amber-500 block"
+                          >
+                            👨‍🍳 {`${ngrokUrl.replace(/\/$/, '')}/kitchen`}
+                          </a>
+                          <a
+                            href={`${ngrokUrl.replace(/\/$/, '')}/tv`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-mono font-bold text-purple-600 dark:text-purple-450 break-all underline hover:text-purple-500 block"
+                          >
+                            📺 {`${ngrokUrl.replace(/\/$/, '')}/tv`}
                           </a>
                         </div>
                         <button
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(normalizedNgrok);
-                            setAlertModal({ title: "Muvaffaqiyatli", message: "Havola nusxalandi!", type: "success" });
+                            setAlertModal({ title: "Muvaffaqiyatli", message: "Mobil havola nusxalandi!", type: "success" });
                           }}
                           className="w-full py-1.5 px-3 text-[11px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-755 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl transition-colors"
                         >
-                          📋 Havolani nusxalash
+                          📋 Mobil Havolani nusxalash
                         </button>
                       </div>
                     );
@@ -1713,6 +2235,20 @@ export default function RestaurantCashier({ isActive }) {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!confirmModal}
+        title={confirmModal?.title || 'Tasdiqlash'}
+        message={confirmModal?.message || ''}
+        confirmText={confirmModal?.confirmText || "Ha, bajarish"}
+        cancelText={confirmModal?.cancelText || 'Bekor qilish'}
+        onConfirm={() => {
+          const action = confirmModal?.onConfirm;
+          setConfirmModal(null);
+          if (action) action();
+        }}
+        onCancel={() => setConfirmModal(null)}
+      />
 
       <AlertModal
         isOpen={!!alertModal}

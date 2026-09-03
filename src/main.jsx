@@ -85,6 +85,10 @@ if (typeof window !== 'undefined' && !window.api) {
     saveNetworkSettings: 'save-network-settings',
     getNetworkSettings: 'get-network-settings',
     getLocalIPs: 'get-local-ips',
+    getKitchenOrders: 'get-kitchen-orders',
+    setOrderStatus: 'set-order-status',
+    setOrderStatusByTable: 'set-order-status-by-table',
+    getTvOrders: 'get-tv-orders',
   };
 
   const apiFallback = {};

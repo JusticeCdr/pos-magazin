@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertTriangle, AlertCircle, X, Plus, Trash2, Users, ArrowLeft, ChevronRight, DollarSign } from 'lucide-react';
+import { Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertTriangle, AlertCircle, X, Plus, Trash2, Users, ArrowLeft, ChevronRight, DollarSign, Percent } from 'lucide-react';
 
 import { useApp } from './context/AppContext';
 import { formatCurrency, parseSQLiteDate } from './utils';
@@ -13,7 +13,7 @@ const toSQLiteUTC = (date) => {
 
 export default memo(function Reports({ isActive }) {
   const { t, lang, currentUser, businessType } = useApp();
-  const [filter, setFilter] = useState('today'); // today, yesterday, week, month, custom
+  const [filter, setFilter] = useState('today'); // shift, today, yesterday, week, month, custom
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date();
     return d.toISOString().split('T')[0];
@@ -70,6 +70,9 @@ export default memo(function Reports({ isActive }) {
   }, [filter, customStart, customEnd]);
 
   const getDates = (type) => {
+    if (type === 'shift') {
+      return { start: 'shift', end: 'shift' };
+    }
     const now = new Date();
     let start = new Date(now);
     let end = new Date(now);
@@ -121,7 +124,8 @@ export default memo(function Reports({ isActive }) {
     if (showLoader || isInitialLoad) setLoading(true);
     try {
       const dates = getDates(filter);
-      const result = await window.api.getReports(dates);
+      const queryDates = filter === 'shift' ? getDates('today') : dates;
+      const result = await window.api.getReports(queryDates);
       if (result && result.success) setData(result.data);
     } catch (_err) {
       // silent
@@ -139,7 +143,8 @@ export default memo(function Reports({ isActive }) {
       const res = await window.api.getWaitersReport({
         start: dates.start,
         end: dates.end,
-        waiterId: null
+        waiterId: null,
+        period: filter === 'shift' ? 'shift' : null
       });
       if (res && res.success) {
         setWaitersList(res.data);
@@ -156,7 +161,8 @@ export default memo(function Reports({ isActive }) {
       const res = await window.api.getWaitersReport({
         start: dates.start,
         end: dates.end,
-        waiterId
+        waiterId,
+        period: filter === 'shift' ? 'shift' : null
       });
       if (res && res.success) {
         setSelectedWaitersReport(res.data);
@@ -321,6 +327,24 @@ export default memo(function Reports({ isActive }) {
       text: 'text-blue-600 dark:text-blue-400',
       isNetProfit: true
     },
+    ...(businessType === 'restaurant' ? [
+      {
+        title: 'Xizmat haqi (Usluga)',
+        value: data.totalServiceFees || 0,
+        icon: Percent,
+        color: 'bg-teal-500',
+        bg: 'bg-teal-50 dark:bg-teal-900/20',
+        text: 'text-teal-600 dark:text-teal-400'
+      },
+      {
+        title: 'Xodimlar maoshi (Jami)',
+        value: (data.totalSalaries || 0) + (data.totalCommissions || 0),
+        icon: Users,
+        color: 'bg-indigo-500',
+        bg: 'bg-indigo-50 dark:bg-indigo-900/20',
+        text: 'text-indigo-600 dark:text-indigo-400'
+      }
+    ] : []),
     { 
       title: t('debtIssued'), 
       value: data.totalDebtIssued, 
@@ -469,14 +493,18 @@ export default memo(function Reports({ isActive }) {
                       <tr key={`cashier_${c.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                         <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{c.name}</td>
                         <td className="px-4 py-3 text-xs uppercase text-gray-500">
-                          {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : 'Kassir'}
+                          {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : 'Kassir'}
                         </td>
                         <td className="px-4 py-3 text-right">{formatCurrency(c.salary, lang)}</td>
                         <td className="px-4 py-3 text-center font-semibold text-gray-700 dark:text-gray-300">{c.present_days || 0} kun</td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
                           {formatCurrency(c.earned_salary || 0, lang)}
                         </td>
-                        {businessType === 'restaurant' && <td className="px-4 py-3 text-right text-gray-450">-</td>}
+                        {businessType === 'restaurant' && (
+                          <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
+                            {c.commissions > 0 ? `${formatCurrency(c.commissions, lang)} (${c.percentage}%)` : (c.percentage > 0 ? `${c.percentage}%` : '-')}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
                           {formatCurrency(c.total_earned || 0, lang)}
                         </td>
@@ -492,7 +520,7 @@ export default memo(function Reports({ isActive }) {
                           {formatCurrency(w.earned_salary || 0, lang)}
                         </td>
                         {businessType === 'restaurant' && (
-                          <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400">
+                          <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
                             {formatCurrency(w.commissions || 0, lang)}
                           </td>
                         )}
@@ -720,16 +748,18 @@ export default memo(function Reports({ isActive }) {
                 <tr>
                   <th className="px-4 py-3 rounded-l-lg">Ofitsiant</th>
                   <th className="px-4 py-3">Xizmat foizi</th>
-                  <th className="px-4 py-3">Cheklar soni</th>
-                  <th className="px-4 py-3">Jami savdosi</th>
-                  <th className="px-4 py-3">Hisoblangan oyligi (ulush)</th>
+                  <th className="px-4 py-3 text-right">Fiksa maoshi</th>
+                  <th className="px-4 py-3 text-center">Cheklar soni</th>
+                  <th className="px-4 py-3 text-right">Jami savdosi</th>
+                  <th className="px-4 py-3 text-right">Foizdan ulushi</th>
+                  <th className="px-4 py-3 text-right">Jami daromadi</th>
                   <th className="px-4 py-3 rounded-r-lg text-right">Amal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                 {waitersList.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-8 text-gray-400 dark:text-gray-500 font-medium">
+                    <td colSpan="8" className="text-center py-8 text-gray-400 dark:text-gray-500 font-medium">
                       Ushbu davrda ofitsiantlar tomonidan hech qanday sotuv amalga oshirilmagan.
                     </td>
                   </tr>
@@ -742,14 +772,20 @@ export default memo(function Reports({ isActive }) {
                       <td className="px-4 py-3.5 font-semibold text-gray-500">
                         {w.percentage}%
                       </td>
-                      <td className="px-4 py-3.5 font-medium text-gray-700 dark:text-gray-300">
+                      <td className="px-4 py-3.5 text-right font-medium text-gray-700 dark:text-gray-300">
+                        {w.salary > 0 ? formatCurrency(w.salary, lang) : "0 so'm"}
+                      </td>
+                      <td className="px-4 py-3.5 text-center font-medium text-gray-700 dark:text-gray-300">
                         {w.total_receipts} ta
                       </td>
-                      <td className="px-4 py-3.5 font-bold text-gray-900 dark:text-white">
+                      <td className="px-4 py-3.5 text-right font-bold text-gray-900 dark:text-white">
                         {formatCurrency(w.total_sales, lang)}
                       </td>
-                      <td className="px-4 py-3.5 font-black text-emerald-600 dark:text-emerald-400">
+                      <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(w.total_commission, lang)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-black text-blue-600 dark:text-blue-400">
+                        {formatCurrency((w.total_commission || 0) + (w.salary || 0), lang)}
                       </td>
                       <td className="px-4 py-3.5 text-right">
                         <button
@@ -783,16 +819,17 @@ export default memo(function Reports({ isActive }) {
         <div className="flex flex-col md:flex-row items-end md:items-center gap-3">
           <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700 overflow-x-auto max-w-full">
             <Calendar size={16} className="text-gray-400 ml-3 mr-2 shrink-0" />
-            {['today', 'yesterday', 'week', 'month', 'custom'].map((f) => (
+            {(businessType === 'restaurant' ? ['shift', 'today', 'yesterday', 'week', 'month', 'custom'] : ['today', 'yesterday', 'week', 'month', 'custom']).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors whitespace-nowrap ${
+                className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
                   filter === f 
                     ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm' 
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               >
+                {f === 'shift' && (lang === 'uz' ? 'Hozirgi smena' : 'Текущая смена')}
                 {f === 'today' && t('filterToday')}
                 {f === 'yesterday' && t('filterYesterday')}
                 {f === 'week' && t('filterWeek')}

@@ -20,7 +20,8 @@ const receiptTranslations = {
     disclaimer: "Ushbu chek ichki hisob-kitob uchun.<br />Fiskal (soliq) cheki hisoblanmaydi!<br />Iltimos, kassirdan rasmiy fiskal chek talab qiling.",
     naqd: "Naqd pul",
     card: "Plastik karta",
-    debt: "Qarzga"
+    debt: "Qarzga",
+    usluga: "Xizmat haqi"
   },
   ru: {
     murojaat: "Для справок:",
@@ -39,7 +40,8 @@ const receiptTranslations = {
     disclaimer: "Этот чек предназначен для внутреннего учета.<br />Не является фискальным чеком!<br />Пожалуйста, требуйте официальный фискальный чек у кассира.",
     naqd: "Наличные",
     card: "Пластиковая карта",
-    debt: "В долг"
+    debt: "В долг",
+    usluga: "Обслуживание"
   }
 };
 
@@ -74,6 +76,9 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
   if (!saleData) return null;
 
   const { cartItems = [], total = 0, paymentMethod, saleId, date, dailyReceiptNumber, shiftReceiptNumber, isPreCheck, comment } = saleData;
+  const serviceFeePercent = parseFloat(saleData.serviceFeePercent || saleData.service_fee_percent) || 0;
+  const serviceFeeAmount = parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0;
+  const isTakeaway = saleData.isTakeaway === 1 || saleData.isTakeaway === true || saleData.is_takeaway === 1;
 
   const totalOriginalAll = cartItems.reduce((sum, item) => {
     return sum + (item.qty * item.sell_price);
@@ -82,16 +87,36 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
   const overallDiscountAmount = totalOriginalAll - total;
   const overallDiscountPercent = totalOriginalAll > 0 ? Math.round((overallDiscountAmount / totalOriginalAll) * 100) : 0;
 
-  let dateObj = new Date();
-  if (date) {
-    const validDateStr = (date.includes('Z') || date.includes('T')) ? date : date.replace(' ', 'T') + 'Z';
-    dateObj = new Date(validDateStr);
-    if (isNaN(dateObj.getTime())) dateObj = new Date();
-  }
+  const formatDisplayDateTime = (dateInput) => {
+    try {
+      if (!dateInput) {
+        const d = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+      if (typeof dateInput === 'string') {
+        const match = dateInput.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})/);
+        if (match) {
+          const [, y, m, d, h, min] = match;
+          return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y} ${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        }
+      }
+      const d = new Date(dateInput);
+      if (isNaN(d.getTime())) {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      }
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch (_) {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+  };
 
-  const formattedDate = dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Tashkent' });
-  const formattedTime = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
-  const displayDateTime = `${formattedDate} | ${formattedTime}`;
+  const displayDateTime = formatDisplayDateTime(date);
 
   const formatNumber = (num) => {
     return Number(num).toLocaleString('ru-RU');
@@ -119,16 +144,13 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
         padding: '0 10px 10px 10px',
         backgroundColor: 'white',
         color: '#000000',
-        fontFamily: "'Courier New', Courier, monospace",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif, monospace",
         fontWeight: '700',
         fontSize: receiptFontSize,
         lineHeight: '1.2',
         textAlign: 'left',
         boxSizing: 'border-box',
-        display: 'block',
-        letterSpacing: '0.5px',
-        textRendering: 'crispEdges',
-        WebkitFontSmoothing: 'none',
+        display: 'block'
       }}
       id="printable-receipt"
     >
@@ -271,6 +293,12 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
               <span>-{formatNumber(overallDiscountAmount)} so'm</span>
             </div>
           </>
+        )}
+        {!isTakeaway && serviceFeeAmount > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'normal', fontSize: isKatta ? '12px' : '11px', marginBottom: '4px' }}>
+            <span>{labels.usluga} ({serviceFeePercent}%):</span>
+            <span>+{formatNumber(serviceFeeAmount)} so'm</span>
+          </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: isKatta ? '15px' : '13px' }}>
           <span>{labels.jami}</span>

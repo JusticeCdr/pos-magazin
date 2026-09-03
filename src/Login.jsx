@@ -118,6 +118,7 @@ export default function Login() {
         } else {
           localStorage.setItem('showShiftOpenedToast', 'true');
         }
+        localStorage.removeItem('adminSettingsAccess');
         setFailCount(0);
         setCurrentUser(result.cashier);
       } else {

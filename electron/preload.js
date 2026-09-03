@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   updateProduct: (data)    => ipcRenderer.invoke('update-product', data),
   addStockToProduct: (data)=> ipcRenderer.invoke('add-stock-to-product', data),
   deleteProduct: (id, userName) => ipcRenderer.invoke('delete-product', id, userName),
+  toggleProductStop: (id, isStopped) => ipcRenderer.invoke('toggle-product-stop', { id, isStopped }),
   searchProduct: (query)   => ipcRenderer.invoke('search-product', query),
   processSale:   (data)    => ipcRenderer.invoke('process-sale', data),
   getRecentSales:()        => ipcRenderer.invoke('get-recent-sales'),
@@ -121,5 +122,13 @@ contextBridge.exposeInMainWorld('api', {
   getAttendance: (date) => ipcRenderer.invoke('get-attendance', date),
   saveAttendance: (data) => ipcRenderer.invoke('save-attendance', data),
   updateCashier: (data) => ipcRenderer.invoke('update-cashier', data),
-  updateWaiter: (data) => ipcRenderer.invoke('update-waiter', data)
+  updateWaiter: (data) => ipcRenderer.invoke('update-waiter', data),
+  getKitchenOrders: () => ipcRenderer.invoke('get-kitchen-orders'),
+  setOrderStatus: (data) => ipcRenderer.invoke('set-order-status', data),
+  setOrderStatusByTable: (data) => ipcRenderer.invoke('set-order-status-by-table', data),
+  getTvOrders: () => ipcRenderer.invoke('get-tv-orders'),
+  onKitchenUpdated: (callback) => {
+    ipcRenderer.removeAllListeners('kitchen-updated');
+    ipcRenderer.on('kitchen-updated', (_, data) => callback(data));
+  }
 });

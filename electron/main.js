@@ -397,7 +397,12 @@ const {
   updateWaiter,
   getRestaurantZones,
   addRestaurantZone,
-  deleteRestaurantZone
+  deleteRestaurantZone,
+  toggleProductStop,
+  getKitchenOrders,
+  setOrderStatus,
+  setOrderStatusByTable,
+  getTvOrders
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
@@ -819,6 +824,56 @@ async function startExpressServer() {
     // Static assets distribution for both desktop and mobile
     expressApp.use('/mobile', express.static(path.join(__dirname, '../dist-mobile')));
     expressApp.use(express.static(path.join(__dirname, '../dist')));
+
+    // SPA routes for Kitchen Display System (KDS) and TV Queue Display
+    expressApp.get(['/kitchen', '/tv'], (req, res) => {
+      res.sendFile(path.join(__dirname, '../dist/index.html'));
+    });
+
+    // ── Kitchen Display & TV API Endpoints ────────────────────────────────────
+    expressApp.get('/api/kitchen/orders', (req, res) => {
+      const result = getKitchenOrders();
+      res.json(result);
+    });
+
+    expressApp.post('/api/orders/:id/set-status', (req, res) => {
+      const { status } = req.body;
+      const orderId = parseInt(req.params.id, 10);
+      const result = setOrderStatus(orderId, status);
+      if (result && result.success) {
+        if (io) {
+          io.emit('kitchen-updated', { orderId, status });
+          io.emit('sales-updated');
+        }
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('kitchen-updated', { orderId, status });
+          mainWindow.webContents.send('sales-updated');
+        }
+      }
+      res.json(result);
+    });
+
+    expressApp.post('/api/orders/table/:tableId/set-status', (req, res) => {
+      const { status } = req.body;
+      const tableId = parseInt(req.params.tableId, 10);
+      const result = setOrderStatusByTable(tableId, status);
+      if (result && result.success) {
+        if (io) {
+          io.emit('kitchen-updated', { tableId, status });
+          io.emit('sales-updated');
+        }
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('kitchen-updated', { tableId, status });
+          mainWindow.webContents.send('sales-updated');
+        }
+      }
+      res.json(result);
+    });
+
+    expressApp.get('/api/tv/orders', (req, res) => {
+      const result = getTvOrders();
+      res.json(result);
+    });
     
     // Auth Middleware for API endpoints
     const authMiddleware = (req, res, next) => {
@@ -1004,9 +1059,14 @@ async function startExpressServer() {
         // Print kitchen runner
         const printResult = await printKitchenRunner(tableName, waiterName, cart_items);
         
-        // Notify desktop via Socket.io if initialized
+        // Notify desktop and KDS via Socket.io if initialized
         if (io) {
           io.emit('sales-updated'); // trigger desktop refresh
+          io.emit('kitchen-updated'); // trigger KDS / TV refresh
+        }
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('sales-updated');
+          mainWindow.webContents.send('kitchen-updated');
         }
         
         return res.json({ success: true, orderId: saveResult.orderId, printResult });
@@ -1737,6 +1797,23 @@ async function startExpressServer() {
       }
     });
 
+    // API: Toggle product stop-list
+    expressApp.post('/api/products/toggle-stop', authMiddleware, (req, res) => {
+      const { id, isStopped } = req.body;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Product ID is required' });
+      }
+      const result = toggleProductStop(id, !!isStopped);
+      if (result.success) {
+        if (io) {
+          io.emit('products-updated');
+        }
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
     // API: Next barcode
     expressApp.get('/api/products/next-barcode', authMiddleware, (req, res) => {
       const result = getNextBarcode();
@@ -2222,6 +2299,13 @@ if (!gotTheLock) {
     }
     return res;
   });
+  ipcMain.handle('toggle-product-stop', (_, { id, isStopped }) => {
+    const res = toggleProductStop(id, isStopped);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
   ipcMain.handle('search-product', (_, query) => searchProduct(query));
   ipcMain.handle('write-off-product', (_, data) => writeOffProduct(data));
   ipcMain.handle('get-write-offs',     () => getWriteOffs());
@@ -2268,7 +2352,7 @@ if (!gotTheLock) {
 
   // ── Reports ────────────────────────────────────────────────────────────────
   safeHandle('get-reports',        (_, dates) => getReports(dates.start, dates.end));
-  safeHandle('get-waiters-report', (_, opts) => getWaitersReport(opts.start, opts.end, opts.waiterId));
+  safeHandle('get-waiters-report', (_, opts) => getWaitersReport(opts.start, opts.end, opts.waiterId, opts.period));
   safeHandle('get-sales-for-excel',(_, {start, end}) => getSalesForExcel(start, end));
   safeHandle('get-low-stock',      (_, limit) => getLowStockProducts(limit ?? 3));
   safeHandle('clear-test-data',    () => clearTestData());
@@ -2526,10 +2610,7 @@ if (!gotTheLock) {
             #printable-receipt, #printable-receipt * {
               color: #000000 !important;
               font-weight: 700 !important;
-              font-family: 'Courier New', Courier, monospace !important;
-              text-rendering: crispEdges !important;
-              -webkit-font-smoothing: none !important;
-              letter-spacing: 0.5px !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif, monospace !important;
             }
             @page {
               margin: 0 !important;
@@ -2628,25 +2709,36 @@ if (!gotTheLock) {
   ipcMain.handle('load-initial-base', (_, type) => loadInitialBase(type));
   
   ipcMain.handle('get-cashiers', () => getCashiers());
-  ipcMain.handle('add-cashier', (_, { name, pin, role, salary }) => addCashier(name, pin, role, salary));
+  ipcMain.handle('add-cashier', (_, { name, pin, role, salary, percentage }) => addCashier(name, pin, role, salary, percentage));
   ipcMain.handle('delete-cashier', (_, id) => deleteCashier(id));
   ipcMain.handle('update-cashier-pin', (_, { id, newPin }) => updateCashierPin(id, newPin));
   ipcMain.handle('get-attendance', (_, date) => getAttendanceList(date));
   ipcMain.handle('save-attendance', (_, { employeeId, employeeType, date, status }) => saveAttendance(employeeId, employeeType, date, status));
-  ipcMain.handle('update-cashier', (_, { id, name, pin, role, salary }) => updateCashier(id, name, pin, role, salary));
+  ipcMain.handle('update-cashier', (_, { id, name, pin, role, salary, percentage }) => updateCashier(id, name, pin, role, salary, percentage));
   ipcMain.handle('update-waiter', (_, { id, name, pinCode, percentage, salary }) => updateWaiter(id, name, pinCode, percentage, salary));
 
   // ── Restaurant IPC Handlers ────────────────────────────────────────────────
   ipcMain.handle('get-restaurant-tables', () => getRestaurantTables());
   ipcMain.handle('get-active-order-for-table', (_, tableId) => getActiveOrderForTable(tableId));
   ipcMain.handle('save-restaurant-order', (_, tableId, waiterId, items) => saveRestaurantOrder(tableId, waiterId, items));
-  ipcMain.handle('close-restaurant-order', (_, { tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment }) => closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment));
+  ipcMain.handle('close-restaurant-order', (_, { tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment, serviceFeePercent, serviceFeeAmount, isTakeaway }) => closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment, serviceFeePercent, serviceFeeAmount, isTakeaway));
   ipcMain.handle('close-restaurant-order-only', (_, tableId) => closeRestaurantOrderOnly(tableId));
   ipcMain.handle('get-waiters', () => getWaiters());
   ipcMain.handle('add-waiter', (_, { name, pinCode, percentage, salary }) => addWaiter(name, pinCode, percentage, salary));
-  ipcMain.handle('delete-waiter', (_, id) => deleteWaiter(id));
-  ipcMain.handle('transfer-restaurant-table', (_, { fromTableId, toTableId }) => transferRestaurantTable(fromTableId, toTableId));
-  ipcMain.handle('transfer-restaurant-order-waiter', (_, { tableId, targetWaiterId }) => transferRestaurantOrderWaiter(tableId, targetWaiterId));
+  ipcMain.handle('transfer-restaurant-table', (_, { fromTableId, toTableId }) => {
+    const res = transferRestaurantTable(fromTableId, toTableId);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('transfer-restaurant-order-waiter', (_, { tableId, targetWaiterId }) => {
+    const res = transferRestaurantOrderWaiter(tableId, targetWaiterId);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
   ipcMain.handle('cancel-restaurant-order', (_, { tableId, cancelledBy }) => cancelRestaurantOrder(tableId, cancelledBy));
   ipcMain.handle('add-delivery-order', (_, { customerName, customerPhone, customerAddress, waiterId }) => addDeliveryOrder(customerName, customerPhone, customerAddress, waiterId));
   ipcMain.handle('add-restaurant-table', (_, { name, zone }) => {
@@ -2683,6 +2775,36 @@ if (!gotTheLock) {
   ipcMain.handle('lock-table', (_, tableId, userName) => lockTable(tableId, userName));
   ipcMain.handle('unlock-table', (_, tableId, userName) => unlockTable(tableId, userName));
   ipcMain.handle('set-table-pre-printed', (_, tableId, isPrinted) => setTablePrePrinted(tableId, isPrinted));
+  ipcMain.handle('get-kitchen-orders', () => getKitchenOrders());
+  ipcMain.handle('set-order-status', (_, { orderId, status }) => {
+    const res = setOrderStatus(orderId, status);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated', { orderId, status });
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated', { orderId, status });
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('set-order-status-by-table', (_, { tableId, status }) => {
+    const res = setOrderStatusByTable(tableId, status);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated', { tableId, status });
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated', { tableId, status });
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('get-tv-orders', () => getTvOrders());
 
   // ── Application Activation ──────────────────────────────────────────────────
   ipcMain.handle('get-machine-id', () => getMachineId());

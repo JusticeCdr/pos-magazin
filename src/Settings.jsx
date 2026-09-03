@@ -1,11 +1,25 @@
 import { useState, useEffect, memo } from 'react';
-import { DatabaseBackup, Download, Upload, Users, Store, Trash2, Plus, RefreshCw, Printer, AlertTriangle, Phone, Eye, EyeOff } from 'lucide-react';
+import { 
+  DatabaseBackup, Download, Upload, Users, Store, Trash2, Plus, RefreshCw, 
+  Printer, AlertTriangle, Phone, Eye, EyeOff, Percent, ChefHat, Tv, ExternalLink, 
+  Copy, Check, Smartphone, Wifi, Globe, Monitor, ShieldCheck
+} from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
 
 export default memo(function Settings() {
   const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate, allowMobileQr, updateAllowMobileQr } = useApp();
-  const isAdmin = currentUser?.pin === 'xxMpos7532.' || currentUser?.role === 'admin';
+  const [isMasterUnlocked, setIsMasterUnlocked] = useState(false);
+  const [showMasterUnlockModal, setShowMasterUnlockModal] = useState(false);
+  const [masterPinInput, setMasterPinInput] = useState('');
+  const [masterPinError, setMasterPinError] = useState('');
+
+  const isMasterAdmin = currentUser?.pin === 'xxMpos7532.' || isMasterUnlocked;
+  const isAdmin = currentUser?.pin === 'xxMpos7532.' || isMasterAdmin;
+
+  useEffect(() => {
+    setIsMasterUnlocked(false);
+  }, [currentUser]);
 
   const [cashiers, setCashiers] = useState([]);
   const [waiters, setWaiters] = useState([]);
@@ -147,6 +161,7 @@ export default memo(function Settings() {
   const [cashierPin, setCashierPin] = useState('');
   const [cashierRole, setCashierRole] = useState('cashier');
   const [cashierSalary, setCashierSalary] = useState('');
+  const [cashierPercentage, setCashierPercentage] = useState('');
 
   // Editing PIN State
   const [editingId, setEditingId] = useState(null);
@@ -154,6 +169,7 @@ export default memo(function Settings() {
   const [editPin, setEditPin] = useState('');
   const [editRole, setEditRole] = useState('cashier');
   const [editSalary, setEditSalary] = useState('');
+  const [editPercentage, setEditPercentage] = useState('');
   const [deletingId, setDeletingId] = useState(null); // tracks which cashier is being deleted
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -191,6 +207,15 @@ export default memo(function Settings() {
   const [mobileQrPinInput, setMobileQrPinInput] = useState('');
   const [mobileQrPinError, setMobileQrPinError] = useState('');
   const [localIp, setLocalIp] = useState('');
+  const [copiedLink, setCopiedLink] = useState('');
+
+  const copyToClipboard = (text, key) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedLink(key);
+    setToastMsg("Havola nusxalandi!");
+    setTimeout(() => setCopiedLink(''), 3000);
+  };
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [telegramUrl, setTelegramUrl] = useState('');
   const [instagramUrl, setInstagramUrl] = useState('');
@@ -210,6 +235,27 @@ export default memo(function Settings() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetPin, setResetPin] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [cafeServiceFee, setCafeServiceFee] = useState('10');
+
+  useEffect(() => {
+    if (window.api && window.api.getSettings) {
+      window.api.getSettings().then(res => {
+        if (res && res.success && res.data) {
+          const val = res.data.cafe_service_percent || res.data.restaurant_service_percent;
+          if (val) setCafeServiceFee(String(val));
+        }
+      });
+    }
+  }, []);
+
+  const handleSaveCafeServiceFee = async () => {
+    if (window.api && window.api.updateSetting) {
+      await window.api.updateSetting({ key: 'cafe_service_percent', value: String(cafeServiceFee) });
+      await window.api.updateSetting({ key: 'restaurant_service_percent', value: String(cafeServiceFee) });
+      localStorage.setItem('cafe_service_percent', String(cafeServiceFee));
+      setToastMsg("Kafe xizmat foiz stavkasi saqlandi!");
+    }
+  };
 
   const loadCashiers = async () => {
     if (!window.api) return;
@@ -646,6 +692,18 @@ export default memo(function Settings() {
     );
   };
 
+  const handleConfirmMasterUnlock = () => {
+    if (masterPinInput.trim() === 'xxMpos7532.') {
+      setIsMasterUnlocked(true);
+      setShowMasterUnlockModal(false);
+      setMasterPinInput('');
+      setMasterPinError('');
+      setToastMsg("Asosiy Admin rejimi faollashtirildi! Barcha sozlamalar ochildi.");
+    } else {
+      setMasterPinError("Maxfiy PIN kod noto'g'ri!");
+    }
+  };
+
   const handleSaveGeminiKey = async () => {
     if (!window.api) return;
     try {
@@ -813,13 +871,15 @@ export default memo(function Settings() {
         name: cashierName,
         pin: cashierPin,
         role: cashierRole,
-        salary: Number(cashierSalary) || 0
+        salary: Number(cashierSalary) || 0,
+        percentage: Number(cashierPercentage) || 0
       });
       if (res && res.success) {
         setCashierName('');
         setCashierPin('');
         setCashierRole('cashier');
         setCashierSalary('');
+        setCashierPercentage('');
         await loadCashiers();
       } else if (res?.error === 'pin_exists') {
         setToastMsg(t('pinExists'));
@@ -862,7 +922,8 @@ export default memo(function Settings() {
         name: editName,
         pin: editPin,
         role: editRole,
-        salary: Number(editSalary) || 0
+        salary: Number(editSalary) || 0,
+        percentage: Number(editPercentage) || 0
       });
       if (res && res.success) {
         setEditingId(null);
@@ -1059,7 +1120,7 @@ export default memo(function Settings() {
             </p>
             <div className="mb-4">
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
-                Maxfiy PIN kod (xxMpos7532.):
+                Maxfiy PIN kod:
               </label>
               <input 
                 type="password" 
@@ -1072,7 +1133,7 @@ export default memo(function Settings() {
                   if (e.key === 'Enter') handleConfirmMobileQrPin();
                 }}
                 className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 text-center font-bold text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
-                placeholder="xxMpos7532."
+                placeholder="PIN kod..."
                 autoFocus
               />
               {mobileQrPinError && (
@@ -1102,6 +1163,68 @@ export default memo(function Settings() {
           </div>
         </div>
       )}
+
+      {/* Master Admin Unlock Modal */}
+      {showMasterUnlockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-3 mb-4 text-amber-500">
+              <span className="text-2xl">👑</span>
+              <div>
+                <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                  Asosiy Admin Rejimi
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Barcha maxfiy sozlamalarni ochish</p>
+              </div>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm font-medium">
+              Do'kon/Kafe almashtirish, bazani qayta yuklash va barcha to'liq sozlamalarni ochish uchun maxfiy PIN kodni kiriting:
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
+                Maxfiy PIN kod:
+              </label>
+              <input 
+                type="password" 
+                value={masterPinInput}
+                onChange={e => {
+                  setMasterPinInput(e.target.value);
+                  setMasterPinError('');
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleConfirmMasterUnlock();
+                }}
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 text-center font-bold text-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:text-white"
+                placeholder="PIN kod..."
+                autoFocus
+              />
+              {masterPinError && (
+                <p className="text-xs text-rose-500 font-bold mt-2 text-center">
+                  {masterPinError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowMasterUnlockModal(false);
+                  setMasterPinInput('');
+                  setMasterPinError('');
+                }}
+                className="flex-1 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-xl transition-colors cursor-pointer"
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={handleConfirmMasterUnlock}
+                className="flex-1 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 rounded-xl transition-colors shadow-md cursor-pointer"
+              >
+                Ochish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Toast Notification (Replaces alert()) */}
       {toastMsg && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-900 text-white px-6 py-3 rounded-lg shadow-2xl font-medium animate-bounce">
@@ -1125,7 +1248,7 @@ export default memo(function Settings() {
               )}
             </p>
             <div className="mb-6">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Maxfiy parolni kiriting (xxMpos7532.):</label>
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Maxfiy parolni kiriting:</label>
               <input 
                 type="password" 
                 value={clearPin}
@@ -1172,7 +1295,7 @@ export default memo(function Settings() {
               )}
             </p>
             <div className="mb-6">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Maxfiy parolni kiriting (xxMpos7532.):</label>
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Maxfiy parolni kiriting:</label>
               <input 
                 type="password" 
                 value={clearWarehousePin}
@@ -1219,7 +1342,7 @@ export default memo(function Settings() {
               )}
             </p>
             <div className="mb-6">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Maxfiy parolni kiriting (xxMpos7532.):</label>
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Maxfiy parolni kiriting:</label>
               <input 
                 type="password" 
                 value={resetPin}
@@ -1315,19 +1438,28 @@ export default memo(function Settings() {
       )}
 
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('settings')}</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('settingsSubtitle')}</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('settings')}</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('settingsSubtitle')}</p>
+        </div>
+
+        {isMasterAdmin && (
+          <div className="flex items-center gap-2">
+            <div className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-2 shadow-sm">
+              <span>👑</span>
+              <span>Asosiy Admin (Barcha sozlamalar ochiq)</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className={(businessType === 'restaurant' || isAdmin) ? "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start" : "max-w-2xl mx-auto w-full"}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         
         {/* Left Column: General & Backup */}
-        {(businessType === 'restaurant' || isAdmin) && (
-          <div className="space-y-6">
-            <>
+        <div className="space-y-6">
           {/* Initial Base Loader */}
-          {isUnlocked && !isBaseLoaded && (
+          {isMasterAdmin && !isBaseLoaded && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border-2 border-dashed border-blue-300 dark:border-blue-900/60 bg-blue-50/30 dark:bg-blue-900/10 shadow-sm transition-colors">
               <h3 className="text-lg font-bold text-blue-700 dark:text-blue-400 mb-2">
                 Boshlang'ich bazani yuklash
@@ -1347,78 +1479,81 @@ export default memo(function Settings() {
             </div>
           )}
 
-          {/* Store Name Configuration */}
+          {/* USD Rate Configuration (Har doim ko'rinadi - oddiy PIN uchun ham, Asosiy Admin uchun ham) */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
-            <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
-              <Store className="text-emerald-500" size={20} />
-              {t('storeNameLabel')}
+            <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
+              <span className="text-emerald-500 font-extrabold text-lg">$</span>
+              Dollar kursi (USD Exchange Rate)
             </h3>
-            
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t('storeNameDesc')}</p>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newStoreName}
-                  onChange={e => setNewStoreName(e.target.value)}
-                  className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                />
-                <button 
-                  onClick={handleSaveStoreName}
-                  disabled={loading || newStoreName === storeName}
-                  className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                >
-                  {t('save')}
-                </button>
-              </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              Dollar kursining so'mdagi qiymati. Omborda xarid narxini dollarda kiritishda konvertatsiya uchun ishlatiladi.
+            </p>
+            <div className="flex items-center gap-2 mb-3">
+              <input 
+                type="checkbox"
+                id="checkbox-auto-usd"
+                checked={autoUsdRate}
+                onChange={e => handleToggleAutoUsdRate(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
+              />
+              <label htmlFor="checkbox-auto-usd" className="text-xs text-gray-700 dark:text-gray-300 font-semibold cursor-pointer">
+                Dastur yoqilganda dollar kursini internetdan (Markaziy Bankdan) avtomatik yangilash
+              </label>
             </div>
+            <div className="flex gap-2 max-w-md">
+              <input 
+                type="number" 
+                value={newUsdRate}
+                onChange={e => setNewUsdRate(e.target.value)}
+                placeholder="Masalan: 12800"
+                className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+              />
+              <button 
+                onClick={handleSaveUsdRate}
+                disabled={loading || String(newUsdRate) === String(usdRate)}
+                className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+              >
+                {t('save')}
+              </button>
+              <button 
+                type="button"
+                onClick={handleSyncUsdRate}
+                disabled={loading}
+                className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                🌐 Internetdan olish
+              </button>
+            </div>
+          </div>
 
-            {/* USD Rate Configuration */}
-            <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700">
-              <h4 className="font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
-                <span className="text-emerald-500 font-extrabold text-sm">$</span>
-                Dollar kursi (USD Exchange Rate)
-              </h4>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                Dollar kursining sumdagi qiymati. Omborda xarid narxini dollarda kiritishda konvertatsiya uchun ishlatiladi.
-              </p>
-              <div className="flex items-center gap-2 mb-3">
-                <input 
-                  type="checkbox"
-                  id="checkbox-auto-usd"
-                  checked={autoUsdRate}
-                  onChange={e => handleToggleAutoUsdRate(e.target.checked)}
-                  className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
-                />
-                <label htmlFor="checkbox-auto-usd" className="text-xs text-gray-700 dark:text-gray-300 font-semibold cursor-pointer">
-                  Dastur yoqilganda dollar kursini internetdan (Markaziy Bankdan) avtomatik yangilash
-                </label>
+          {/* Store Name & Printers & Remote Configuration (Faqat Asosiy Admin) */}
+          {isMasterAdmin && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+                <Store className="text-emerald-500" size={20} />
+                {businessType === 'restaurant' ? 'Kafe / Restoran nomi' : t('storeNameLabel')}
+              </h3>
+              
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                  {businessType === 'restaurant' ? "Cheklarda va dasturda ko'rinadigan nom" : t('storeNameDesc')}
+                </p>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={newStoreName}
+                    onChange={e => setNewStoreName(e.target.value)}
+                    className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                  />
+                  <button 
+                    onClick={handleSaveStoreName}
+                    disabled={loading || newStoreName === storeName}
+                    className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+                  >
+                    {t('save')}
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 max-w-md">
-                <input 
-                  type="number" 
-                  value={newUsdRate}
-                  onChange={e => setNewUsdRate(e.target.value)}
-                  placeholder="Masalan: 12800"
-                  className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                />
-                 <button 
-                  onClick={handleSaveUsdRate}
-                  disabled={loading || String(newUsdRate) === String(usdRate)}
-                  className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
-                >
-                  {t('save')}
-                </button>
-                <button 
-                  type="button"
-                  onClick={handleSyncUsdRate}
-                  disabled={loading}
-                  className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  🌐 Internetdan olish
-                </button>
-              </div>
-            </div>
 
             {/* ── Logo Upload Section ── */}
             <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700">
@@ -1555,12 +1690,12 @@ export default memo(function Settings() {
               </div>
             </div>
 
-            {isUnlocked && (
-              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
-                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
-                  <Printer size={16} />
-                  {t('receiptPrinterLabel') || 'Принтер чеков'}
-                </h4>
+            {/* Receipt Printer Selection */}
+            <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+              <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                <Printer size={16} />
+                {t('receiptPrinterLabel') || 'Принтер чеков'}
+              </h4>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                 {t('receiptPrinterDesc') || 'Выберите принтер (58мм) для автоматической печати чеков'}
               </p>
@@ -1619,68 +1754,71 @@ export default memo(function Settings() {
               </div>
 
               {/* Label Printer Selection */}
-              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
-                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
-                  <Printer size={16} />
-                  {t('labelPrinterLabel')}
-                </h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                  {t('labelPrinterDesc')}
-                </p>
-                <select
-                  value={selectedLabelPrinter}
-                  onChange={(e) => handleSaveLabelPrinter(e.target.value)}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                >
-                  <option value="">-- {t('none')} --</option>
-                  {printers.map((p, idx) => (
-                    <option key={idx} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+              {(isMasterAdmin || businessType !== 'restaurant') && (
+                <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                    <Printer size={16} />
+                    {t('labelPrinterLabel')}
+                  </h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                    {t('labelPrinterDesc')}
+                  </p>
+                  <select
+                    value={selectedLabelPrinter}
+                    onChange={(e) => handleSaveLabelPrinter(e.target.value)}
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                  >
+                    <option value="">-- {t('none')} --</option>
+                    {printers.map((p, idx) => (
+                      <option key={idx} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
 
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                      Stiker kengligi (mm)
-                    </label>
-                    <input
-                      type="number"
-                      value={labelWidth}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setLabelWidth(val);
-                        localStorage.setItem('label_width', val);
-                      }}
-                      placeholder="Masalan: 60"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                      Stiker balandligi (mm)
-                    </label>
-                    <input
-                      type="number"
-                      value={labelHeight}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setLabelHeight(val);
-                        localStorage.setItem('label_height', val);
-                      }}
-                      placeholder="Masalan: 30"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                    />
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                        Stiker kengligi (mm)
+                      </label>
+                      <input
+                        type="number"
+                        value={labelWidth}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLabelWidth(val);
+                          localStorage.setItem('label_width', val);
+                        }}
+                        placeholder="Masalan: 60"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                        Stiker balandligi (mm)
+                      </label>
+                      <input
+                        type="number"
+                        value={labelHeight}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLabelHeight(val);
+                          localStorage.setItem('label_height', val);
+                        }}
+                        placeholder="Masalan: 30"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                      />
+                    </div>
                   </div>
                 </div>
+              )}
 
-                {businessType === 'restaurant' && (
-                  <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6 space-y-4">
-                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                      <Printer size={18} className="text-emerald-500" />
-                      <span>Taomlar chop etish printerlari 🍽️</span>
-                    </h4>
+              {(businessType === 'restaurant' || isMasterAdmin) && (
+                <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6 space-y-4">
+                  <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                    <Printer size={18} className="text-emerald-500" />
+                    <span>Taomlar chop etish printerlari 🍽️</span>
+                  </h4>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Oshxona, Bar va Xolodniy bo'limlari uchun alohida printerlarni tanlang:
                     </p>
@@ -1776,8 +1914,6 @@ export default memo(function Settings() {
                   </button>
                 </div>
               </div>
-            </div>
-          )}
 
               {/* Contact Phone Numbers */}
               <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
@@ -1841,7 +1977,7 @@ export default memo(function Settings() {
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                  Kassa va restoran oyna panellarida telefondan ulanish QR kodi va havolasi tugmasini ko'rsatish yoki yashirish. Sozlamani o'zgartirish uchun maxfiy PIN kod (xxMpos7532.) talab etiladi.
+                  Kassa va restoran oyna panellarida telefondan ulanish QR kodi va havolasi tugmasini ko'rsatish yoki yashirish. Sozlamani o'zgartirish uchun maxfiy PIN kod talab etiladi.
                 </p>
                 <button
                   type="button"
@@ -1856,12 +1992,12 @@ export default memo(function Settings() {
                       : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
                   }`}
                 >
-                  {allowMobileQr ? "Ruxsatni bekor qilish va yashirish (xxMpos7532.)" : "Ruxsat berish va ko'rsatish (xxMpos7532.)"}
+                  {allowMobileQr ? "Ruxsatni bekor qilish va yashirish" : "Ruxsat berish va ko'rsatish"}
                 </button>
               </div>
 
               {/* Masofaviy boshqaruv (Telefon uchun) */}
-              {isUnlocked && (
+              {(isMasterAdmin || allowMobileQr) && (
                 <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
                   <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
                     <span className="text-blue-500">📱</span>
@@ -1920,19 +2056,82 @@ export default memo(function Settings() {
                   )}
 
                   {ngrokUrl && !ngrokLoading && (
-                    <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900/30 rounded-xl">
-                      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2 mb-1">
+                    <div className="mt-4 p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 rounded-2xl">
+                      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2 mb-2">
                         <span>✅</span>
-                        Tunnel faol! Telefon orqali kirish havolasi:
+                        Tunnel faol! Tashqi internet orqali ulanish havolalari:
                       </p>
-                      <a 
-                        href={businessType === 'restaurant' ? `${ngrokUrl}/mobile` : ngrokUrl} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300 break-all underline block hover:text-emerald-500"
-                      >
-                        {businessType === 'restaurant' ? `${ngrokUrl}/mobile` : ngrokUrl}
-                      </a>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+                          <span className="text-xs font-bold text-gray-700 dark:text-gray-300">📱 Mobil / Ofitsiant:</span>
+                          <div className="flex items-center gap-2">
+                            <a 
+                              href={`${ngrokUrl.replace(/\/$/, '')}/mobile`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 underline"
+                            >
+                              {`${ngrokUrl.replace(/\/$/, '')}/mobile`}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(`${ngrokUrl.replace(/\/$/, '')}/mobile`, 'ngrok-mobile')}
+                              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500"
+                              title="Nusxalash"
+                            >
+                              {copiedLink === 'ngrok-mobile' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {businessType === 'restaurant' && (
+                          <>
+                            <div className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+                              <span className="text-xs font-bold text-amber-700 dark:text-amber-400">👨‍🍳 Oshxona (KDS):</span>
+                              <div className="flex items-center gap-2">
+                                <a 
+                                  href={`${ngrokUrl.replace(/\/$/, '')}/kitchen`} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400 underline"
+                                >
+                                  {`${ngrokUrl.replace(/\/$/, '')}/kitchen`}
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(`${ngrokUrl.replace(/\/$/, '')}/kitchen`, 'ngrok-kitchen')}
+                                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500"
+                                  title="Nusxalash"
+                                >
+                                  {copiedLink === 'ngrok-kitchen' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+                              <span className="text-xs font-bold text-purple-700 dark:text-purple-400">📺 TV Tablo:</span>
+                              <div className="flex items-center gap-2">
+                                <a 
+                                  href={`${ngrokUrl.replace(/\/$/, '')}/tv`} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-xs font-mono font-bold text-purple-700 dark:text-purple-400 underline"
+                                >
+                                  {`${ngrokUrl.replace(/\/$/, '')}/tv`}
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(`${ngrokUrl.replace(/\/$/, '')}/tv`, 'ngrok-tv')}
+                                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500"
+                                  title="Nusxalash"
+                                >
+                                  {copiedLink === 'ngrok-tv' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -1948,52 +2147,279 @@ export default memo(function Settings() {
                     </div>
                   )}
 
-                  {/* ── Local connection (Wi-Fi) Section ── */}
-                  {localIp && (
-                    <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700">
-                      <h4 className="font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2 text-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 0 1 7.424 0M5.106 11.856a9 9 0 0 1 13.788 0M1.924 8.674a12.75 12.75 0 0 1 20.152 0M12.53 18.22a1.5 1.5 0 1 1-1.06-1.06 1.5 1.5 0 0 1 1.06 1.06Z" />
-                        </svg>
-                        Lokal tarmoq (Wi-Fi) orqali ulanish
+                  {/* ── Local connection & Screen Links Section ── */}
+                  <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 text-sm">
+                        <Wifi className="w-4 h-4 text-emerald-500" />
+                        Lokal tarmoq (Wi-Fi) va Ekran Havolalari
                       </h4>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
-                        Telefoningizni ushbu kompyuter ulangan Wi-Fi tarmog'iga ulang va quyidagi QR-kodni skanerlang:
-                      </p>
-                      <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl">
-                        {/* QR Code */}
-                        <div className="shrink-0 bg-white p-2.5 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-center">
-                          <QRCodeCanvas
-                            value={businessType === 'restaurant' ? `http://${localIp}:4000/mobile` : `http://${localIp}:4000`}
-                            size={128}
-                            className="bg-white"
-                          />
+                      {isMasterAdmin && (
+                        <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black flex items-center gap-1">
+                          <ShieldCheck size={12} />
+                          Admin
+                        </span>
+                      )}
+                    </div>
+                    
+                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                      Qurilmalarni (Smart TV, Planshet, Telefon) bir xil Wi-Fi tarmog'iga ulang va quyidagi ekran havolalarini brauzerda oching yoki QR-kodni skanerlang:
+                    </p>
+
+                    {/* Grid of Screen Links */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      
+                      {/* Card 1: Asosiy Web Kassa / Planshet Terminal (Har doim ochiq) */}
+                      <div className="p-4 bg-blue-50/40 dark:bg-blue-950/10 border border-blue-200/80 dark:border-blue-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5 uppercase tracking-wide">
+                              <Monitor size={16} className="text-blue-600 dark:text-blue-400" />
+                              Web Kassa (Planshet / Komp)
+                            </span>
+                            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-black px-2 py-0.5 rounded-md">
+                              /
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                            Planshet yoki tarmoqdagi boshqa kompyuter orqali kassa oynasiga kirish.
+                          </p>
+                          
+                          <div className="flex items-center gap-3">
+                            <div className="shrink-0 bg-white p-2 rounded-xl border border-blue-200/60 shadow-sm flex items-center justify-center">
+                              <QRCodeCanvas
+                                value={`http://${localIp || 'localhost'}:4000`}
+                                size={76}
+                                className="bg-white"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
+                              <a
+                                href={`http://${localIp || 'localhost'}:4000`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 break-all underline hover:text-blue-500 block"
+                              >
+                                {`http://${localIp || 'localhost'}:4000`}
+                              </a>
+                            </div>
+                          </div>
                         </div>
-                        
-                        {/* Connection Details */}
-                        <div className="flex-1 text-center sm:text-left space-y-2">
-                          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lokal Havola</p>
+
+                        <div className="flex gap-2 pt-2 border-t border-blue-100 dark:border-blue-900/30">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000`, 'loc-main')}
+                            className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            {copiedLink === 'loc-main' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                            <span>Nusxalash</span>
+                          </button>
                           <a
-                            href={businessType === 'restaurant' ? `http://${localIp}:4000/mobile` : `http://${localIp}:4000`}
+                            href={`http://${localIp || 'localhost'}:4000`}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-base font-mono font-black text-emerald-700 dark:text-emerald-300 break-all underline hover:text-emerald-500 block"
+                            className="py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                           >
-                            {businessType === 'restaurant' ? `http://${localIp}:4000/mobile` : `http://${localIp}:4000`}
+                            <ExternalLink size={14} />
+                            <span>Ochish</span>
                           </a>
-                          <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                            Bu havola internet talab qilmaydi, faqat mahalliy Wi-Fi tarmog'i orqali ma'lumotlarni juda tez uzatadi.
-                          </p>
                         </div>
                       </div>
+
+                      {/* Card 2: Ofitsiant / Mobil Kassa (Faqat ruxsat berilganda) */}
+                      {allowMobileQr && (
+                        <div className="p-4 bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-200/80 dark:border-emerald-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 uppercase tracking-wide">
+                                <Smartphone size={16} className="text-emerald-600 dark:text-emerald-400" />
+                                {businessType === 'restaurant' ? 'Ofitsiant Mobil Ilovasi' : 'Mobil Kassa & Sklad'}
+                              </span>
+                              <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-black px-2 py-0.5 rounded-md">
+                                /mobile
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                              {businessType === 'restaurant'
+                                ? 'Ofitsiantlar telefon orqali stollarga buyurtma olishi va oshxonaga yuborishi uchun.'
+                                : 'Telefondan tovarlarni qidirish, skladni tekshirish va savdo qilish uchun.'}
+                            </p>
+                            
+                            <div className="flex items-center gap-3">
+                              <div className="shrink-0 bg-white p-2 rounded-xl border border-emerald-200/60 shadow-sm flex items-center justify-center">
+                                <QRCodeCanvas
+                                  value={`http://${localIp || 'localhost'}:4000/mobile`}
+                                  size={76}
+                                  className="bg-white"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
+                                <a
+                                  href={`http://${localIp || 'localhost'}:4000/mobile`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 break-all underline hover:text-emerald-600 block"
+                                >
+                                  {`http://${localIp || 'localhost'}:4000/mobile`}
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 border-t border-emerald-100 dark:border-emerald-900/30">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/mobile`, 'loc-mobile')}
+                              className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              {copiedLink === 'loc-mobile' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                              <span>Nusxalash</span>
+                            </button>
+                            <a
+                              href={`http://${localIp || 'localhost'}:4000/mobile`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                              <ExternalLink size={14} />
+                              <span>Ochish</span>
+                            </a>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Card 3: Oshxona ekrani (KDS) - Faqat Asosiy Admin */}
+                      {isMasterAdmin && businessType === 'restaurant' && (
+                        <div className="p-4 bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 uppercase tracking-wide">
+                                <ChefHat size={16} className="text-amber-600 dark:text-amber-400" />
+                                Oshxona Monitori (KDS)
+                              </span>
+                              <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-black px-2 py-0.5 rounded-md">
+                                /kitchen
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                              Oshpazlar uchun buyurtmalarni qabul qilish va tayyor bo'lganini belgilash ekrani.
+                            </p>
+                            
+                            <div className="flex items-center gap-3">
+                              <div className="shrink-0 bg-white p-2 rounded-xl border border-amber-200/60 shadow-sm flex items-center justify-center">
+                                <QRCodeCanvas
+                                  value={`http://${localIp || 'localhost'}:4000/kitchen`}
+                                  size={76}
+                                  className="bg-white"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
+                                <a
+                                  href={`http://${localIp || 'localhost'}:4000/kitchen`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400 break-all underline hover:text-amber-600 block"
+                                >
+                                  {`http://${localIp || 'localhost'}:4000/kitchen`}
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 border-t border-amber-100 dark:border-amber-900/30">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/kitchen`, 'loc-kitchen')}
+                              className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              {copiedLink === 'loc-kitchen' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                              <span>Nusxalash</span>
+                            </button>
+                            <a
+                              href={`http://${localIp || 'localhost'}:4000/kitchen`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                              <ExternalLink size={14} />
+                              <span>Ochish</span>
+                            </a>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Card 4: TV Tablo ekrani - Faqat Asosiy Admin */}
+                      {isMasterAdmin && businessType === 'restaurant' && (
+                        <div className="p-4 bg-purple-50/40 dark:bg-purple-950/10 border border-purple-200/80 dark:border-purple-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1.5 uppercase tracking-wide">
+                                <Tv size={16} className="text-purple-600 dark:text-purple-400" />
+                                TV Tablo (Navbat ekrani)
+                              </span>
+                              <span className="text-[10px] bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-black px-2 py-0.5 rounded-md">
+                                /tv
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                              Zaldagi Smart TV yoki monitor uchun tayyor va tayyorlanayotgan taomlar ekrani.
+                            </p>
+                            
+                            <div className="flex items-center gap-3">
+                              <div className="shrink-0 bg-white p-2 rounded-xl border border-purple-200/60 shadow-sm flex items-center justify-center">
+                                <QRCodeCanvas
+                                  value={`http://${localIp || 'localhost'}:4000/tv`}
+                                  size={76}
+                                  className="bg-white"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
+                                <a
+                                  href={`http://${localIp || 'localhost'}:4000/tv`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs font-mono font-bold text-purple-700 dark:text-purple-400 break-all underline hover:text-purple-600 block"
+                                >
+                                  {`http://${localIp || 'localhost'}:4000/tv`}
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-2 border-t border-purple-100 dark:border-purple-900/30">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/tv`, 'loc-tv')}
+                              className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              {copiedLink === 'loc-tv' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                              <span>Nusxalash</span>
+                            </button>
+                            <a
+                              href={`http://${localIp || 'localhost'}:4000/tv`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="py-1.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                              <ExternalLink size={14} />
+                              <span>Ochish</span>
+                            </a>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             )}
 
               {/* Sun'iy Intellekt Sozlamalari (Gemini) */}
-              {isUnlocked && (
+              {(isMasterAdmin || businessType !== 'restaurant') && (
                 <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
                   <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
                     <span className="text-purple-500">✨</span>
@@ -2020,14 +2446,16 @@ export default memo(function Settings() {
                 </div>
               )}
 
-              </div>
+            </div>
+          )}
 
-              {/* Biznes turi sozlamalari */}
-              {isUnlocked && (
+              {/* Biznes turi sozlamalari (Faqat Asosiy Admin) */}
+              {isMasterAdmin && (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
                   <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
                     <Store className="text-blue-500" size={20} />
                     {lang === 'uz' ? 'Biznes Turi' : 'Тип Бизнеса'}
+                    <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black">Admin</span>
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     {lang === 'uz' 
@@ -2062,11 +2490,12 @@ export default memo(function Settings() {
               )}
 
               {/* Yordamchi terminal rejimi settings */}
-              {isUnlocked && (
+              {isMasterAdmin && (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
                   <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
                     <span className="text-blue-500">🖥️</span>
                     Yordamchi Terminal Rejimi
+                    <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black">Admin</span>
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
                     Ushbu rejim yoqilganda dastur faqat ofitsiantlar va menejer parolini tan oladi (kassir parollari ishlamaydi). Dastur to'g'ridan-to'g'ri stol tanlash oynasida ochiladi va chap panel butunlay yashiriladi.
@@ -2088,89 +2517,91 @@ export default memo(function Settings() {
                 </div>
               )}
 
-              {/* Ijtimoiy Tarmoqlar & Manzil Sozlamalari (Check uchun QR kodlar) */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
-                  <span className="text-blue-500">📍</span>
-                  Ijtimoiy Tarmoqlar & Manzil (Chek uchun)
-                </h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                      Manzil (Chekda manzil yozuvi chiqadi)
-                    </label>
-                    <input 
-                      type="text" 
-                      value={shopLocation}
-                      onChange={e => updateShopLocation(e.target.value)}
-                      placeholder="Toshkent sh., Yunusobod tumani..."
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                    />
-                  </div>
+              {/* Ijtimoiy Tarmoqlar & Manzil Sozlamalari (Check uchun QR kodlar - Faqat Asosiy Admin) */}
+              {isMasterAdmin && (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+                  <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+                    <span className="text-blue-500">📍</span>
+                    Ijtimoiy Tarmoqlar & Manzil (Chek uchun)
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Manzil (Chekda manzil yozuvi chiqadi)
+                      </label>
+                      <input 
+                        type="text" 
+                        value={shopLocation}
+                        onChange={e => updateShopLocation(e.target.value)}
+                        placeholder="Toshkent sh., Yunusobod tumani..."
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                      Telegram Havolasi (Chekda QR-kod chiqadi)
-                    </label>
-                    <input 
-                      type="text" 
-                      value={telegramUrl}
-                      onChange={e => updateTelegramUrl(e.target.value)}
-                      placeholder="https://t.me/xxmpos"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                    />
-                    <QRCodeCanvas id="tg-qr-canvas" value={telegramUrl || ' '} style={{ display: 'none' }} size={256} />
-                    {telegramUrl && (
-                      <div className="mt-2 flex items-center gap-4 p-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-150 dark:border-gray-700 max-w-xs">
-                        <QRCodeCanvas value={telegramUrl} size={64} className="border rounded p-1 bg-white" />
-                        <div>
-                          <div className="text-xs font-bold text-gray-700 dark:text-gray-300">Telegram QR Preview</div>
-                          <button 
-                            type="button" 
-                            onClick={() => updateTelegramUrl('')}
-                            className="text-xs text-red-500 hover:underline cursor-pointer font-bold mt-1 block"
-                          >
-                            {lang === 'uz' ? 'O\'chirish' : 'Удалить'}
-                          </button>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Telegram Havolasi (Chekda QR-kod chiqadi)
+                      </label>
+                      <input 
+                        type="text" 
+                        value={telegramUrl}
+                        onChange={e => updateTelegramUrl(e.target.value)}
+                        placeholder="https://t.me/xxmpos"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                      />
+                      <QRCodeCanvas id="tg-qr-canvas" value={telegramUrl || ' '} style={{ display: 'none' }} size={256} />
+                      {telegramUrl && (
+                        <div className="mt-2 flex items-center gap-4 p-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-150 dark:border-gray-700 max-w-xs">
+                          <QRCodeCanvas value={telegramUrl} size={64} className="border rounded p-1 bg-white" />
+                          <div>
+                            <div className="text-xs font-bold text-gray-700 dark:text-gray-300">Telegram QR Preview</div>
+                            <button 
+                              type="button" 
+                              onClick={() => updateTelegramUrl('')}
+                              className="text-xs text-red-500 hover:underline cursor-pointer font-bold mt-1 block"
+                            >
+                              {lang === 'uz' ? 'O\'chirish' : 'Удалить'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                      Instagram Havolasi (Chekda QR-kod chiqadi)
-                    </label>
-                    <input 
-                      type="text" 
-                      value={instagramUrl}
-                      onChange={e => updateInstagramUrl(e.target.value)}
-                      placeholder="https://instagram.com/xxmpos"
-                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
-                    />
-                    <QRCodeCanvas id="ig-qr-canvas" value={instagramUrl || ' '} style={{ display: 'none' }} size={256} />
-                    {instagramUrl && (
-                      <div className="mt-2 flex items-center gap-4 p-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-150 dark:border-gray-700 max-w-xs">
-                        <QRCodeCanvas value={instagramUrl} size={64} className="border rounded p-1 bg-white" />
-                        <div>
-                          <div className="text-xs font-bold text-gray-700 dark:text-gray-300">Instagram QR Preview</div>
-                          <button 
-                            type="button" 
-                            onClick={() => updateInstagramUrl('')}
-                            className="text-xs text-red-500 hover:underline cursor-pointer font-bold mt-1 block"
-                          >
-                            {lang === 'uz' ? 'O\'chirish' : 'Удалить'}
-                          </button>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        Instagram Havolasi (Chekda QR-kod chiqadi)
+                      </label>
+                      <input 
+                        type="text" 
+                        value={instagramUrl}
+                        onChange={e => updateInstagramUrl(e.target.value)}
+                        placeholder="https://instagram.com/xxmpos"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
+                      />
+                      <QRCodeCanvas id="ig-qr-canvas" value={instagramUrl || ' '} style={{ display: 'none' }} size={256} />
+                      {instagramUrl && (
+                        <div className="mt-2 flex items-center gap-4 p-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-150 dark:border-gray-700 max-w-xs">
+                          <QRCodeCanvas value={instagramUrl} size={64} className="border rounded p-1 bg-white" />
+                          <div>
+                            <div className="text-xs font-bold text-gray-700 dark:text-gray-300">Instagram QR Preview</div>
+                            <button 
+                              type="button" 
+                              onClick={() => updateInstagramUrl('')}
+                              className="text-xs text-red-500 hover:underline cursor-pointer font-bold mt-1 block"
+                            >
+                              {lang === 'uz' ? 'O\'chirish' : 'Удалить'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Backup & Restore */}
-              {isUnlocked && (
+              {/* Backup & Restore (Faqat Asosiy Admin) */}
+              {isMasterAdmin && (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
                   <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
                     <DatabaseBackup className="text-blue-500" size={20} />
@@ -2294,82 +2725,86 @@ export default memo(function Settings() {
 
                 </div>
 
-                {/* Clear Sales History */}
-                <div className="mt-4 p-4 rounded-xl border border-red-200 dark:border-red-905 bg-red-50/10 dark:bg-red-900/5">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg">
-                      <Trash2 className="text-red-600 dark:text-red-400" size={20} />
+                {/* Clear Sales History (Faqat Asosiy Admin) */}
+                {isMasterAdmin && (
+                  <div className="mt-4 p-4 rounded-xl border border-red-200 dark:border-red-905 bg-red-50/10 dark:bg-red-900/5">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg">
+                        <Trash2 className="text-red-600 dark:text-red-400" size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-red-700 dark:text-red-400">
+                          {t('clearDataTitle') || 'Savdo tarixini tozalash'}
+                        </h4>
+                        <p className="text-xs text-red-500/80 dark:text-red-400/80 mt-1">
+                          {t('clearDataDesc') || "Barcha sotuvlarni o'chiradi va qarzlarni nollaydi. Tovarlar, kassirlar va sozlamalar saqlanadi."}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-red-700 dark:text-red-400">
-                        {t('clearDataTitle') || 'Savdo tarixini tozalash'}
-                      </h4>
-                      <p className="text-xs text-red-500/80 dark:text-red-400/80 mt-1">
-                        {t('clearDataDesc') || "Barcha sotuvlarni o'chiradi va qarzlarni nollaydi. Tovarlar, kassirlar va sozlamalar saqlanadi."}
-                      </p>
-                    </div>
+                    <button
+                      onClick={() => setShowClearConfirm(true)}
+                      className="w-full flex items-center justify-center gap-2 bg-red-600/10 hover:bg-red-600/20 active:bg-red-600/30 text-red-600 dark:text-red-450 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border border-red-250 dark:border-red-900/30 cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                      {t('clearDataBtn') || 'Savdo tarixini tozalash (Reset)'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setShowClearConfirm(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-red-600/10 hover:bg-red-600/20 active:bg-red-600/30 text-red-600 dark:text-red-450 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border border-red-250 dark:border-red-900/30 cursor-pointer"
-                  >
-                    <Trash2 size={16} />
-                    {t('clearDataBtn') || 'Savdo tarixini tozalash (Reset)'}
-                  </button>
-                </div>
+                )}
 
-                {/* Clear Warehouse */}
-                <div className="mt-4 p-4 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/10 dark:bg-amber-900/5">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="p-2 bg-amber-100 dark:bg-amber-900/40 rounded-lg">
-                      <Trash2 className="text-amber-600 dark:text-amber-400" size={20} />
+                {/* Clear Warehouse (Faqat Asosiy Admin) */}
+                {isMasterAdmin && (
+                  <div className="mt-4 p-4 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/10 dark:bg-amber-900/5">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="p-2 bg-amber-100 dark:bg-amber-900/40 rounded-lg">
+                        <Trash2 className="text-amber-600 dark:text-amber-400" size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-amber-700 dark:text-amber-400">
+                          Omborni tozalash
+                        </h4>
+                        <p className="text-xs text-amber-500/80 dark:text-amber-400/80 mt-1">
+                          Barcha tovarlar va ularning reseptlarini o'chirib yuboradi. Sotuvlar va qarzlarga ta'sir qilmaydi.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-amber-700 dark:text-amber-400">
-                        Omborni tozalash
-                      </h4>
-                      <p className="text-xs text-amber-500/80 dark:text-amber-400/80 mt-1">
-                        Barcha tovarlar va ularning reseptlarini o'chirib yuboradi. Sotuvlar va qarzlarga ta'sir qilmaydi.
-                      </p>
-                    </div>
+                    <button
+                      onClick={() => setShowClearWarehouseConfirm(true)}
+                      className="w-full flex items-center justify-center gap-2 bg-amber-600/10 hover:bg-amber-600/20 active:bg-amber-600/30 text-amber-600 dark:text-amber-450 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border border-amber-200 dark:border-amber-900/30 cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                      Omborni tozalash
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setShowClearWarehouseConfirm(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-amber-600/10 hover:bg-amber-600/20 active:bg-amber-600/30 text-amber-600 dark:text-amber-450 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors border border-amber-200 dark:border-amber-900/30 cursor-pointer"
-                  >
-                    <Trash2 size={16} />
-                    Omborni tozalash
-                  </button>
-                </div>
+                )}
 
-                {/* Factory Reset */}
-                <div className="mt-4 p-4 rounded-xl border-2 border-dashed border-red-500 dark:border-red-950/60 bg-red-50/30 dark:bg-red-950/10">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg">
-                      <AlertTriangle className="text-red-600 dark:text-red-400" size={20} />
+                {/* Factory Reset (Faqat Asosiy Admin) */}
+                {isMasterAdmin && (
+                  <div className="mt-4 p-4 rounded-xl border-2 border-dashed border-red-500 dark:border-red-950/60 bg-red-50/30 dark:bg-red-950/10">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-lg">
+                        <AlertTriangle className="text-red-600 dark:text-red-400" size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-red-700 dark:text-red-400">
+                          {lang === 'uz' ? 'Butunlay tozalash (Factory Reset)' : 'Полный сброс (Factory Reset)'}
+                        </h4>
+                        <p className="text-xs text-red-500/80 dark:text-red-400/80 mt-1">
+                          {lang === 'uz' ? "Tizimdagi barcha tovarlar, sotuvlar, xodimlar va sozlamalarni o'chirib yuboradi va dasturni boshlang'ich holatiga qaytaradi." : 'Удаляет все товары, продажи, сотрудников и настройки. Сбрасывает приложение к начальному состоянию.'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-red-700 dark:text-red-400">
-                        {lang === 'uz' ? 'Butunlay tozalash (Factory Reset)' : 'Полный сброс (Factory Reset)'}
-                      </h4>
-                      <p className="text-xs text-red-500/80 dark:text-red-400/80 mt-1">
-                        {lang === 'uz' ? "Tizimdagi barcha tovarlar, sotuvlar, xodimlar va sozlamalarni o'chirib yuboradi va dasturni boshlang'ich holatiga qaytaradi." : 'Удаляет все товары, продажи, сотрудников и настройки. Сбрасывает приложение к начальному состоянию.'}
-                      </p>
-                    </div>
+                    <button
+                      onClick={() => setShowResetConfirm(true)}
+                      className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-4 py-3 rounded-lg text-sm font-bold transition-colors shadow-md shadow-red-650/10 cursor-pointer"
+                    >
+                      <AlertTriangle size={16} />
+                      {lang === 'uz' ? 'Butunlay tozalash (Factory Reset)' : 'Полный сброс (Factory Reset)'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setShowResetConfirm(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white px-4 py-3 rounded-lg text-sm font-bold transition-colors shadow-md shadow-red-650/10 cursor-pointer"
-                  >
-                    <AlertTriangle size={16} />
-                    {lang === 'uz' ? 'Butunlay tozalash (Factory Reset)' : 'Полный сброс (Factory Reset)'}
-                  </button>
-            </div>
-          </div>
-          )}
-            </>
-          </div>
-        )}
+                )}
+              </div>
+            )}
+        </div>
 
         {/* Right Column: Cashiers & AutoUpdater */}
         <div className="space-y-6">
@@ -2519,32 +2954,43 @@ export default memo(function Settings() {
                     onChange={e => setCashierPin(e.target.value.replace(/\D/g, ''))}
                     className="w-24 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-center tracking-widest"
                   />
-                  {businessType !== 'restaurant' && (
+                  {businessType !== 'restaurant' && !isMasterAdmin && (
                     <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center h-10 cursor-pointer shrink-0">
                       <Plus size={20} />
                     </button>
                   )}
                 </div>
-                {businessType === 'restaurant' && (
-                  <div className="flex gap-2 items-center">
+                {(businessType === 'restaurant' || isMasterAdmin) && (
+                  <div className="flex flex-wrap gap-2 items-center">
                     <select
                       value={cashierRole}
                       onChange={e => setCashierRole(e.target.value)}
-                      className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                      className="flex-1 min-w-[130px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
                     >
                       <option value="cashier">Kassir</option>
                       <option value="manager">Menejer</option>
+                      <option value="cook">Oshpaz</option>
+                      <option value="worker">Ishchi</option>
                       <option value="admin">Asosiy Admin</option>
                     </select>
                     <input
                       type="number"
-                      placeholder="Oylik maosh"
+                      placeholder="Fiksa oylik (so'm)"
                       value={cashierSalary}
                       onChange={e => setCashierSalary(e.target.value)}
-                      className="w-32 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                      className="flex-1 min-w-[120px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
                     />
-                    <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center h-10 cursor-pointer">
-                      <Plus size={20} />
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="Foiz (%)"
+                      value={cashierPercentage}
+                      onChange={e => setCashierPercentage(e.target.value)}
+                      className="w-24 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+                    />
+                    <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center h-10 cursor-pointer font-bold text-sm shrink-0">
+                      Qo'shish <Plus size={16} className="ml-1" />
                     </button>
                   </div>
                 )}
@@ -2579,7 +3025,7 @@ export default memo(function Settings() {
                             className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center tracking-widest focus:outline-none"
                             required
                           />
-                          {businessType !== 'restaurant' && (
+                          {(!isMasterAdmin && businessType !== 'restaurant') && (
                             <>
                               <button
                                 onClick={() => handleUpdateCashier(c.id)}
@@ -2596,23 +3042,34 @@ export default memo(function Settings() {
                             </>
                           )}
                         </div>
-                        {businessType === 'restaurant' && (
-                          <div className="flex gap-2 items-center">
+                        {(businessType === 'restaurant' || isMasterAdmin) && (
+                          <div className="flex flex-wrap gap-2 items-center">
                             <select
                               value={editRole}
                               onChange={e => setEditRole(e.target.value)}
-                              className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                              className="flex-1 min-w-[120px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
                             >
                               <option value="cashier">Kassir</option>
                               <option value="manager">Menejer</option>
+                              <option value="cook">Oshpaz</option>
+                              <option value="worker">Ishchi</option>
                               <option value="admin">Asosiy Admin</option>
                             </select>
                             <input
                               type="number"
                               value={editSalary}
                               onChange={e => setEditSalary(e.target.value)}
-                              className="w-28 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                              className="flex-1 min-w-[100px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
                               placeholder="Oylik"
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={editPercentage}
+                              onChange={e => setEditPercentage(e.target.value)}
+                              className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                              placeholder="Foiz %"
                             />
                             <button
                               onClick={() => handleUpdateCashier(c.id)}
@@ -2633,16 +3090,19 @@ export default memo(function Settings() {
                       <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50 mb-2">
                         <div className="flex flex-col">
                           <span className="font-semibold text-gray-800 dark:text-gray-200">
-                            {c.name} {businessType === 'restaurant' && (
+                            {c.name} {(businessType === 'restaurant' || isMasterAdmin) && (
                               <span className="text-xs font-normal text-orange-500 font-semibold px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/30 border border-orange-100 dark:border-orange-900/30 ml-1.5">
-                                {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : 'Kassir'}
+                                {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : 'Kassir'}
                               </span>
                             )}
                           </span>
-                          <div className="flex gap-4 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                             <span>PIN: {canReveal ? (isRevealed ? c.pin : '••••') : '••••'}</span>
-                            {businessType === 'restaurant' && c.salary > 0 && (
+                            {(businessType === 'restaurant' || isMasterAdmin) && c.salary > 0 && (
                               <span>Oylik: {Number(c.salary).toLocaleString()} so'm</span>
+                            )}
+                            {(businessType === 'restaurant' || isMasterAdmin) && c.percentage > 0 && (
+                              <span className="text-blue-500 font-semibold">{c.percentage}% foiz</span>
                             )}
                           </div>
                         </div>
@@ -2666,6 +3126,7 @@ export default memo(function Settings() {
                                 setEditPin(c.pin);
                                 setEditRole(c.role || 'cashier');
                                 setEditSalary(c.salary || '');
+                                setEditPercentage(c.percentage || '');
                               }}
                               className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                             >
@@ -2694,8 +3155,8 @@ export default memo(function Settings() {
             </div>
           </div>
 
-          {/* Waiters Management Card */}
-          {businessType === 'restaurant' && (
+          {/* Waiters Management Card (Faqat Asosiy Admin) */}
+          {isMasterAdmin && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
               <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
                 <Users className="text-blue-500" size={20} />
@@ -2879,6 +3340,99 @@ export default memo(function Settings() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Kafe Xizmat Foiz Stavkasi Card (Faqat Asosiy Admin) */}
+          {isMasterAdmin && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                <Percent className="text-emerald-500" size={20} />
+                Kafe Xizmat Foiz Stavkasi (Service Fee %)
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+                Kafe va restoran buyurtmalari hamda ofitsiantlar uchun umumiy xizmat ko'rsatish foiz stavkasi sozlamasi.
+              </p>
+
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-800/40">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Umumiy Kafe Xizmat Foizi (%)
+                  </label>
+                  <div className="flex gap-2 max-w-sm">
+                    <input 
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={cafeServiceFee}
+                      onChange={e => setCafeServiceFee(e.target.value)}
+                      placeholder="10"
+                      className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveCafeServiceFee}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer text-xs"
+                    >
+                      Saqlash
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-2">
+                    * Ushbu foiz stavkasi restoran cheklarida va ofitsiant xizmat ulushlarida qo'llaniladi.
+                  </p>
+                </div>
+
+                {waiters.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
+                      Ofitsiantlar amaldagi xizmat foizlari:
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {waiters.map(w => (
+                        <div key={w.id} className="p-2.5 bg-gray-50 dark:bg-gray-700/40 rounded-lg border border-gray-200 dark:border-gray-600 flex justify-between items-center text-xs">
+                          <span className="font-semibold text-gray-800 dark:text-gray-200">{w.name}</span>
+                          <span className="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                            {w.percentage}% xizmat
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Telefondan kirish QR kodi va havolasi ruxsati Card (Faqat Asosiy Admin) */}
+          {isMasterAdmin && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-base">
+                  <span className="text-blue-500">📲</span>
+                  Telefondan kirish QR kodi (Kassa oynasida ko'rsatish)
+                </h4>
+                <span className={`text-xs px-2.5 py-1 font-bold rounded-lg shrink-0 ${allowMobileQr ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'}`}>
+                  {allowMobileQr ? 'Ruxsat berilgan' : 'Ruxsat berilmagan'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+                Kassa va restoran oyna panellarida telefondan ulanish QR kodi va havolasi tugmasini ko'rsatish yoki yashirish. Sozlamani o'zgartirish uchun maxfiy PIN kod talab etiladi.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileQrPinModal(true);
+                  setMobileQrPinInput('');
+                  setMobileQrPinError('');
+                }}
+                className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  allowMobileQr
+                    ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                    : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                }`}
+              >
+                {allowMobileQr ? "Ruxsatni bekor qilish va yashirish" : "Ruxsat berish va ko'rsatish"}
+              </button>
             </div>
           )}
         </div>

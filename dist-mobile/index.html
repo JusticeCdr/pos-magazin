@@ -494,7 +494,15 @@
   <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] w-11/12 max-w-sm pointer-events-none flex flex-col gap-2"></div>
 
   <!-- ================= LOGIN SCREEN ================= -->
-  <div id="screen-login" class="flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950" style="height:100dvh; height:-webkit-fill-available; min-height:100dvh;">
+  <div id="screen-login" class="flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950 relative" style="height:100dvh; height:-webkit-fill-available; min-height:100dvh;">
+    <div class="absolute top-4 right-4 z-20">
+      <button onclick="toggleFullscreen()" title="To'liq ekran" class="p-2.5 text-indigo-400 hover:text-white active:scale-90 transition-all rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center gap-1.5 text-xs font-bold shadow-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+        </svg>
+        <span class="hidden sm:inline">To'liq ekran</span>
+      </button>
+    </div>
     <div class="flex flex-col items-center mt-12">
       <!-- Logo/Icon -->
       <div class="w-20 h-20 flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/10">
@@ -563,7 +571,15 @@
 
 
   <!-- ================= WAITER LOGIN SCREEN ================= -->
-  <div id="screen-waiter-login" class="hidden flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950">
+  <div id="screen-waiter-login" class="hidden flex flex-col h-full items-center justify-between p-8 bg-gradient-to-b from-slate-900 to-slate-950 relative">
+    <div class="absolute top-4 right-4 z-20">
+      <button onclick="toggleFullscreen()" title="To'liq ekran" class="p-2.5 text-emerald-400 hover:text-white active:scale-90 transition-all rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center gap-1.5 text-xs font-bold shadow-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+        </svg>
+        <span class="hidden sm:inline">To'liq ekran</span>
+      </button>
+    </div>
     <div class="flex flex-col items-center mt-12">
       <!-- Logo/Icon -->
       <div class="w-20 h-20 flex items-center justify-center mb-6 shadow-2xl shadow-emerald-500/10">
@@ -656,6 +672,11 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <button onclick="toggleFullscreen()" title="To'liq ekran" class="p-2 text-emerald-400 hover:text-white active:scale-90 transition-all rounded-xl bg-slate-800 text-[10px] font-bold flex items-center justify-center border border-slate-700/60 shadow-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+          </svg>
+        </button>
         <button onclick="openWaiterStatsModal()" class="p-2 py-1.5 rounded-xl bg-indigo-600 text-white active:scale-95 transition-all flex items-center gap-1 text-[10px] font-bold shadow-md shadow-indigo-600/10">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
@@ -706,13 +727,20 @@
               <h4 id="waiter-order-title" class="text-sm font-black text-white leading-tight">Stol ...</h4>
               <p id="waiter-order-subtitle" class="text-[10px] text-slate-400 font-semibold leading-tight">Yangi buyurtma</p>
             </div>
-            <!-- STOL KO'CHIRISH BUTTON -->
-            <button id="btn-transfer-table-waiter" onclick="transferWaiterTablePrompt()" class="hidden p-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white active:scale-95 transition-all flex items-center justify-center gap-1 text-xs font-bold shrink-0 border border-slate-800">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-              </svg>
-              Ko'chirish
-            </button>
+            <div class="flex items-center gap-2">
+              <button onclick="toggleFullscreen()" title="To'liq ekran" class="p-2 rounded-xl bg-slate-900 text-emerald-400 hover:text-white active:scale-90 transition-all flex items-center justify-center shrink-0 border border-slate-800">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                </svg>
+              </button>
+              <!-- STOL KO'CHIRISH BUTTON -->
+              <button id="btn-transfer-table-waiter" onclick="transferWaiterTablePrompt()" class="hidden p-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white active:scale-95 transition-all flex items-center justify-center gap-1 text-xs font-bold shrink-0 border border-slate-800">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                </svg>
+                Ko'chirish
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2721,6 +2749,7 @@
           }
           showToast(`Xush kelibsiz, ${data.name}!`);
           showScreen('waiter-shell');
+          toggleFullscreen(true);
         } else {
           showToast('Noto\'g\'ri PIN-kod!', 'error');
           clearWaiterPinDots();
@@ -2973,6 +3002,15 @@
           } catch (_) {}
         }
 
+        let kitchenStatusHtml = '';
+        if (isOccupied && table.kitchen_status) {
+          if (table.kitchen_status === 'ready') {
+            kitchenStatusHtml = `<span class="text-[9px] block bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-black mt-1 animate-pulse shadow-sm shadow-emerald-500/30">🟢 TAYYOR ${table.order_number ? '#' + table.order_number : ''}</span>`;
+          } else if (table.kitchen_status === 'preparing') {
+            kitchenStatusHtml = `<span class="text-[9px] block bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold mt-1">⏳ Oshxonada ${table.order_number ? '#' + table.order_number : ''}</span>`;
+          }
+        }
+
         const cardHtml = `
           <button onclick="selectWaiterTable(${table.id}, '${table.name}')" class="${cardClass}">
             <div class="w-12 h-12 rounded-2xl flex items-center justify-center ${isOccupied ? 'bg-rose-500/10' : 'bg-emerald-500/10'} mb-2">
@@ -2982,6 +3020,7 @@
             </div>
             <div class="text-sm font-bold text-white mb-1">${table.name}</div>
             <span class="${badgeClass}">${badgeText}</span>
+            ${kitchenStatusHtml}
             ${infoHtml}
             ${durationHtml}
           </button>
@@ -3097,7 +3136,16 @@
               price: item.price,
               unit: item.unit || 'dona'
             }));
-            document.getElementById('waiter-order-subtitle').innerText = 'Tahrirlash rejimi';
+            
+            const kStatus = result.data.order.kitchen_status;
+            const ordNum = result.data.order.order_number ? `#${result.data.order.order_number}` : '';
+            if (kStatus === 'ready') {
+              document.getElementById('waiter-order-subtitle').innerText = `🟢 TAYYOR ${ordNum} (Tahrirlash)`;
+            } else if (kStatus === 'preparing') {
+              document.getElementById('waiter-order-subtitle').innerText = `⏳ Oshxonada ${ordNum} (Tahrirlash)`;
+            } else {
+              document.getElementById('waiter-order-subtitle').innerText = 'Tahrirlash rejimi';
+            }
           } else {
             state.waiterActiveOrderOwnerId = null;
             document.getElementById('waiter-order-subtitle').innerText = 'Yangi buyurtma';
@@ -3215,9 +3263,21 @@
       for (const p of filtered) {
         const cartItem = state.waiterCart.find(item => item.id === p.id);
         const qty = cartItem ? cartItem.qty : 0;
+        const isStopped = p.is_stopped === 1 || !!p.stop_reason;
         
         let actionsHtml = '';
-        if (isLocked) {
+        if (isStopped) {
+          actionsHtml = `
+            <div class="flex items-center gap-1.5">
+              <span class="px-2.5 py-1 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[10px] font-black text-rose-400">
+                STOP-LIST
+              </span>
+              <button disabled class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-600 text-xs font-black opacity-40 cursor-not-allowed">
+                Bloklangan
+              </button>
+            </div>
+          `;
+        } else if (isLocked) {
           if (qty > 0) {
             actionsHtml = `
               <div class="flex items-center bg-slate-800/40 border border-slate-800/80 rounded-xl overflow-hidden opacity-60">
@@ -3243,7 +3303,7 @@
           }
         } else if (qty === 0) {
           actionsHtml = `
-            <button onclick="changeWaiterCartQty(${p.id}, 1)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-xs font-black text-white flex items-center gap-1">
+            <button onclick="changeWaiterCartQty(${p.id}, 1)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-xs font-black text-white flex items-center gap-1 cursor-pointer">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
@@ -3253,13 +3313,13 @@
         } else {
           actionsHtml = `
             <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-              <button onclick="changeWaiterCartQty(${p.id}, -1)" class="p-2.5 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95">
+              <button onclick="changeWaiterCartQty(${p.id}, -1)" class="p-2.5 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95 cursor-pointer">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
                 </svg>
               </button>
               <span class="px-3 text-sm font-black text-white min-w-[24px] text-center">${qty}</span>
-              <button onclick="changeWaiterCartQty(${p.id}, 1)" class="p-2.5 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95">
+              <button onclick="changeWaiterCartQty(${p.id}, 1)" class="p-2.5 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors active:scale-95 cursor-pointer">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -3269,12 +3329,14 @@
         }
 
         const priceFormatted = formatMoney(p.sell_price) + " UZS";
+        const stopReasonHtml = isStopped && p.stop_reason ? `<div class="text-[10px] text-rose-400 font-semibold mt-0.5">${p.stop_reason}</div>` : '';
         const prodHtml = `
-          <div class="flex items-center justify-between p-4 bg-slate-900/60 border border-slate-850 rounded-2xl">
+          <div class="flex items-center justify-between p-4 ${isStopped ? 'bg-slate-950/80 border-rose-500/20 opacity-70' : 'bg-slate-900/60 border-slate-850'} border rounded-2xl">
             <div class="flex-1 pr-3">
               <div class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">${p.category}</div>
-              <h5 class="text-sm font-bold text-white leading-tight mb-1">${p.name}</h5>
-              <div class="text-xs font-black text-emerald-400">${priceFormatted}</div>
+              <h5 class="text-sm font-bold ${isStopped ? 'text-rose-300 line-through' : 'text-white'} leading-tight mb-1">${p.name}</h5>
+              ${stopReasonHtml}
+              <div class="text-xs font-black ${isStopped ? 'text-slate-500' : 'text-emerald-400'} mt-1">${priceFormatted}</div>
             </div>
             <div>
               ${actionsHtml}
@@ -3288,6 +3350,11 @@
     function changeWaiterCartQty(prodId, change) {
       const prod = state.waiterProducts.find(p => p.id === prodId);
       if (!prod) return;
+
+      if (change > 0 && (prod.is_stopped === 1 || prod.stop_reason)) {
+        showToast(`"${prod.name}" stop-listda! Buyurtmaga qo'shib bo'lmaydi`, 'error');
+        return;
+      }
 
       let cartItem = state.waiterCart.find(item => item.id === prodId);
       
@@ -4134,6 +4201,9 @@
                 <span class="text-slate-400">Sotish: <span class="text-indigo-400">${Math.round(prod.sell_price).toLocaleString('ru-RU')} UZS</span></span>
               </div>
               <div class="flex gap-2">
+                <button onclick="toggleProductStopMobile(${prod.id}, ${prod.is_stopped ? 'false' : 'true'})" class="p-2 ${prod.is_stopped ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:text-white'} rounded-xl transition-all active:scale-90 flex items-center justify-center" title="${prod.is_stopped ? 'Stopdan chiqarish' : 'Stop-listga kiritish'}">
+                  <span class="text-[10px] font-black">${prod.is_stopped ? 'STOP' : 'FAOL'}</span>
+                </button>
                 <button onclick="openPrintBarcodeModal(${JSON.stringify(prod).replace(/"/g, '&quot;')})" class="p-2 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 rounded-xl transition-all active:scale-90 flex items-center justify-center" title="Stiker chop etish">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" class="w-4 h-4">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.617 0-1.11-.497-1.12-1.115L6.34 18m11.32 0h-11.32m0 0V9.45c0-1.124.797-2.138 1.918-2.322a48.533 48.533 0 0 1 7.48 0c1.12.184 1.917 1.198 1.917 2.322v8.55M10.5 9.75h.008v.008H10.5V9.75Zm.375 0h.008v.008h-.008V9.75Zm.375 0h.008v.008H11.25V9.75Z" />
@@ -5562,6 +5632,28 @@
         }
       } catch (err) {
         showToast('Server bilan bog\'lanish xatosi', 'error');
+      }
+    }
+
+    async function toggleProductStopMobile(id, isStopped) {
+      try {
+        const res = await fetch(`${API_URL}/api/products/toggle-stop`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': state.pin || localStorage.getItem('waiter_pin')
+          },
+          body: JSON.stringify({ id, isStopped })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(isStopped ? 'Mahsulot stop-listga kiritildi' : 'Mahsulot stop-listdan chiqarildi', isStopped ? 'error' : 'success');
+          loadWarehouseProducts();
+        } else {
+          showToast('Xatolik: ' + (data.error || 'Amal bajarilmadi'), 'error');
+        }
+      } catch (err) {
+        showToast('Server xatosi: ' + err.message, 'error');
       }
     }
 

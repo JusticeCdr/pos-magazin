@@ -1,5 +1,5 @@
-import { logoBase64 } from './logoBase64';
-import { parseSQLiteDate } from './utils';
+import { logoBase64 } from './logoBase64.js';
+import { parseSQLiteDate } from './utils.js';
 
 const receiptTranslations = {
   uz: {
@@ -18,7 +18,8 @@ const receiptTranslations = {
     disclaimer: "Ushbu chek ichki hisob-kitob uchun.<br>Fiskal (soliq) cheki hisoblanmaydi!<br>Iltimos, kassirdan rasmiy fiskal chek talab qiling.",
     naqd: "Naqd pul",
     card: "Plastik karta",
-    debt: "Qarzga"
+    debt: "Qarzga",
+    usluga: "Xizmat haqi"
   },
   ru: {
     murojaat: "Для справок:",
@@ -36,7 +37,8 @@ const receiptTranslations = {
     disclaimer: "Этот чек предназначен для внутреннего учета.<br>Не является фискальным чеком!<br>Пожалуйста, требуйте официальный фискальный чек у кассира.",
     naqd: "Наличные",
     card: "Пластиковая карта",
-    debt: "В долг"
+    debt: "В долг",
+    usluga: "Обслуживание"
   }
 };
 
@@ -86,7 +88,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
     return Number(num).toLocaleString('ru-RU');
   };
 
-  const receiptLang = localStorage.getItem('receipt_lang') || 'uz';
+  const receiptLang = (typeof localStorage !== 'undefined' ? localStorage.getItem('receipt_lang') : null) || 'uz';
   const labels = receiptTranslations[receiptLang] || receiptTranslations.uz;
 
   const totalOriginalAll = (cartItems || []).reduce((sum, item) => {
@@ -96,7 +98,22 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
   const overallDiscountAmount = totalOriginalAll - total;
   const overallDiscountPercent = totalOriginalAll > 0 ? Math.round((overallDiscountAmount / totalOriginalAll) * 100) : 0;
 
+  const serviceFeePercent = parseFloat(saleData.serviceFeePercent || saleData.service_fee_percent) || 0;
+  const serviceFeeAmount = parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0;
+  const isTakeaway = saleData.isTakeaway === 1 || saleData.isTakeaway === true || saleData.is_takeaway === 1;
+
+  let serviceFeeHTML = '';
+  if (!isTakeaway && serviceFeeAmount > 0) {
+    serviceFeeHTML = `
+      <div class="total-row" style="font-weight: normal; font-size: 11px; margin-bottom: 4px;">
+        <span>${labels.usluga || 'Xizmat haqi'} (${serviceFeePercent}%):</span>
+        <span>+${formatNumber(serviceFeeAmount)} so'm</span>
+      </div>
+    `;
+  }
+
   let totalsHTML = `
+    ${serviceFeeHTML}
     <div class="total-row">
       <span>${labels.jami}</span>
       <span>${formatNumber(total)} so'm</span>
@@ -113,6 +130,7 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
         <span>${labels.chegirma} ${overallDiscountPercent > 0 ? `(${overallDiscountPercent}%)` : ''}:</span>
         <span>-${formatNumber(overallDiscountAmount)} so'm</span>
       </div>
+      ${serviceFeeHTML}
       <div class="total-row">
         <span>${labels.jami}</span>
         <span>${formatNumber(total)} so'm</span>
@@ -120,16 +138,36 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
     `;
   }
 
-  let dateObj = new Date();
-  if (date) {
-    const validDateStr = (date.includes('Z') || date.includes('T')) ? date : date.replace(' ', 'T') + 'Z';
-    dateObj = new Date(validDateStr);
-    if (isNaN(dateObj.getTime())) dateObj = new Date();
-  }
+  const formatDisplayDateTime = (dateInput) => {
+    try {
+      if (!dateInput) {
+        const d = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+      if (typeof dateInput === 'string') {
+        const match = dateInput.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{1,2})/);
+        if (match) {
+          const [, y, m, d, h, min] = match;
+          return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y} ${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        }
+      }
+      const d = new Date(dateInput);
+      if (isNaN(d.getTime())) {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      }
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch (_) {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+  };
 
-  const formattedDate = dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Tashkent' });
-  const formattedTime = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
-  const displayDateTime = `${formattedDate} | ${formattedTime}`;
+  const displayDateTime = formatDisplayDateTime(date);
 
   let paymentMethodLabel = labels.naqd;
   if (paymentMethod === 'card') paymentMethodLabel = labels.card;
@@ -514,7 +552,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
     return Number(num).toLocaleString('ru-RU');
   };
 
-  const receiptLang = localStorage.getItem('receipt_lang') || 'uz';
+  const receiptLang = (typeof localStorage !== 'undefined' ? localStorage.getItem('receipt_lang') : null) || 'uz';
   const zLabels = zReportTranslations[receiptLang] || zReportTranslations.uz;
 
   let shopLogo = logoBase64;

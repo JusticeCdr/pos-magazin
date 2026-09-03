@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { Search, Plus, Trash2, Edit, AlertTriangle, AlertCircle, CheckCircle2, XCircle, MinusCircle, Printer, X } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, AlertTriangle, AlertCircle, CheckCircle2, XCircle, MinusCircle, Printer, X, Package, UtensilsCrossed, Ban, Play, Sparkles } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands } from './utils';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
@@ -42,6 +42,10 @@ export default memo(function Warehouse({ isActive }) {
   const [productToDelete, setProductToDelete] = useState(null); // For custom delete modal
   const [existingProductId, setExistingProductId] = useState(null);
   const stockInputRef = useRef(null);
+
+  // ── Cafe/Restaurant 2-Warehouse Tabs & Dish Mode ──
+  const [restaurantTab, setRestaurantTab] = useState('raw_materials'); // 'raw_materials' (1-Ombor) | 'dishes' (2-Ombor) | 'stop_list'
+  const [dishMode, setDishMode] = useState('recipe'); // 'recipe' (Retseptli) | 'piece' (Donabay)
 
   const handleCurrencySwitch = (newCurrency) => {
     if (newCurrency === buyPriceCurrency) return;
@@ -506,7 +510,31 @@ export default memo(function Warehouse({ isActive }) {
         formattedName = trimmedName.charAt(0).toUpperCase() + trimmedName.slice(1).toLowerCase();
       }
 
-      const isReadyWithRecipe = formData.type === 'ready_dish' && recipeIngredients.length > 0;
+      let finalType = formData.type || 'ready_dish';
+      let isReadyWithRecipe = false;
+      let finalSellPrice = parseInt(String(formData.sell_price).replace(/\D/g, '')) || 0;
+      let finalStock = parseFloat(formData.stock) || 0;
+      let finalCategory = formData.category || 'Boshqa';
+      let finalDest = formData.printer_destination || 'none';
+
+      if (businessType === 'restaurant') {
+        if (restaurantTab === 'raw_materials') {
+          finalType = 'raw_material';
+          finalSellPrice = 0; // Raw materials are ingredients, not sold directly
+          finalCategory = formData.category || 'Xom-ashyo';
+          finalDest = 'none';
+        } else {
+          // 2-Ombor (Dishes / Sellable products)
+          finalType = 'ready_dish';
+          if (dishMode === 'recipe' && recipeIngredients.length > 0) {
+            isReadyWithRecipe = true;
+            finalStock = 0; // Dynamic from ingredients
+          }
+        }
+      } else {
+        isReadyWithRecipe = formData.type === 'ready_dish' && recipeIngredients.length > 0;
+      }
+
       let rawBuyPrice = 0;
       if (businessType === 'restaurant' && isReadyWithRecipe) {
         rawBuyPrice = projectedCostPrice;
@@ -530,13 +558,13 @@ export default memo(function Warehouse({ isActive }) {
         name: formattedName,
         barcode: formData.barcode,
         buy_price: rawBuyPrice,
-        sell_price: parseInt(String(formData.sell_price).replace(/\D/g, '')) || 0,
-        stock: isReadyWithRecipe ? 0 : (parseFloat(formData.stock) || 0),
+        sell_price: finalSellPrice,
+        stock: isReadyWithRecipe ? 0 : finalStock,
         unit: formData.unit,
         discount: parseFloat(formData.discount) || 0,
-        category: formData.category || 'Boshqa',
-        type: formData.type || 'ready_dish',
-        printer_destination: formData.printer_destination || 'none',
+        category: finalCategory,
+        type: finalType,
+        printer_destination: finalDest,
         userName: currentUser?.name || 'Ombor',
         note: finalNote,
         buy_price_usd: buyPriceUsd,
@@ -547,7 +575,7 @@ export default memo(function Warehouse({ isActive }) {
       if (editingId) {
         result = await window.api.updateProduct({ id: editingId, data: productData });
         if (result && result.success) {
-          const recipeToSave = formData.type === 'ready_dish' ? recipeIngredients : [];
+          const recipeToSave = isReadyWithRecipe ? recipeIngredients : [];
           await window.api.saveProductRecipe(editingId, recipeToSave);
         }
       } else if (existingProductId) {
@@ -576,7 +604,7 @@ export default memo(function Warehouse({ isActive }) {
       } else {
         result = await window.api.addProduct(productData);
         if (result && result.success) {
-          const recipeToSave = formData.type === 'ready_dish' ? recipeIngredients : [];
+          const recipeToSave = isReadyWithRecipe ? recipeIngredients : [];
           await window.api.saveProductRecipe(result.id, recipeToSave);
         }
       }
@@ -605,15 +633,24 @@ export default memo(function Warehouse({ isActive }) {
     setEditingId(product.id);
     const isUsd = product.buy_price_usd > 0;
     setBuyPriceCurrency(isUsd ? 'USD' : 'UZS');
+
+    if (businessType === 'restaurant') {
+      if (product.type === 'raw_material') {
+        setRestaurantTab('raw_materials');
+      } else {
+        setRestaurantTab('dishes');
+      }
+    }
+
     setFormData({
       name: product.name,
       barcode: product.barcode || '',
       buy_price: isUsd ? String(product.buy_price_usd) : formatPriceInput(product.buy_price),
       sell_price: formatPriceInput(product.sell_price),
       stock: '', // Clear stock so they can type the incoming quantity to add
-      unit: product.unit,
+      unit: product.unit || 'dona',
       discount: product.discount !== undefined ? String(product.discount) : '',
-      category: product.category || 'Boshqa',
+      category: product.category || (product.type === 'raw_material' ? 'Xom-ashyo' : 'Boshqa'),
       type: product.type || 'ready_dish',
       printer_destination: product.printer_destination || 'none',
       note: '',
@@ -621,10 +658,12 @@ export default memo(function Warehouse({ isActive }) {
 
     if (product.type === 'ready_dish') {
       window.api.getProductRecipe(product.id).then(res => {
-        if (res && res.success) {
+        if (res && res.success && res.data && res.data.length > 0) {
           setRecipeIngredients(res.data);
+          setDishMode('recipe');
         } else {
           setRecipeIngredients([]);
+          setDishMode('piece');
         }
       });
     } else {
@@ -710,14 +749,60 @@ export default memo(function Warehouse({ isActive }) {
     }
   };
 
+  const handleToggleStop = async (product, e) => {
+    if (e) e.stopPropagation();
+    if (!window.api) return;
+    const newStatus = !product.is_stopped;
+    try {
+      const res = await window.api.toggleProductStop(product.id, newStatus);
+      if (res && res.success) {
+        showToast(
+          newStatus ? `"${product.name}" stop-listga kiritildi!` : `"${product.name}" stop-listdan chiqarildi!`,
+          newStatus ? 'error' : 'success'
+        );
+        fetchGlobalProducts();
+      } else {
+        showToast("Xatolik: " + (res?.error || "Stop holatini o'zgartirib bo'lmadi"), 'error');
+      }
+    } catch (err) {
+      showToast("IPC xatosi: " + err.message, 'error');
+    }
+  };
+
+  // ── Tab Counts ──
+  const rawMaterialsCount = useMemo(() => {
+    return (globalProducts || []).filter(p => p.type === 'raw_material').length;
+  }, [globalProducts]);
+
+  const dishesCount = useMemo(() => {
+    return (globalProducts || []).filter(p => p.type !== 'raw_material').length;
+  }, [globalProducts]);
+
+  const stoppedCount = useMemo(() => {
+    return (globalProducts || []).filter(p => p.is_stopped === 1 || !!p.stop_reason).length;
+  }, [globalProducts]);
+
   const filteredProducts = useMemo(() => {
-    if (!search.trim()) return globalProducts;
+    let list = globalProducts || [];
+
+    if (businessType === 'restaurant') {
+      if (restaurantTab === 'raw_materials') {
+        list = list.filter(p => p.type === 'raw_material');
+      } else if (restaurantTab === 'dishes') {
+        list = list.filter(p => p.type !== 'raw_material');
+      } else if (restaurantTab === 'stop_list') {
+        list = list.filter(p => p.is_stopped === 1 || !!p.stop_reason);
+      }
+    }
+
+    if (!search.trim()) return list;
     const s = search.toLowerCase();
-    return globalProducts.filter(p => 
+    return list.filter(p => 
       p.name.toLowerCase().includes(s) || 
-      (p.barcode && p.barcode.includes(s))
+      (p.barcode && p.barcode.includes(s)) ||
+      (p.category && p.category.toLowerCase().includes(s))
     );
-  }, [globalProducts, search]);
+  }, [globalProducts, search, businessType, restaurantTab]);
 
   // Shared input class with Dark Mode support
   const inputCls =
@@ -945,420 +1030,536 @@ export default memo(function Warehouse({ isActive }) {
       )}
 
 
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('warehouseTitle')}</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('warehouseSubtitle')}</p>
+      {/* Header & Cafe 2-Warehouse Tabs */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('warehouseTitle')}</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('warehouseSubtitle')}</p>
+        </div>
+
+        {businessType === 'restaurant' && (
+          <div className="flex flex-wrap items-center gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner">
+            <button
+              type="button"
+              onClick={() => { setRestaurantTab('raw_materials'); handleCancelEdit(); }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                restaurantTab === 'raw_materials'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60'
+              }`}
+            >
+              <Package size={15} />
+              <span>1-Ombor: Xom-ashyo (Ingrediyentlar)</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                restaurantTab === 'raw_materials' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}>
+                {rawMaterialsCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setRestaurantTab('dishes'); handleCancelEdit(); }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                restaurantTab === 'dishes'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60'
+              }`}
+            >
+              <UtensilsCrossed size={15} />
+              <span>2-Ombor: Sotiladigan Taomlar & Tovarlar</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                restaurantTab === 'dishes' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}>
+                {dishesCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setRestaurantTab('stop_list'); handleCancelEdit(); }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                restaurantTab === 'stop_list'
+                  ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-white/60 dark:hover:bg-gray-700/60'
+              }`}
+            >
+              <Ban size={15} />
+              <span>Stop-List</span>
+              {stoppedCount > 0 && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                  restaurantTab === 'stop_list' ? 'bg-white text-red-700' : 'bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300 animate-pulse'
+                }`}>
+                  {stoppedCount}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Add/Edit product card ── */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 transition-colors">
-        <h3 className="text-base font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2 mb-4">
-          <Plus size={18} className="text-blue-600 dark:text-blue-400" /> 
-          {editingId ? 'Редактировать товар' : t('addProductTitle')}
-        </h3>
-
-        {/* Status banner */}
-        {status && (
-          <div
-            className={`mb-4 flex items-start gap-3 p-4 rounded-xl text-sm border-2 ${
-              status.type === 'error'
-                ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
-                : status.type === 'warning'
-                ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-400 text-orange-800 dark:text-orange-300 shadow-sm'
-                : 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
-            }`}
-          >
-            {status.type === 'error' ? (
-              <AlertCircle size={20} className="mt-0.5 shrink-0 text-red-500" />
-            ) : status.type === 'warning' ? (
-              <AlertTriangle size={28} className="mt-0.5 shrink-0 text-orange-500 animate-pulse" />
-            ) : (
-              <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-green-500" />
-            )}
-            <div>
-              <span className={status.type === 'warning' ? 'text-lg font-bold block mb-1' : 'font-medium'}>
-                {status.message}
+      {businessType === 'restaurant' && restaurantTab === 'stop_list' ? (
+        <div className="bg-red-50/70 dark:bg-red-950/20 p-5 rounded-2xl border border-red-200 dark:border-red-900/40 shadow-sm flex items-start gap-3.5">
+          <div className="p-2.5 bg-red-100 dark:bg-red-900/40 rounded-xl text-red-600 dark:text-red-400 shrink-0 mt-0.5">
+            <Ban size={22} />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-red-900 dark:text-red-300 mb-1 flex items-center gap-2">
+              Stop-List Boshqaruvi
+              <span className="text-xs px-2 py-0.5 bg-red-200 dark:bg-red-900/60 text-red-800 dark:text-red-200 rounded-full font-bold">
+                {stoppedCount} ta mahsulot to'xtatilgan
               </span>
-              {status.details && <p className="text-sm font-medium">{status.details}</p>}
-            </div>
+            </h3>
+            <p className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
+              Stop-listga kiritilgan mahsulotlarni <b>kassir ham, ofitsiantlar ham sota olmaydi</b> (menyuda bloklanadi). Agar 1-ombordagi xom-ashyo to'xtatilsa, unga bog'langan taomlar ham avtomatik to'xtatiladi. Qayta sotuvga chiqarish uchun jadvaldagi <b>"Stopdan chiqarish"</b> tugmasini bosing.
+            </p>
           </div>
-        )}
-
-        <form onSubmit={handleAddProduct} className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
-          {/* Название — 2 cols */}
-          <div className="col-span-2">
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {t('productName')} <span className="text-red-500">*</span>
-            </label>
-            <input
-              required name="name" value={formData.name} onChange={handleInputChange}
-              type="text" placeholder="Напр. Кока-кола 1л" className={inputCls}
-            />
-          </div>
-
-          {/* Штрихкод — optional */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {t('barcode')} <span className="text-gray-400 dark:text-gray-500 font-normal normal-case">{t('barcodeOpt')}</span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                name="barcode" value={formData.barcode} onChange={handleInputChange}
-                type="text" placeholder="123456789" className={inputCls + ' flex-1'}
-              />
-              <button
-                type="button"
-                onClick={handleGenerateBarcodeClick}
-                className="bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-2 rounded-lg font-bold transition-all text-xs cursor-pointer border border-blue-200 dark:border-blue-800/50 shrink-0"
-              >
-                {t('generateBarcode') || 'Сгенерировать'}
-              </button>
-            </div>
-          </div>
-
-          {/* Единица измерения */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {t('unitLabel')} <span className="text-red-500">*</span>
-            </label>
-            <select
-              required name="unit" value={formData.unit} onChange={handleInputChange}
-              className={inputCls + ' cursor-pointer'}
-            >
-              <option value="dona">{t('units')?.['dona'] || 'шт'}</option>
-              <option value="kg">{t('units')?.['kg'] || 'кг'}</option>
-              <option value="metr">{t('units')?.['metr'] || 'метр'}</option>
-              <option value="litr">{t('units')?.['litr'] || 'литr'}</option>
-              <option value="qop">{t('units')?.['qop'] || 'qop'}</option>
-            </select>
-          </div>
-
-          {/* Kategoriya */}
-          {businessType === 'restaurant' && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-                {lang === 'uz' ? 'Kategoriya' : 'Категория'} <span className="text-red-500">*</span>
-              </label>
-              <input
-                required={businessType === 'restaurant'} name="category" value={formData.category} onChange={handleInputChange}
-                type="text" placeholder="Напр. Ovqatlar" className={inputCls}
-              />
-            </div>
-          )}
-
-          {/* Printer Destination */}
-          {businessType === 'restaurant' && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-                {lang === 'uz' ? 'Chop etish bo\'limi' : 'Отдел печати'}
-              </label>
-              <select
-                name="printer_destination"
-                value={formData.printer_destination || 'none'}
-                onChange={handleInputChange}
-                className={inputCls + ' cursor-pointer'}
-              >
-                <option value="none">-- {lang === 'uz' ? 'Chop etilmasin' : 'Не печатать'} --</option>
-                <option value="oshxona-1">{lang === 'uz' ? 'Oshxona-1' : 'Кухня-1'}</option>
-                <option value="oshxona-2">{lang === 'uz' ? 'Oshxona-2' : 'Кухня-2'}</option>
-                <option value="oshxona-3">{lang === 'uz' ? 'Oshxona-3' : 'Кухня-3'}</option>
-                <option value="bar-1">{lang === 'uz' ? 'Bar-1' : 'Бар-1'}</option>
-                <option value="bar-2">{lang === 'uz' ? 'Bar-2' : 'Бар-2'}</option>
-                <option value="bar-3">{lang === 'uz' ? 'Bar-3' : 'Бар-3'}</option>
-                <option value="xolodniy-1">{lang === 'uz' ? 'Xolodniy-1' : 'Холодный-1'}</option>
-                <option value="xolodniy-2">{lang === 'uz' ? 'Xolodniy-2' : 'Холодный-2'}</option>
-                <option value="xolodniy-3">{lang === 'uz' ? 'Xolodniy-3' : 'Холодный-3'}</option>
-              </select>
-            </div>
-          )}
-
-          {/* Turi */}
-          {businessType === 'restaurant' && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-                {lang === 'uz' ? 'Turi' : 'Тип'} <span className="text-red-500">*</span>
-              </label>
-              <select
-                required={businessType === 'restaurant'} name="type" value={formData.type} onChange={handleInputChange}
-                className={inputCls + ' cursor-pointer'}
-              >
-                <option value="ready_dish">{lang === 'uz' ? 'Tayyor taom' : 'Готовое блюдо'}</option>
-                <option value="raw_material">{lang === 'uz' ? 'Xom-ashyo (Ingredient)' : 'Сырье (Ингредиент)'}</option>
-              </select>
-            </div>
-          )}
-
-          {/* Zaqup (Tannarx) */}
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                {t('buyPrice')} <span className="text-red-500">*</span>
-              </label>
-              {!(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0) && (
-                <div className="flex gap-1 text-[10px] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => handleCurrencySwitch('UZS')}
-                    className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
-                      buyPriceCurrency === 'UZS'
-                        ? 'bg-blue-600 border-blue-600 text-white'
-                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    so'm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCurrencySwitch('USD')}
-                    className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
-                      buyPriceCurrency === 'USD'
-                        ? 'bg-blue-600 border-blue-600 text-white'
-                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    USD ($)
-                  </button>
-                </div>
-              )}
-            </div>
-            <input
-              required name="buy_price" value={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? formatPriceInput(projectedCostPrice) : formData.buy_price} onChange={handleInputChange}
-              disabled={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0}
-              type="text" inputMode="decimal" placeholder={buyPriceCurrency === 'USD' ? "0.00" : "0"} className={inputCls + (businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? ' opacity-60 bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' : '')}
-            />
-            {buyPriceCurrency === 'USD' && !(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0) && (
-              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 flex flex-col gap-1">
-                <div>
-                  Konvertatsiya: ~ {formatPriceInput(Math.round((parseFloat(String(formData.buy_price).replace(/,/g, '.')) || 0) * usdRate))} so'm
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span>Kursni o'zgartirish:</span>
-                  <input
-                    type="number"
-                    value={usdRate || ''}
-                    onChange={async (e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      setUsdRate(val);
-                      if (window.api) {
-                        await window.api.updateSetting({ key: 'usd_rate', value: String(val) });
-                      }
-                    }}
-                    className="w-20 px-1.5 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sotuv narxi */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {t('sellPrice')} <span className="text-red-500">*</span>
-            </label>
-            <input
-              required name="sell_price" value={formData.sell_price} onChange={handleInputChange}
-              type="text" inputMode="decimal" placeholder="0.00" className={inputCls}
-            />
-          </div>
-
-          {/* Kol-vo */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              {(existingProductId || editingId) ? "Qo'shilayotgan soni" : t('quantity')}{' '}
-              {!(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0) && <span className="text-red-500">*</span>}
-            </label>
-            <input
-              ref={stockInputRef}
-              required={!(businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0)}
-              disabled={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0}
-              name="stock"
-              value={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? '' : formData.stock}
-              onChange={handleInputChange}
-              type="number"
-              step="0.001"
-              min="0"
-              placeholder={businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? (lang === 'uz' ? 'Avtomatik' : 'Авто') : '0'}
-              className={inputCls + (businessType === 'restaurant' && formData.type === 'ready_dish' && recipeIngredients.length > 0 ? ' opacity-60 bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed' : '')}
-            />
-          </div>
-
-          {/* Chegirma */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              Chegirma (%)
-            </label>
-            <input
-              name="discount" value={formData.discount} onChange={handleInputChange}
-              type="number" min="0" max="100" placeholder="0" className={inputCls}
-            />
-          </div>
-
-          {/* Taom tarkibi (Resept) section */}
-          {businessType === 'restaurant' && formData.type === 'ready_dish' && (
-            <div className="col-span-2 md:col-span-4 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-200 dark:border-gray-700 mt-4">
-              <h4 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
-                🍳 {lang === 'uz' ? 'Taom tarkibi (Resept)' : 'Состав блюда (Рецепт)'}
-              </h4>
-              
-              {recipeIngredients.length > 0 ? (
-                <div className="space-y-2 mb-4">
-                  {recipeIngredients.map((ing) => (
-                    <div key={ing.ingredient_product_id} className="flex items-center justify-between bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm">
-                      <span className="font-semibold text-gray-800 dark:text-gray-200">{ing.name}</span>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            step="0.001"
-                            min="0.001"
-                            value={ing.quantity}
-                            onChange={(e) => {
-                              const newQty = parseFloat(e.target.value) || 0;
-                              setRecipeIngredients(prev => prev.map(item =>
-                                item.ingredient_product_id === ing.ingredient_product_id
-                                  ? { ...item, quantity: newQty }
-                                  : item
-                              ));
-                            }}
-                            className="w-20 px-2 py-1 text-center border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                          <span className="text-gray-500 text-xs">{ing.unit}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveIngredient(ing.ingredient_product_id)}
-                          className="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {/* Cost Price Projection info */}
-                  <div className="text-xs text-gray-500 dark:text-gray-400 text-right font-medium">
-                    {lang === 'uz' ? 'Resept bo\'yicha hisoblangan tannarx:' : 'Расчетная себестоимость по рецепту:'}{' '}
-                    <span className="font-bold text-gray-800 dark:text-gray-200">
-                      {formatCurrency(projectedCostPrice, lang)}
-                    </span>
-                  </div>
-                  
-                  {/* Notice about auto stock calculation */}
-                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 mt-2 font-medium">
-                    ⚠️ {lang === 'uz' 
-                      ? 'Ushbu tayyor taom tarkibiga ingredientlar qo\'shilganligi sababli uning qoldig\'i avtomatik ravishda ingredientlar zaxirasidan hisoblanadi.' 
-                      : 'Так как в состав этого готового блюда входят ингредиенты, его остаток рассчитывается автоматически на основе запасов ингредиентов.'}
-                  </div>
-                </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 transition-colors">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
+              <Plus size={18} className="text-blue-600 dark:text-blue-400" /> 
+              {editingId ? (
+                'Mahsulotni tahrirlash'
+              ) : businessType === 'restaurant' ? (
+                restaurantTab === 'raw_materials' 
+                  ? '1-Ombor: Yangi Xom-ashyo (Ingrediyent) kiritish' 
+                  : '2-Ombor: Yangi Taom yoki Donabay tovar qo\'shish'
               ) : (
-                <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 italic">
-                  {lang === 'uz' ? 'Hozircha tarkibiy ingredientlar qo\'shilmagan.' : 'Ингредиенты пока не добавлены.'}
-                </p>
+                t('addProductTitle')
               )}
-              
-              {/* Add ingredient row */}
-              <div className="flex flex-col sm:flex-row gap-3 items-end bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="flex-1 w-full">
-                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                    {lang === 'uz' ? 'Xom-ashyo tanlash' : 'Выбрать сырье'}
-                  </label>
-                  <select
-                    value={selectedIngId}
-                    onChange={(e) => setSelectedIngId(e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none"
-                  >
-                    <option value="">{lang === 'uz' ? '-- Tanlang --' : '-- Выберите --'}</option>
-                    {rawMaterials.map(rm => (
-                      <option key={rm.id} value={rm.id}>
-                        {rm.name} ({rm.unit || 'dona'}) - {formatCurrency(rm.buy_price, lang)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="w-full sm:w-32">
-                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                    {lang === 'uz' ? 'Miqdori' : 'Количество'}
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    value={ingQty}
-                    onChange={(e) => setIngQty(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none"
-                  />
-                </div>
-                
+            </h3>
+
+            {businessType === 'restaurant' && restaurantTab === 'dishes' && !editingId && (
+              <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-700/60 rounded-xl border border-gray-200 dark:border-gray-600">
                 <button
                   type="button"
-                  onClick={handleAddIngredient}
-                  disabled={!selectedIngId || !ingQty}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-md transition-colors h-9 shrink-0 flex items-center justify-center gap-1 w-full sm:w-auto cursor-pointer"
+                  onClick={() => setDishMode('recipe')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    dishMode === 'recipe'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
+                  }`}
                 >
-                  <Plus size={14} /> {lang === 'uz' ? 'Qo\'shish' : 'Добавить'}
+                  <span>🥘 Retseptli taom (Tarkibli)</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDishMode('piece')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    dishMode === 'piece'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
+                  }`}
+                >
+                  <span>🥤 Donabay tovar (Ichimliklar/suv)</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Status banner */}
+          {status && (
+            <div
+              className={`mb-4 flex items-start gap-3 p-4 rounded-xl text-sm border-2 ${
+                status.type === 'error'
+                  ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
+                  : status.type === 'warning'
+                  ? 'bg-orange-50 dark:bg-orange-900/30 border-orange-400 text-orange-800 dark:text-orange-300 shadow-sm'
+                  : 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+              }`}
+            >
+              {status.type === 'error' ? (
+                <AlertCircle size={20} className="mt-0.5 shrink-0 text-red-500" />
+              ) : status.type === 'warning' ? (
+                <AlertTriangle size={28} className="mt-0.5 shrink-0 text-orange-500 animate-pulse" />
+              ) : (
+                <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-green-500" />
+              )}
+              <div>
+                <span className={status.type === 'warning' ? 'text-lg font-bold block mb-1' : 'font-medium'}>
+                  {status.message}
+                </span>
+                {status.details && <p className="text-sm font-medium">{status.details}</p>}
               </div>
             </div>
           )}
 
-          {/* Harakat izohi */}
-          <div className="col-span-2 md:col-span-4 mt-2">
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
-              Izoh (Kirim yoki tahrirlash uchun ixtiyoriy izoh)
-            </label>
-            <input
-              name="note"
-              value={formData.note || ''}
-              onChange={handleInputChange}
-              type="text"
-              placeholder="Masalan: Yangi partiya keldi, narxlar tahrirlandi yoki boshqa izoh..."
-              className={inputCls}
-            />
-          </div>
+          <form onSubmit={handleAddProduct} className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+            {/* Nomi */}
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                {businessType === 'restaurant' && restaurantTab === 'raw_materials' 
+                  ? 'Xom-ashyo / Masalliq nomi' 
+                  : (businessType === 'restaurant' && dishMode === 'recipe' ? 'Taom nomi' : t('productName'))} <span className="text-red-500">*</span>
+              </label>
+              <input
+                required name="name" value={formData.name} onChange={handleInputChange}
+                type="text" 
+                placeholder={
+                  businessType === 'restaurant' && restaurantTab === 'raw_materials'
+                    ? "Masalan: Mol go'shti, Piyoz, Un, Yog'..."
+                    : (businessType === 'restaurant' && dishMode === 'recipe' ? "Masalan: Lavash Standart, Osh, Shashlik..." : "Masalan: Pepsi 1.5L, Suv 0.5L...")
+                } 
+                className={inputCls}
+              />
+            </div>
 
-          {/* Submit */}
-          <div className="col-span-2 md:col-span-4 flex justify-end gap-2 mt-4">
-            {(editingId || existingProductId || formData.barcode) && (
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors text-sm border border-gray-300 dark:border-gray-600 cursor-pointer"
-              >
-                <X size={15} />
-                Otmena
-              </button>
+            {/* Shtrixkod — Faqat donabay tovarlar va retail uchun */}
+            {!(businessType === 'restaurant' && (restaurantTab === 'raw_materials' || dishMode === 'recipe')) && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  {t('barcode')} <span className="text-gray-400 dark:text-gray-500 font-normal normal-case">{t('barcodeOpt')}</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    name="barcode" value={formData.barcode} onChange={handleInputChange}
+                    type="text" placeholder="123456789" className={inputCls + ' flex-1'}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateBarcodeClick}
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-2 rounded-lg font-bold transition-all text-xs cursor-pointer border border-blue-200 dark:border-blue-800/50 shrink-0"
+                  >
+                    {t('generateBarcode') || 'Auto'}
+                  </button>
+                </div>
+              </div>
             )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 disabled:opacity-60 text-white font-medium py-2 px-6 rounded-md transition-colors text-sm shadow-sm cursor-pointer"
-            >
-              {loading
-                ? (editingId ? 'Saqlanmoqda...' : "Qo'shilmoqda...")
-                : (editingId ? "O'zgarishlarni saqlash" : t('addBtn'))}
-            </button>
-          </div>
-        </form>
-      </div>
+
+            {/* Kategoriya */}
+            {businessType === 'restaurant' && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  {lang === 'uz' ? 'Kategoriya' : 'Категория'} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required={businessType === 'restaurant'} name="category" value={formData.category} onChange={handleInputChange}
+                  type="text" 
+                  placeholder={restaurantTab === 'raw_materials' ? "Masalan: Go'shtlar, Sabzavotlar..." : "Masalan: Taomlar, Ichimliklar, Fast-food..."} 
+                  className={inputCls}
+                />
+              </div>
+            )}
+
+            {/* Birligi */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                {t('unitLabel')} <span className="text-red-500">*</span>
+              </label>
+              <select
+                required name="unit" value={formData.unit} onChange={handleInputChange}
+                className={inputCls + ' cursor-pointer'}
+              >
+                <option value="dona">{t('units')?.['dona'] || 'dona (шт)'}</option>
+                <option value="kg">{t('units')?.['kg'] || 'kg (кг)'}</option>
+                <option value="litr">{t('units')?.['litr'] || 'litr (литр)'}</option>
+                <option value="metr">{t('units')?.['metr'] || 'metr (метр)'}</option>
+                <option value="qop">{t('units')?.['qop'] || 'qop (мешок)'}</option>
+              </select>
+            </div>
+
+            {/* Chop etish bo'limi (Faqat 2-ombor taomlar/tovarlar uchun) */}
+            {businessType === 'restaurant' && restaurantTab === 'dishes' && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  {lang === 'uz' ? 'Chop etish bo\'limi' : 'Отдел печати'}
+                </label>
+                <select
+                  name="printer_destination"
+                  value={formData.printer_destination || 'none'}
+                  onChange={handleInputChange}
+                  className={inputCls + ' cursor-pointer'}
+                >
+                  <option value="none">-- {lang === 'uz' ? 'Chop etilmasin' : 'Не печатать'} --</option>
+                  <option value="oshxona-1">{lang === 'uz' ? 'Oshxona-1' : 'Кухня-1'}</option>
+                  <option value="oshxona-2">{lang === 'uz' ? 'Oshxona-2' : 'Кухня-2'}</option>
+                  <option value="oshxona-3">{lang === 'uz' ? 'Oshxona-3' : 'Кухня-3'}</option>
+                  <option value="bar-1">{lang === 'uz' ? 'Bar-1' : 'Бар-1'}</option>
+                  <option value="bar-2">{lang === 'uz' ? 'Bar-2' : 'Бар-2'}</option>
+                  <option value="bar-3">{lang === 'uz' ? 'Bar-3' : 'Бар-3'}</option>
+                  <option value="xolodniy-1">{lang === 'uz' ? 'Xolodniy-1' : 'Холодный-1'}</option>
+                  <option value="xolodniy-2">{lang === 'uz' ? 'Xolodniy-2' : 'Холодный-2'}</option>
+                  <option value="xolodniy-3">{lang === 'uz' ? 'Xolodniy-3' : 'Холодный-3'}</option>
+                </select>
+              </div>
+            )}
+
+            {/* Olish narxi / Tannarx */}
+            {!(businessType === 'restaurant' && restaurantTab === 'dishes' && dishMode === 'recipe') && (
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                    {t('buyPrice')} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-1 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => handleCurrencySwitch('UZS')}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        buyPriceCurrency === 'UZS'
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      so'm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCurrencySwitch('USD')}
+                      className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                        buyPriceCurrency === 'USD'
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      USD ($)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  required name="buy_price" value={formData.buy_price} onChange={handleInputChange}
+                  type="text" inputMode="decimal" placeholder={buyPriceCurrency === 'USD' ? "0.00" : "0"} className={inputCls}
+                />
+                {buyPriceCurrency === 'USD' && (
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 flex flex-col gap-1">
+                    <div>
+                      Konvertatsiya: ~ {formatPriceInput(Math.round((parseFloat(String(formData.buy_price).replace(/,/g, '.')) || 0) * usdRate))} so'm
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Sotish narxi (Faqat 2-ombor taomlar/tovarlar va retail uchun) */}
+            {!(businessType === 'restaurant' && restaurantTab === 'raw_materials') && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  {t('sellPrice')} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required name="sell_price" value={formData.sell_price} onChange={handleInputChange}
+                  type="text" inputMode="decimal" placeholder="0" className={inputCls}
+                />
+              </div>
+            )}
+
+            {/* Qoldiq / Kirim miqdori (1-ombor xom-ashyolari va 2-ombor donabay tovarlar uchun) */}
+            {!(businessType === 'restaurant' && restaurantTab === 'dishes' && dishMode === 'recipe') && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  {(existingProductId || editingId) ? "Kirim miqdori" : (restaurantTab === 'raw_materials' ? "Ombordagi qoldiq" : t('quantity'))} <span className="text-red-500">*</span>
+                </label>
+                <input
+                  ref={stockInputRef}
+                  required
+                  name="stock"
+                  value={formData.stock}
+                  onChange={handleInputChange}
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder="0"
+                  className={inputCls}
+                />
+              </div>
+            )}
+
+            {/* Chegirma (Faqat sotiladigan mahsulotlar uchun) */}
+            {!(businessType === 'restaurant' && restaurantTab === 'raw_materials') && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                  Chegirma (%)
+                </label>
+                <input
+                  name="discount" value={formData.discount} onChange={handleInputChange}
+                  type="number" min="0" max="100" placeholder="0" className={inputCls}
+                />
+              </div>
+            )}
+
+            {/* ── Retsept / Masalliqlar tarkibi (2-ombor retseptli taomlar uchun) ── */}
+            {businessType === 'restaurant' && restaurantTab === 'dishes' && dishMode === 'recipe' && (
+              <div className="col-span-2 md:col-span-4 bg-gradient-to-br from-amber-50/50 to-orange-50/50 dark:from-gray-800/80 dark:to-gray-800/40 p-5 rounded-2xl border border-amber-200/80 dark:border-amber-900/40 mt-3 shadow-inner">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-amber-900 dark:text-amber-300 flex items-center gap-2">
+                    🍳 1-Ombordagi Masalliqlardan Taom Retseptini Tuzish
+                  </h4>
+                  <span className="text-xs font-bold text-amber-800 dark:text-amber-400">
+                    Hisoblangan Tannarx: <span className="text-base text-gray-900 dark:text-white font-extrabold">{formatCurrency(projectedCostPrice, lang)}</span>
+                  </span>
+                </div>
+                
+                {recipeIngredients.length > 0 ? (
+                  <div className="space-y-2 mb-4">
+                    {recipeIngredients.map((ing) => (
+                      <div key={ing.ingredient_product_id} className="flex items-center justify-between bg-white dark:bg-gray-800 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm shadow-sm">
+                        <span className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                          <Package size={15} className="text-amber-600" />
+                          {ing.name}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-700/60 px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-600">
+                            <input
+                              type="number"
+                              step="0.001"
+                              min="0.001"
+                              value={ing.quantity}
+                              onChange={(e) => {
+                                const newQty = parseFloat(e.target.value) || 0;
+                                setRecipeIngredients(prev => prev.map(item =>
+                                  item.ingredient_product_id === ing.ingredient_product_id
+                                    ? { ...item, quantity: newQty }
+                                    : item
+                                ));
+                              }}
+                              className="w-20 px-1 text-center font-bold bg-transparent text-gray-900 dark:text-gray-100 focus:outline-none"
+                            />
+                            <span className="text-gray-500 font-semibold text-xs">{ing.unit}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveIngredient(ing.ingredient_product_id)}
+                            className="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-100/60 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-300 dark:border-amber-900/60 mt-2 font-medium">
+                      💡 <b>Eslatma:</b> Ushbu taom sotilganda, uning 1-ombordagi har bir ingrediyenti yuqorida ko'rsatilgan miqdorda avtomatik tarzda kamayadi. Agar biror ingrediyent stopga qo'yilsa, ushbu taom ham avtomatik Stop-listga tushadi.
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-800/80 dark:text-amber-400/80 mb-4 italic">
+                    Hozircha xom-ashyolar tanlanmagan. Quyidagi ro'yxatdan 1-ombordagi masalliqni tanlang va qo'shing.
+                  </p>
+                )}
+                
+                {/* Add ingredient row */}
+                <div className="flex flex-col sm:flex-row gap-3 items-end bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                  <div className="flex-1 w-full">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                      1-Ombordagi Xom-ashyoni tanlang
+                    </label>
+                    <select
+                      value={selectedIngId}
+                      onChange={(e) => setSelectedIngId(e.target.value)}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Masalliqni tanlang --</option>
+                      {rawMaterials.map(rm => (
+                        <option key={rm.id} value={rm.id}>
+                          {rm.name} (Qoldiq: {rm.stock} {rm.unit || 'dona'}) - {formatCurrency(rm.buy_price, lang)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="w-full sm:w-36">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                      1 porsiyaga miqdor
+                    </label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      value={ingQty}
+                      onChange={(e) => setIngQty(e.target.value)}
+                      placeholder="0.150"
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none font-bold"
+                    />
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={handleAddIngredient}
+                    disabled={!selectedIngId || !ingQty}
+                    className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold px-5 py-2.5 rounded-lg transition-colors h-10 shrink-0 flex items-center justify-center gap-1.5 w-full sm:w-auto cursor-pointer shadow-sm"
+                  >
+                    <Plus size={15} /> Qo'shish
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Harakat izohi */}
+            <div className="col-span-2 md:col-span-4 mt-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
+                Izoh (Ixtiyoriy)
+              </label>
+              <input
+                name="note"
+                value={formData.note || ''}
+                onChange={handleInputChange}
+                type="text"
+                placeholder="Masalan: Yangi partiya keldi, narxlar yangilandi..."
+                className={inputCls}
+              />
+            </div>
+
+            {/* Submit tugmalari */}
+            <div className="col-span-2 md:col-span-4 flex justify-end gap-2 mt-4">
+              {(editingId || existingProductId || formData.barcode) && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-2.5 px-4 rounded-xl transition-colors text-sm border border-gray-300 dark:border-gray-600 cursor-pointer"
+                >
+                  <X size={15} />
+                  Bekor qilish
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 disabled:opacity-60 text-white font-bold py-2.5 px-7 rounded-xl transition-all text-sm shadow-md cursor-pointer flex items-center gap-2"
+              >
+                {loading ? (
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Plus size={16} />
+                )}
+                {editingId ? "O'zgarishlarni saqlash" : (restaurantTab === 'raw_materials' ? "Xom-ashyoni kiritish" : t('addBtn'))}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ── Products table ── */}
-      <div className="flex flex-col bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 h-[100vh] transition-colors">
+      <div className="flex flex-col bg-white dark:bg-gray-800 shadow-sm rounded-xl border border-gray-200 dark:border-gray-700 min-h-[500px] transition-colors">
         {/* Table header */}
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
-          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            {t('productList')} ({filteredProducts.length})
-          </span>
-          <div className="relative w-72">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <span className="text-base font-bold text-gray-800 dark:text-gray-100">
+              {businessType === 'restaurant' ? (
+                restaurantTab === 'raw_materials'
+                  ? '📦 1-Ombor: Xom-ashyolar ro\'yxati'
+                  : restaurantTab === 'dishes'
+                  ? '🍽️ 2-Ombor: Sotiladigan taomlar & tovarlar'
+                  : '🚫 Stop-Listdagi Mahsulotlar'
+              ) : (
+                t('productList')
+              )}
+            </span>
+            <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-bold text-xs rounded-full">
+              {filteredProducts.length} ta
+            </span>
+          </div>
+
+          <div className="relative w-full sm:w-72">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
               placeholder={t('searchProducts')}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-gray-100 transition"
+              className="w-full pl-10 pr-3.5 py-2 border border-gray-300 dark:border-gray-600 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 transition"
             />
           </div>
         </div>
@@ -1368,150 +1569,236 @@ export default memo(function Warehouse({ isActive }) {
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 transition-colors">
               <tr>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('productName')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('barcode')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('unitLabel')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('buyPrice')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('sellPrice')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Остаток</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Действия</th>
+                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">#</th>
+                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('productName')}</th>
+                {businessType === 'restaurant' && (
+                  <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Turi / Ombor</th>
+                )}
+                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Kategoriya</th>
+                {!(businessType === 'restaurant' && restaurantTab === 'dishes') && (
+                  <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Birligi</th>
+                )}
+                {!(businessType === 'restaurant' && restaurantTab === 'dishes' && dishMode === 'recipe') && (
+                  <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('buyPrice')}</th>
+                )}
+                {!(businessType === 'restaurant' && restaurantTab === 'raw_materials') && (
+                  <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('sellPrice')}</th>
+                )}
+                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  {businessType === 'restaurant' && restaurantTab === 'dishes' ? 'Qoldiq / Portsiya' : 'Qoldiq'}
+                </th>
+                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center">Stop-List</th>
+                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">
-                    {t('noProductsFound')}
+                  <td colSpan="10" className="py-14 text-center text-sm text-gray-400 dark:text-gray-500">
+                    <Package size={36} className="mx-auto text-gray-300 dark:text-gray-600 mb-2 opacity-60" />
+                    {restaurantTab === 'stop_list' ? "Hozirda stop-listda hech qanday mahsulot yo'q." : t('noProductsFound')}
                   </td>
                 </tr>
               ) : (
                 <>
                   {filteredProducts.slice(0, visibleCount).map((product, index) => {
+                    const isStopped = product.is_stopped === 1 || !!product.stop_reason;
                     const lowStock = product.stock <= 3;
-                    const unitLabel = t('units')?.[product.unit] || product.unit || 'шт';
-                  return (
-                    <tr
-                      key={product.id}
-                      className={`group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50 ${lowStock ? 'bg-red-50/40 dark:bg-red-900/10 hover:bg-red-50/70 dark:hover:bg-red-900/20' : ''}`}
-                    >
-                      <td className="py-3 px-4 text-sm text-gray-400 dark:text-gray-500">{index + 1}</td>
-                      <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-200">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-2">
-                            <span>{product.name}</span>
-                            {product.discount > 0 && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
-                                -{product.discount}%
+                    const unitLabel = t('units')?.[product.unit] || product.unit || 'dona';
+
+                    return (
+                      <tr
+                        key={product.id}
+                        className={`group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50 ${
+                          isStopped 
+                            ? 'bg-red-50/40 dark:bg-red-950/20' 
+                            : (lowStock ? 'bg-amber-50/30 dark:bg-amber-950/10' : '')
+                        }`}
+                      >
+                        <td className="py-3.5 px-4 text-sm text-gray-400 dark:text-gray-500 font-mono">{index + 1}</td>
+                        <td className="py-3.5 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold ${isStopped ? 'text-red-600 dark:text-red-400' : ''}`}>
+                                {product.name}
                               </span>
-                            )}
-                          </div>
-                          {businessType === 'restaurant' && (
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-normal">
-                                {product.category || 'Boshqa'}
-                              </span>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-normal ${
-                                product.type === 'raw_material' 
-                                  ? 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-900/20' 
-                                  : 'text-indigo-700 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-900/20'
-                              }`}>
-                                {product.type === 'raw_material' 
-                                  ? (lang === 'uz' ? 'Xom-ashyo' : 'Сырье') 
-                                  : (lang === 'uz' ? 'Tayyor taom' : 'Блюdo')}
-                              </span>
-                              {product.printer_destination && product.printer_destination !== 'none' && (
-                                <span className="text-[10px] text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded font-normal">
-                                  🖨️ {product.printer_destination}
+                              {product.discount > 0 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
+                                  -{product.discount}%
                                 </span>
                               )}
                             </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 font-mono">
-                        {product.barcode || <span className="text-gray-300 dark:text-gray-600">—</span>}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
-                        {unitLabel}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
-                        <div>
-                          {formatCurrency(product.buy_price, lang)}
-                          {product.buy_price_usd > 0 && (
-                            <span className="text-[10px] text-orange-600 dark:text-orange-400 block font-semibold mt-0.5">
-                              {product.buy_price_usd} $ (kurs: {formatThousands(product.usd_rate || 0)})
+                            {product.stop_reason && (
+                              <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 flex items-center gap-1 mt-0.5">
+                                <Ban size={12} className="shrink-0" />
+                                {product.stop_reason}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Turi / Ombor */}
+                        {businessType === 'restaurant' && (
+                          <td className="py-3.5 px-4 text-sm">
+                            <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              product.type === 'raw_material'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                            }`}>
+                              {product.type === 'raw_material' ? '📦 1-Ombor (Xom-ashyo)' : '🍽️ 2-Ombor (Taom/Tovar)'}
                             </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-200">{formatCurrency(product.sell_price, lang)}</td>
-                      <td className="py-3 px-4 text-sm">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
-                            lowStock ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400' : 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
-                          }`}
+                          </td>
+                        )}
+
+                        {/* Kategoriya */}
+                        <td className="py-3.5 px-4 text-sm text-gray-600 dark:text-gray-300">
+                          <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700/60 rounded text-xs font-semibold text-gray-700 dark:text-gray-300">
+                            {product.category || 'Boshqa'}
+                          </span>
+                        </td>
+
+                        {/* Birligi */}
+                        {!(businessType === 'restaurant' && restaurantTab === 'dishes') && (
+                          <td className="py-3.5 px-4 text-sm text-gray-600 dark:text-gray-400">
+                            {unitLabel}
+                          </td>
+                        )}
+
+                        {/* Olish narxi */}
+                        {!(businessType === 'restaurant' && restaurantTab === 'dishes' && dishMode === 'recipe') && (
+                          <td className="py-3.5 px-4 text-sm text-gray-600 dark:text-gray-300 font-medium">
+                            {formatCurrency(product.buy_price, lang)}
+                            {product.buy_price_usd > 0 && (
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-semibold mt-0.5">
+                                {product.buy_price_usd} $ (kurs: {formatThousands(product.usd_rate || 0)})
+                              </span>
+                            )}
+                          </td>
+                        )}
+
+                        {/* Sotish narxi */}
+                        {!(businessType === 'restaurant' && restaurantTab === 'raw_materials') && (
+                          <td className="py-3.5 px-4 text-sm font-bold text-gray-900 dark:text-white">
+                            {formatCurrency(product.sell_price, lang)}
+                          </td>
+                        )}
+
+                        {/* Qoldiq */}
+                        <td className="py-3.5 px-4 text-sm">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                              product.stock <= 0
+                                ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
+                                : lowStock
+                                ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
+                                : 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+                            }`}
+                          >
+                            {product.stock <= 0 && <AlertCircle size={11} />}
+                            {lowStock && product.stock > 0 && <AlertTriangle size={11} />}
+                            {product.stock} {unitLabel}
+                          </span>
+                        </td>
+
+                        {/* Stop-List Switch */}
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleStop(product, e)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold transition-all cursor-pointer shadow-sm ${
+                              product.is_stopped
+                                ? 'bg-red-600 text-white hover:bg-red-700 ring-2 ring-red-400/50'
+                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-200 border border-emerald-300 dark:border-emerald-700'
+                            }`}
+                            title={product.is_stopped ? "Stop-listda (Sotish bloklangan)" : "Sotuvda faol (Bosib to'xtatish mumkin)"}
+                          >
+                            {product.is_stopped ? (
+                              <>
+                                <span className="w-2 h-2 rounded-full bg-white shrink-0 animate-ping" />
+                                <span>STOPDA</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                <span>FAOL</span>
+                              </>
+                            )}
+                          </button>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {restaurantTab === 'stop_list' ? (
+                              <button
+                                onClick={(e) => handleToggleStop(product, e)}
+                                title="Stopdan chiqarish"
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
+                              >
+                                <Play size={12} /> Stopdan chiqarish
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handlePrintLabelClick(product)}
+                                  disabled={deletingId !== null}
+                                  title={t('printLabelTitle') || 'Stiker chop etish'}
+                                  className="text-gray-400 dark:text-gray-500 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Printer size={15} />
+                                </button>
+                                {product.type === 'raw_material' && (
+                                  <button
+                                    onClick={() => { setWriteOffTarget(product); setWriteOffQty(''); setWriteOffError(null); }}
+                                    disabled={deletingId !== null}
+                                    title="Hisobdan chiqarish"
+                                    className="text-gray-400 dark:text-gray-500 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <MinusCircle size={15} />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleEditClick(product)}
+                                  disabled={deletingId !== null}
+                                  title="Tahrirlash"
+                                  className="text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Edit size={15} />
+                                </button>
+                                <button
+                                  onClick={() => confirmDelete(product.id, product.name)}
+                                  disabled={deletingId !== null}
+                                  title="O'chirish"
+                                  className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  {deletingId === product.id ? (
+                                    <span className="inline-block w-[15px] h-[15px] border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <Trash2 size={15} />
+                                  )}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredProducts.length > visibleCount && (
+                    <tr>
+                      <td colSpan="10" className="py-4 text-center bg-gray-50 dark:bg-gray-800/50">
+                        <button
+                          onClick={() => setVisibleCount(prev => prev + 50)}
+                          className="px-4 py-2 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-semibold rounded-lg hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors text-sm cursor-pointer"
                         >
-                          {lowStock && <AlertTriangle size={11} />}
-                          {product.stock} {unitLabel}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handlePrintLabelClick(product)}
-                            disabled={deletingId !== null}
-                            title={t('printLabelTitle') || 'Stiker chop etish'}
-                            className="text-gray-400 dark:text-gray-500 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            <Printer size={15} />
-                          </button>
-                          <button
-                            onClick={() => { setWriteOffTarget(product); setWriteOffQty(''); setWriteOffError(null); }}
-                            disabled={deletingId !== null}
-                            title="Hisobdan chiqarish"
-                            className="text-gray-400 dark:text-gray-500 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <MinusCircle size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleEditClick(product)}
-                            disabled={deletingId !== null}
-                            title="Tahrirlash"
-                            className="text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <Edit size={15} />
-                          </button>
-                          <button
-                            onClick={() => confirmDelete(product.id, product.name)}
-                            disabled={deletingId !== null}
-                            title="Удалить"
-                            className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            {deletingId === product.id
-                              ? <span className="inline-block w-[15px] h-[15px] border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
-                              : <Trash2 size={15} />}
-                          </button>
-                        </div>
+                          Yana 50 ta tovarni ko'rish
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Jami: {filteredProducts.length} ta mahsulot. Aniqroq qidirish tavsiya etiladi.
+                        </p>
                       </td>
                     </tr>
-                  );
-                })}
-                {filteredProducts.length > visibleCount && (
-                  <tr>
-                    <td colSpan="8" className="py-4 text-center bg-gray-50 dark:bg-gray-800/50">
-                      <button
-                        onClick={() => setVisibleCount(prev => prev + 50)}
-                        className="px-4 py-2 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-semibold rounded hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors text-sm"
-                      >
-                        Yana 50 ta tovarni ko'rish
-                      </button>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Jami: {filteredProducts.length} ta tovar. Aniqroq qidirish tavsiya etiladi.
-                      </p>
-                    </td>
-                  </tr>
-                )}
+                  )}
                 </>
               )}
             </tbody>

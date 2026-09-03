@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ShoppingCart, Package, PackageSearch, Users, BarChart3, Moon, Sun, Globe, LogOut, CheckCircle, X } from 'lucide-react';
+import { ShoppingCart, Package, PackageSearch, Users, BarChart3, Moon, Sun, Globe, LogOut, CheckCircle, X, ChefHat, Tv } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import Cashier from './Cashier';
 import RestaurantCashier from './RestaurantCashier';
@@ -12,6 +12,8 @@ import SalesHistory from './SalesHistory';
 import InventoryHistory from './InventoryHistory';
 import AiBashoratchi from './AiBashoratchi';
 import ShiftModal from './components/ShiftModal';
+import KitchenDisplay from './KitchenDisplay';
+import TvQueueDisplay from './TvQueueDisplay';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles } from 'lucide-react';
 import { logoBase64 } from './logoBase64';
@@ -314,6 +316,15 @@ function App() {
     setTimeout(() => setSuccessToast(''), 5000);
   }, []);
 
+  // ── Standalone URL Routing for Kitchen Display and TV (Autonomous Screens) ──
+  const currentPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.hash) : '';
+  if (currentPath.includes('/kitchen')) {
+    return <KitchenDisplay onBack={() => { window.history.pushState({}, '', '/'); window.location.reload(); }} onOpenTv={() => { window.history.pushState({}, '', '/tv'); window.location.reload(); }} />;
+  }
+  if (currentPath.includes('/tv')) {
+    return <TvQueueDisplay onBack={() => { window.history.pushState({}, '', '/'); window.location.reload(); }} />;
+  }
+
   // ── Render: Boot spinner (prevents ANY flash) ────────────────────────────
   if (bootState === 'booting') {
     return <BootLoader theme={theme} shopLogo={shopLogo} />;
@@ -328,6 +339,14 @@ function App() {
         onActivated={handleActivated}
       />
     );
+  }
+
+  // If KDS/TV tab active inside authenticated app
+  if (activeTab === 'kitchen') {
+    return <KitchenDisplay onBack={() => setActiveTab('cashier')} onOpenTv={() => setActiveTab('tv')} />;
+  }
+  if (activeTab === 'tv') {
+    return <TvQueueDisplay onBack={() => setActiveTab('cashier')} />;
   }
 
   // ── Render: Login screen (activated but no shift open) ───────────────────
@@ -357,23 +376,44 @@ function App() {
       }`}
     >
       {/* Global floating action buttons container in top-right corner */}
-      <div className="fixed top-4 right-4 z-[99] flex items-center gap-3">
+      <div className="fixed top-4 right-4 z-[99] flex items-center gap-2">
+        {businessType === 'restaurant' && (
+          <>
+            <button
+              onClick={() => setActiveTab('kitchen')}
+              title="Oshxona Ekrani (KDS)"
+              className="px-3 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs rounded-2xl shadow-xl flex items-center gap-1.5 transition-all duration-200 border border-amber-400 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+            >
+              <ChefHat size={16} />
+              <span className="hidden sm:inline">Oshxona (KDS)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('tv')}
+              title="Zaldagi TV-Tablo"
+              className="px-3 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-2xl shadow-xl flex items-center gap-1.5 transition-all duration-200 border border-purple-400 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+            >
+              <Tv size={16} />
+              <span className="hidden sm:inline">TV-Tablo</span>
+            </button>
+          </>
+        )}
+
         {currentUser?.role === 'waiter' && (
           <button
             onClick={() => setShowWaiterReportModal(true)}
             title="Mening hisobotim"
-            className="p-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-blue-400 dark:border-blue-600 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+            className="p-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-blue-400 dark:border-blue-600 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
           >
-            <BarChart3 size={22} />
+            <BarChart3 size={20} />
           </button>
         )}
 
         <button
           onClick={handleLogout}
           title="Kassa qulflansin"
-          className="p-3.5 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-red-400 dark:border-red-600 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+          className="p-3 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl transition-all duration-200 flex items-center justify-center border border-red-400 dark:border-red-600 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
         >
-          <Lock size={22} />
+          <Lock size={20} />
         </button>
       </div>
 
