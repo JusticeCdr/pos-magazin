@@ -267,12 +267,16 @@ export default memo(function SalesHistory({ isActive }) {
     try {
       const saleData = {
         saleId: sale.id,
-        cartItems: sale.items.map(i => ({
-          ...i,
-          sell_price: i.price,
-          discount: i.discount_percent || 0,
-          discount_percent: i.discount_percent || 0,
-        })),
+        cartItems: sale.items.map(i => {
+          const discPct = parseFloat(i.discount_percent) || 0;
+          const origPrice = (discPct > 0 && discPct < 100) ? Math.round(i.price / (1 - discPct / 100)) : i.price;
+          return {
+            ...i,
+            sell_price: origPrice,
+            discount: discPct,
+            discount_percent: discPct,
+          };
+        }),
         total: sale.total_amount,
         originalTotal: sale.original_total,
         discountPercent: sale.discount_percent,

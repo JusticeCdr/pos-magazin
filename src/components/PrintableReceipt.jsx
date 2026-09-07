@@ -80,11 +80,14 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
   const serviceFeeAmount = parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0;
   const isTakeaway = saleData.isTakeaway === 1 || saleData.isTakeaway === true || saleData.is_takeaway === 1;
 
-  const totalOriginalAll = cartItems.reduce((sum, item) => {
-    return sum + (item.qty * item.sell_price);
+  const totalOriginalAll = (cartItems || []).reduce((sum, item) => {
+    const q = parseFloat(item.qty) || 0;
+    const p = parseFloat(item.sell_price) || 0;
+    return sum + (q * p);
   }, 0);
 
-  const overallDiscountAmount = totalOriginalAll - total;
+  const finalSaleTotal = parseFloat(total) || 0;
+  const overallDiscountAmount = Math.max(0, totalOriginalAll - finalSaleTotal);
   const overallDiscountPercent = totalOriginalAll > 0 ? Math.round((overallDiscountAmount / totalOriginalAll) * 100) : 0;
 
   const formatDisplayDateTime = (dateInput) => {
@@ -119,7 +122,9 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
   const displayDateTime = formatDisplayDateTime(date);
 
   const formatNumber = (num) => {
-    return Number(num).toLocaleString('ru-RU');
+    const val = parseFloat(num);
+    if (isNaN(val) || !isFinite(val)) return '0';
+    return String(Math.round(val)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   };
 
   const activeLang = localStorage.getItem('receipt_lang') || receiptLang || 'uz';
@@ -251,18 +256,21 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
                 </div>
               )}
               {items.map((item, idx) => {
-                const itemPct = parseFloat(item.discount || item.discount_percent) || 0;
-                const itemTotalOriginal = item.qty * item.sell_price;
+                const rawDisc = item.discount !== undefined && item.discount !== '' ? item.discount : item.discount_percent;
+                const itemPct = Math.min(100, Math.max(0, parseFloat(rawDisc) || 0));
+                const itemQty = parseFloat(item.qty) || 0;
+                const itemPrice = parseFloat(item.sell_price) || 0;
+                const itemTotalOriginal = itemQty * itemPrice;
                 const itemDiscAmount = Math.round(itemTotalOriginal * (itemPct / 100));
-                const itemTotalFinal = itemTotalOriginal - itemDiscAmount;
+                const itemTotalFinal = Math.max(0, itemTotalOriginal - itemDiscAmount);
 
                 return (
                   <div key={idx} style={{ marginBottom: '6px', display: 'block', fontSize: isKatta ? '13px' : '12px' }}>
                     <div style={{ fontWeight: 'bold', wordBreak: 'break-all', lineHeight: '1.2' }}>
-                      {item.originalIndex}. {item.name}
+                      {item.originalIndex}. {item.name || 'Mahsulot'}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: isKatta ? '12px' : '11px', color: '#000', marginTop: '2px', paddingLeft: '12px' }}>
-                      <span>{item.qty} {item.unit || 'dona'} x {formatNumber(item.sell_price)} so'm</span>
+                      <span>{itemQty} {item.unit || 'dona'} x {formatNumber(itemPrice)} so'm</span>
                       <span style={{ fontWeight: 'bold' }}>{formatNumber(itemTotalFinal)} so'm</span>
                     </div>
                     {itemPct > 0 && (

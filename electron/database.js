@@ -1304,7 +1304,11 @@ function getProducts() {
   if (bType === 'restaurant') {
     rows = db.prepare('SELECT * FROM products ORDER BY id DESC').all();
   } else {
-    rows = db.prepare('SELECT * FROM products WHERE business_type = ? ORDER BY id DESC').all(bType);
+    // In retail mode, query retail or untyped products; fallback to all products if none explicitly marked retail
+    rows = db.prepare("SELECT * FROM products WHERE business_type = 'retail' OR business_type IS NULL OR business_type = '' ORDER BY id DESC").all();
+    if (rows.length === 0) {
+      rows = db.prepare('SELECT * FROM products ORDER BY id DESC').all();
+    }
   }
   return attachStopStatusToProducts(rows);
 }
@@ -1925,7 +1929,7 @@ function processSale(cartItems, paymentMethod, customerInfo, cashierName = 'Kass
       // Custom note for item-level discount
       let itemNote = saleNote;
       if (itemPct > 0) {
-        const formattedPrice = Math.round(priceAfterDiscount).toLocaleString('ru-RU').replace(/,/g, ' ');
+        const formattedPrice = String(Math.round(priceAfterDiscount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
         itemNote = `Chek #${shiftReceiptNumber} (${payTypeLabel}, -${itemPct}%, ${formattedPrice} so'm)${device === 'mobile' ? ' (Mobil)' : ''}`;
       }
 
@@ -3515,10 +3519,12 @@ function getProductsPaginated(page = 1, searchQuery = '') {
     let products;
     let totalCount;
     const bType = getActiveBusinessType();
+    const hasRetail = db.prepare("SELECT 1 FROM products WHERE business_type = 'retail' LIMIT 1").get();
+    const filterRetail = bType !== 'restaurant' && !!hasRetail;
 
     if (searchQuery && searchQuery.trim() !== '') {
       const queryStr = `%${searchQuery.trim().toLowerCase()}%`;
-      if (bType === 'restaurant') {
+      if (!filterRetail) {
         products = db.prepare(`
           SELECT * FROM products 
           WHERE (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?) 
@@ -3532,17 +3538,17 @@ function getProductsPaginated(page = 1, searchQuery = '') {
       } else {
         products = db.prepare(`
           SELECT * FROM products 
-          WHERE business_type = ? AND (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?) 
+          WHERE business_type = 'retail' AND (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?) 
           ORDER BY id DESC LIMIT ? OFFSET ?
-        `).all(bType, queryStr, queryStr, limit, offset);
+        `).all(queryStr, queryStr, limit, offset);
 
         totalCount = db.prepare(`
           SELECT COUNT(*) as count FROM products 
-          WHERE business_type = ? AND (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?)
-        `).get(bType, queryStr, queryStr).count;
+          WHERE business_type = 'retail' AND (my_lower(name) LIKE ? OR my_lower(barcode) LIKE ?)
+        `).get(queryStr, queryStr).count;
       }
     } else {
-      if (bType === 'restaurant') {
+      if (!filterRetail) {
         products = db.prepare(`
           SELECT * FROM products 
           ORDER BY id DESC LIMIT ? OFFSET ?
@@ -3554,13 +3560,13 @@ function getProductsPaginated(page = 1, searchQuery = '') {
       } else {
         products = db.prepare(`
           SELECT * FROM products 
-          WHERE business_type = ?
+          WHERE business_type = 'retail'
           ORDER BY id DESC LIMIT ? OFFSET ?
-        `).all(bType, limit, offset);
+        `).all(limit, offset);
 
         totalCount = db.prepare(`
-          SELECT COUNT(*) as count FROM products WHERE business_type = ?
-        `).get(bType).count;
+          SELECT COUNT(*) as count FROM products WHERE business_type = 'retail'
+        `).get().count;
       }
     }
 
