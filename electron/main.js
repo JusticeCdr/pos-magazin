@@ -399,14 +399,37 @@ const {
   addRestaurantZone,
   deleteRestaurantZone,
   toggleProductStop,
+  setProductStopWithLimit,
   getKitchenOrders,
   setOrderStatus,
   setOrderStatusByTable,
-  getTvOrders
+  getTvOrders,
+  deleteProductImageFile,
+  getInventoryAuditPrepare,
+  completeInventoryAudit,
+  getInventoryAudits,
+  getInventoryAuditDetails,
+  getAttendanceSettings,
+  getAttendanceReport,
+  saveManualAttendance,
+  deleteAttendanceRecord,
+  getSuppliers,
+  addSupplier,
+  updateSupplier,
+  deleteSupplier,
+  addSupplierInvoice,
+  getSupplierInvoices,
+  paySupplierDebt,
+  produceSemiFinished,
+  getSubWarehouses,
+  addSubWarehouse,
+  createStockTransfer,
+  getStockTransfers,
+  getDirectorDashboardStats
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
-const { sendTelegramBackup, getTelegramChatIdFromUpdates } = require('./telegramBackup');
+const { sendTelegramBackup, getTelegramChatIdFromUpdates, sendAttendanceTestMessage } = require('./telegramBackup');
 
 // ── Logging System ───────────────────────────────────────────────────────────
 function logError(message) {
@@ -417,6 +440,21 @@ function logError(message) {
     }
     fs.appendFileSync(path.join(dir, 'error_log.txt'), `[${new Date().toISOString()}] ${message}\n`);
   } catch (e) {}
+}
+
+let IMAGES_DIR = '';
+function ensureImagesDir() {
+  if (!IMAGES_DIR) {
+    try {
+      IMAGES_DIR = path.join(app.getPath('userData'), 'product_images');
+    } catch (_) {
+      IMAGES_DIR = path.join(__dirname, '..', 'product_images');
+    }
+  }
+  if (!fs.existsSync(IMAGES_DIR)) {
+    try { fs.mkdirSync(IMAGES_DIR, { recursive: true }); } catch (_) {}
+  }
+  return IMAGES_DIR;
 }
 
 process.on('uncaughtException', (error) => {
@@ -793,9 +831,36 @@ async function startExpressServer() {
     expressApp.use(express.json({ limit: '50mb' }));
     expressApp.use(express.urlencoded({ limit: '50mb', extended: true }));
     
-    // CORS middleware
+    // Helper to validate allowed origins for CORS & WebSockets
+    const isAllowedOrigin = (origin) => {
+      if (!origin || origin === 'null') return true;
+      try {
+        const parsed = new URL(origin);
+        const hostname = parsed.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return true;
+        // Private LAN IP ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+        if (
+          /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+          /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)
+        ) return true;
+        if (hostname.endsWith('.ngrok-free.app') || hostname.endsWith('.ngrok.io')) return true;
+      } catch (_) {}
+      return false;
+    };
+
+    // CORS middleware with strict origin verification
     const cors = require('cors');
-    expressApp.use(cors({ origin: '*' }));
+    expressApp.use(cors({
+      origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Xavfsizlik: Begona manbadan so\'rov taqiqlangan! (CORS origin blocked)'), false);
+        }
+      },
+      credentials: true
+    }));
     
     // Helper to check if request is coming through a public tunnel (like ngrok)
     const isPublicTunnelRequest = (req) => {
@@ -822,8 +887,66 @@ async function startExpressServer() {
 
 
     // Static assets distribution for both desktop and mobile
+    const productImagesDir = ensureImagesDir();
+    expressApp.use('/product-images', express.static(productImagesDir));
+    const attendancePhotosDir = path.join(app.getPath('userData'), 'attendance_photos');
+    if (!fs.existsSync(attendancePhotosDir)) fs.mkdirSync(attendancePhotosDir, { recursive: true });
+    expressApp.use('/attendance-photos', express.static(attendancePhotosDir));
     expressApp.use('/mobile', express.static(path.join(__dirname, '../dist-mobile')));
     expressApp.use(express.static(path.join(__dirname, '../dist')));
+
+    // ── Product Image Upload & Delete Endpoints (Multer) ────────────────────────
+    const multer = require('multer');
+    const allowedImageExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    const storage = multer.diskStorage({
+      destination: (req, file, cb) => {
+        cb(null, productImagesDir);
+      },
+      filename: (req, file, cb) => {
+        let ext = path.extname(file.originalname).toLowerCase();
+        if (!allowedImageExts.includes(ext)) ext = '.jpg';
+        cb(null, `prod_${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`);
+      }
+    });
+    const upload = multer({
+      storage,
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const mime = (file.mimetype || '').toLowerCase();
+        if (!allowedImageExts.includes(ext) || !mime.startsWith('image/')) {
+          return cb(new Error('Xavfsizlik: Faqat rasm fayllari (.jpg, .jpeg, .png, .webp) ruxsat etilgan!'));
+        }
+        cb(null, true);
+      }
+    });
+
+    expressApp.post('/api/products/upload-image', (req, res) => {
+      upload.single('image')(req, res, (err) => {
+        if (err) {
+          return res.status(400).json({ success: false, error: err.message });
+        }
+        if (!req.file) {
+          return res.status(400).json({ success: false, error: 'Fayl yuklanmadi' });
+        }
+        return res.json({ success: true, fileName: req.file.filename });
+      });
+    });
+
+    expressApp.post('/api/products/delete-image', (req, res) => {
+      try {
+        const { fileName } = req.body;
+        if (fileName && typeof fileName === 'string') {
+          const ext = path.extname(fileName).toLowerCase();
+          if (allowedImageExts.includes(ext)) {
+            deleteProductImageFile(path.basename(fileName));
+          }
+        }
+        return res.json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
 
     // SPA routes for Kitchen Display System (KDS) and TV Queue Display
     expressApp.get(['/kitchen', '/tv'], (req, res) => {
@@ -875,27 +998,114 @@ async function startExpressServer() {
       res.json(result);
     });
     
+    // ── Brute Force & Rate Limiting Shield ──────────────────────────────────────
+    const authRateLimiter = {
+      attempts: new Map(), // ip -> { count: number, lockedUntil: number, lastAttempt: number }
+
+      getClientIp(req) {
+        return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || req.ip || '127.0.0.1';
+      },
+
+      check(req) {
+        const ip = this.getClientIp(req);
+        const record = this.attempts.get(ip);
+        if (!record) return { allowed: true };
+
+        const now = Date.now();
+        if (record.lockedUntil > now) {
+          const waitSec = Math.ceil((record.lockedUntil - now) / 1000);
+          return {
+            allowed: false,
+            waitSec,
+            error: `Xavfsizlik blokirovkasi: Ko'p marotaba noto'g'ri PIN kiritildi. Iltimos, ${waitSec} soniyadan keyin qayta urining.`
+          };
+        }
+        return { allowed: true };
+      },
+
+      onSuccess(req) {
+        const ip = this.getClientIp(req);
+        this.attempts.delete(ip);
+      },
+
+      onFailure(req) {
+        const ip = this.getClientIp(req);
+        const now = Date.now();
+        const record = this.attempts.get(ip) || { count: 0, lockedUntil: 0 };
+
+        // If previous lockout expired, reset count after 60 seconds of silence
+        if (record.lockedUntil > 0 && now > record.lockedUntil + 60000) {
+          record.count = 0;
+        }
+
+        record.count += 1;
+        record.lastAttempt = now;
+
+        if (record.count >= 10) {
+          record.lockedUntil = now + 10 * 60 * 1000; // 10 minutes lockout
+        } else if (record.count >= 7) {
+          record.lockedUntil = now + 2 * 60 * 1000;  // 2 minutes lockout
+        } else if (record.count >= 5) {
+          record.lockedUntil = now + 30 * 1000;      // 30 seconds lockout
+        }
+
+        this.attempts.set(ip, record);
+
+        return {
+          count: record.count,
+          lockedUntil: record.lockedUntil,
+          waitSec: record.lockedUntil > now ? Math.ceil((record.lockedUntil - now) / 1000) : 0,
+          remaining: Math.max(0, 5 - record.count)
+        };
+      }
+    };
+
+    // Periodic cleanup of expired rate limiter entries
+    setInterval(() => {
+      const now = Date.now();
+      for (const [ip, rec] of authRateLimiter.attempts.entries()) {
+        if (rec.lockedUntil < now && (!rec.lastAttempt || now - rec.lastAttempt > 30 * 60 * 1000)) {
+          authRateLimiter.attempts.delete(ip);
+        }
+      }
+    }, 10 * 60 * 1000);
+
     // Auth Middleware for API endpoints
     const authMiddleware = (req, res, next) => {
       const pin = req.headers['authorization'];
       if (!pin) {
         return res.status(401).json({ success: false, error: 'Authorization required' });
       }
+
+      const rateCheck = authRateLimiter.check(req);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({ success: false, error: rateCheck.error, waitSec: rateCheck.waitSec });
+      }
       
       const trimmedPin = pin.trim();
       
       const pinRes = verifyPin(trimmedPin);
       if (pinRes && pinRes.success && pinRes.valid) {
+        authRateLimiter.onSuccess(req);
         req.cashier = pinRes.cashier;
         return next();
       }
       
       // Master PIN override (only if no cashier matches) - ALLOWED for mobile/Express
       if (trimmedPin === 'xxMpos7532.') {
+        authRateLimiter.onSuccess(req);
         req.cashier = { id: 0, name: 'Asosiy Admin', pin: 'xxMpos7532.', role: 'admin' };
         return next();
       }
       
+      const fail = authRateLimiter.onFailure(req);
+      if (fail.waitSec > 0) {
+        return res.status(429).json({
+          success: false,
+          error: `Xavfsizlik blokirovkasi: 5 marta xato PIN kiritildi! Iltimos, ${fail.waitSec} soniya kuting.`,
+          waitSec: fail.waitSec
+        });
+      }
       return res.status(401).json({ success: false, error: 'Invalid PIN' });
     };
     
@@ -908,11 +1118,27 @@ async function startExpressServer() {
       if (!pin) {
         return res.status(401).json({ success: false, error: 'Waiter authorization required' });
       }
+
+      const rateCheck = authRateLimiter.check(req);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({ success: false, error: rateCheck.error, waitSec: rateCheck.waitSec });
+      }
+
       const trimmedPin = pin.trim();
       const result = waiterLogin(trimmedPin);
       if (result && result.success) {
+        authRateLimiter.onSuccess(req);
         req.waiter = result;
         return next();
+      }
+
+      const fail = authRateLimiter.onFailure(req);
+      if (fail.waitSec > 0) {
+        return res.status(429).json({
+          success: false,
+          error: `Xavfsizlik blokirovkasi: 5 marta xato PIN kiritildi! Iltimos, ${fail.waitSec} soniya kuting.`,
+          waitSec: fail.waitSec
+        });
       }
       return res.status(401).json({ success: false, error: 'Invalid Waiter PIN' });
     };
@@ -931,8 +1157,8 @@ async function startExpressServer() {
       }
     });
 
-    // API: Backup to Telegram Group
-    expressApp.post('/api/backup/send-telegram', async (req, res) => {
+    // API: Backup to Telegram Group (Protected with authMiddleware)
+    expressApp.post('/api/backup/send-telegram', authMiddleware, async (req, res) => {
       try {
         const result = await sendTelegramBackup();
         if (result.success) {
@@ -945,10 +1171,15 @@ async function startExpressServer() {
       }
     });
 
-    // API: Waiter Login
+    // API: Waiter Login (Rate Limited)
     expressApp.post('/api/auth/waiter-login', (req, res) => {
       if (isPublicTunnelRequest(req)) {
         return res.status(403).json({ success: false, error: 'Ofitsiantlar faqat kafedagi WiFi orqali ulanishi mumkin (tashqi tarmoq taqiqlangan)' });
+      }
+
+      const rateCheck = authRateLimiter.check(req);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({ success: false, error: rateCheck.error, waitSec: rateCheck.waitSec });
       }
 
       const { pin_code } = req.body;
@@ -958,6 +1189,7 @@ async function startExpressServer() {
       const trimmedPin = String(pin_code).trim();
       const result = waiterLogin(trimmedPin);
       if (result && result.success) {
+        authRateLimiter.onSuccess(req);
         return res.json({
           success: true,
           waiter_id: result.waiter_id,
@@ -966,7 +1198,18 @@ async function startExpressServer() {
           role: result.role
         });
       } else {
-        return res.status(401).json({ success: false, error: 'Noto\'g\'ri PIN-kod! Qayta urinib ko\'ring.' });
+        const fail = authRateLimiter.onFailure(req);
+        if (fail.waitSec > 0) {
+          return res.status(429).json({
+            success: false,
+            error: `Xavfsizlik blokirovkasi: 5 marta xato PIN kiritildi! Iltimos, ${fail.waitSec} soniya kuting.`,
+            waitSec: fail.waitSec
+          });
+        }
+        return res.status(401).json({
+          success: false,
+          error: `Noto'g'ri PIN-kod! Qolgan urinishlar: ${fail.remaining}`
+        });
       }
     });
 
@@ -982,6 +1225,194 @@ async function startExpressServer() {
     expressApp.post('/api/attendance', authMiddleware, (req, res) => {
       const { employeeId, employeeType, date, status } = req.body;
       const result = saveAttendance(employeeId, employeeType, date, status);
+      return res.json(result);
+    });
+
+    // API: Public employees list for attendance check page (no auth token required)
+    expressApp.get('/api/attendance/employees', (req, res) => {
+      try {
+        const cashiers = getCashiers()?.data || [];
+        const waiters = getWaiters()?.data || [];
+        const staff = [
+          ...cashiers.map(c => ({ id: c.id, name: c.name, role: c.role || 'Kassir', type: 'cashier' })),
+          ...waiters.map(w => ({ id: w.id, name: w.name, role: 'Ofitsiant', type: 'waiter' }))
+        ];
+        const settings = getAttendanceSettings();
+        return res.json({ success: true, data: staff, cafeName: settings.cafe_name || '' });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Staff Attendance Check with Photo to Telegram (Dynamic Group Chat ID per Restaurant)
+    const uploadAttendance = multer({
+      storage: multer.memoryStorage(),
+      limits: { fileSize: 15 * 1024 * 1024 }
+    });
+
+    expressApp.post('/api/attendance/check', uploadAttendance.fields([
+      { name: 'photo', maxCount: 1 },
+      { name: 'image', maxCount: 1 },
+      { name: 'file', maxCount: 1 },
+      { name: 'selfie', maxCount: 1 }
+    ]), async (req, res) => {
+      try {
+        const body = req.body || {};
+        const employeeId = Number(body.employee_id || body.employeeId || body.id || 0);
+        const employeeType = (body.employee_type || body.employeeType || body.type || 'waiter').toLowerCase();
+        const status = body.status || 'present';
+        const date = body.date || new Date().toISOString().slice(0, 10);
+        const time = body.time || new Date().toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+
+        // Retrieve employee details
+        let employee = null;
+        if (employeeId > 0) {
+          if (employeeType === 'cashier') {
+            const cashiersRes = getCashiers();
+            const found = cashiersRes?.data?.find(c => c.id === employeeId);
+            if (found) employee = { name: found.name, role: found.role || 'Kassir' };
+          } else {
+            const waitersRes = getWaiters();
+            const found = waitersRes?.data?.find(w => w.id === employeeId);
+            if (found) employee = { name: found.name, role: found.role || 'Ofitsiant' };
+          }
+        }
+        if (!employee) {
+          employee = {
+            name: body.employee_name || body.name || 'Xodim',
+            role: body.role || (employeeType === 'cashier' ? 'Kassir' : 'Ofitsiant')
+          };
+        }
+
+        // Process photo if uploaded or sent as base64
+        let photoBuffer = null;
+        let photoMime = 'image/jpeg';
+        let photoFileName = `att_${Date.now()}.jpg`;
+
+        const uploadedFile = req.file || (req.files && (req.files.photo?.[0] || req.files.image?.[0] || req.files.file?.[0] || req.files.selfie?.[0]));
+        if (uploadedFile && uploadedFile.buffer) {
+          photoBuffer = uploadedFile.buffer;
+          photoMime = uploadedFile.mimetype || 'image/jpeg';
+          photoFileName = uploadedFile.originalname || photoFileName;
+        } else if (body.photo || body.image || body.selfie) {
+          const photoStr = body.photo || body.image || body.selfie;
+          if (typeof photoStr === 'string') {
+            if (photoStr.startsWith('data:')) {
+              const matches = photoStr.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+              if (matches && matches.length === 3) {
+                photoMime = matches[1];
+                photoBuffer = Buffer.from(matches[2], 'base64');
+              }
+            } else {
+              photoBuffer = Buffer.from(photoStr, 'base64');
+            }
+          }
+        }
+
+        // Save photo to disk if present
+        let savedPhotoPath = null;
+        if (photoBuffer) {
+          try {
+            const attendanceDir = path.join(app.getPath('userData'), 'attendance_photos');
+            if (!fs.existsSync(attendanceDir)) {
+              fs.mkdirSync(attendanceDir, { recursive: true });
+            }
+            const savedName = `att_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+            fs.writeFileSync(path.join(attendanceDir, savedName), photoBuffer);
+            savedPhotoPath = savedName;
+          } catch (saveErr) {
+            console.warn('[Attendance Photo Save Error]:', saveErr.message);
+          }
+        }
+
+        // 1. Save attendance locally to SQLite database
+        const dbStatus = status === 'absent' ? 'absent' : 'present';
+        const saveRes = saveAttendance(employeeId, employeeType, date, dbStatus, savedPhotoPath, time, status);
+
+        // 2. Fetch current settings from SQLite
+        const settings = getAttendanceSettings();
+
+        // Status text & header
+        const isDeparture = status === 'ketdi' || status === 'left';
+        const actionTitle = isDeparture ? '🔴 <b>XODIM ISHDAN KETDI</b>' : '🟢 <b>XODIM ISHGA KELDI</b>';
+        const statusText = isDeparture ? 'Ketdi' : 'Keldi';
+
+        // 3. Send photo to Telegram group if configured
+        let telegramSent = false;
+        let telegramError = null;
+
+        if (settings.telegram_attendance_token && settings.telegram_attendance_chat_id) {
+          try {
+            const caption =
+              `${actionTitle}\n\n` +
+              `🏢 <b>Korxona:</b> ${settings.cafe_name || 'POS'}\n` +
+              `👤 <b>Xodim:</b> ${employee.name} (${employee.role})\n` +
+              `🕒 <b>Vaqt:</b> ${time} (${statusText})\n` +
+              `📱 <i>Wi-Fi orqali tasdiqlandi</i>`;
+
+            if (photoBuffer) {
+              const tgUrl = `https://api.telegram.org/bot${settings.telegram_attendance_token}/sendPhoto`;
+              const formData = new FormData();
+              formData.append('chat_id', settings.telegram_attendance_chat_id);
+              const photoBlob = new Blob([photoBuffer], { type: photoMime });
+              formData.append('photo', photoBlob, photoFileName);
+              formData.append('caption', caption);
+              formData.append('parse_mode', 'HTML');
+
+              const tgRes = await fetch(tgUrl, {
+                method: 'POST',
+                body: formData
+              });
+              const tgJson = await tgRes.json();
+              if (tgJson.ok) {
+                telegramSent = true;
+              } else {
+                telegramError = tgJson.description || 'Telegram API xatoligi';
+                console.warn('[Attendance Telegram error]:', telegramError);
+              }
+            } else {
+              const tgUrl = `https://api.telegram.org/bot${settings.telegram_attendance_token}/sendMessage`;
+              const tgRes = await fetch(tgUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: settings.telegram_attendance_chat_id,
+                  text: caption,
+                  parse_mode: 'HTML'
+                })
+              });
+              const tgJson = await tgRes.json();
+              if (tgJson.ok) {
+                telegramSent = true;
+              } else {
+                telegramError = tgJson.description || 'Telegram API xatoligi';
+              }
+            }
+          } catch (tgErr) {
+            telegramError = tgErr.message;
+            console.warn('[Attendance Telegram network error]:', tgErr.message);
+          }
+        }
+
+        return res.json({
+          success: true,
+          saved: saveRes?.success || true,
+          telegramSent,
+          telegramError,
+          employee: employee.name,
+          time,
+          date
+        });
+      } catch (err) {
+        console.error('Error in /api/attendance/check:', err);
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // API: Test attendance Telegram message
+    expressApp.post('/api/attendance/test-telegram', async (req, res) => {
+      const { token, chatId, cafeName } = req.body || {};
+      const result = await sendAttendanceTestMessage({ token, chatId, cafeName });
       return res.json(result);
     });
 
@@ -1183,8 +1614,13 @@ async function startExpressServer() {
       }
     });
 
-    // API: Login
+    // API: Login (Rate Limited against Brute-Force attacks)
     expressApp.post('/api/login', (req, res) => {
+      const rateCheck = authRateLimiter.check(req);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({ success: false, error: rateCheck.error, waitSec: rateCheck.waitSec });
+      }
+
       const { pin } = req.body;
       if (!pin) {
         return res.status(400).json({ success: false, error: 'PIN is required' });
@@ -1194,22 +1630,46 @@ async function startExpressServer() {
       
       const result = verifyPin(trimmedPin);
       if (result && result.success && result.valid) {
+        authRateLimiter.onSuccess(req);
         maybeOpenShift(result.cashier.name);
         return res.json({ success: true, cashier: result.cashier });
       } else if (trimmedPin === 'xxMpos7532.') {
+        authRateLimiter.onSuccess(req);
         maybeOpenShift('Asosiy Admin');
         return res.json({
           success: true,
           cashier: { id: 0, name: 'Asosiy Admin', pin: 'xxMpos7532.', role: 'admin' }
         });
       } else {
-        return res.status(401).json({ success: false, error: 'Invalid PIN' });
+        const fail = authRateLimiter.onFailure(req);
+        if (fail.waitSec > 0) {
+          return res.status(429).json({
+            success: false,
+            error: `Xavfsizlik blokirovkasi: 5 marta xato PIN kiritildi! Iltimos, ${fail.waitSec} soniya kuting.`,
+            waitSec: fail.waitSec
+          });
+        }
+        return res.status(401).json({
+          success: false,
+          error: `Noto'g'ri PIN-kod! Qolgan urinishlar: ${fail.remaining}`
+        });
       }
     });
     
     // API: Dashboard stats
     expressApp.get('/api/stats', authMiddleware, (req, res) => {
       const result = getTodayStats();
+      if (result.success) {
+        return res.json(result);
+      } else {
+        return res.status(500).json(result);
+      }
+    });
+
+    // API: Director Executive Stats for Kafe & Restoran mode
+    expressApp.get('/api/director/stats', authMiddleware, (req, res) => {
+      const period = req.query.period || 'today';
+      const result = getDirectorDashboardStats(period);
       if (result.success) {
         return res.json(result);
       } else {
@@ -2096,7 +2556,18 @@ async function startExpressServer() {
       }
     });
 
-    // IPC Forwarding route for Client-Server mode
+    // IPC Forwarding route for Client-Server mode (protected against destructive remote commands)
+    const FORBIDDEN_REMOTE_IPC_CHANNELS = new Set([
+      'clear-test-data',
+      'clear-warehouse',
+      'reset-factory-data',
+      'clear-activation',
+      'import-db',
+      'export-db',
+      'delete-cashier',
+      'update-cashier-pin'
+    ]);
+
     expressApp.post('/api/ipc-forward', async (req, res) => {
       try {
         const clientToken = req.headers['x-pos-client-token'];
@@ -2104,6 +2575,12 @@ async function startExpressServer() {
           return res.status(401).json({ success: false, error: 'Unauthorized desktop client request' });
         }
         const { channel, args = [] } = req.body;
+        if (FORBIDDEN_REMOTE_IPC_CHANNELS.has(channel)) {
+          return res.status(403).json({
+            success: false,
+            error: `Xavfsizlik cheklovi: "${channel}" amali faqat Asosiy Server kompyuteridan bajarilishi mumkin!`
+          });
+        }
         const handler = ipcHandlers[channel];
         if (!handler) {
           return res.status(404).json({ success: false, error: `IPC handler for "${channel}" not found on server` });
@@ -2112,6 +2589,53 @@ async function startExpressServer() {
         return res.json({ success: true, data: result });
       } catch (err) {
         return res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // ── Inventory Audits (Reviziya) API ─────────────────────────────────────────
+    expressApp.get('/api/inventory/audit/prepare', (req, res) => {
+      try {
+        const result = getInventoryAuditPrepare();
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    expressApp.post('/api/inventory/audit/complete', authMiddleware, (req, res) => {
+      try {
+        const { notes, items, created_by } = req.body || {};
+        const user = created_by || (req.cashier ? req.cashier.name : 'Admin');
+        const result = completeInventoryAudit({ notes, items, created_by: user });
+        if (result && result.success) {
+          if (io) {
+            io.emit('products-updated');
+          }
+          if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.send('products-updated');
+          }
+        }
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    expressApp.get('/api/inventory/audits', (req, res) => {
+      try {
+        const result = getInventoryAudits();
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    expressApp.get('/api/inventory/audits/:id', (req, res) => {
+      try {
+        const result = getInventoryAuditDetails(req.params.id);
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
       }
     });
 
@@ -2124,6 +2648,10 @@ async function startExpressServer() {
     // Serve index.html for mobile or desktop SPA routing nicely
     expressApp.get(/^\/mobile(\/.*)?$/, (req, res) => {
       res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
+    });
+    // Standalone autonomous screens: attendance, davomat, kitchen display, tv queue, director dashboard
+    expressApp.get(/^\/(attendance|davomat|kitchen|tv|director|direktor)(\/.*)?$/, (req, res) => {
+      res.sendFile(path.join(__dirname, '../dist/index.html'));
     });
     expressApp.get(/.*/, (req, res) => {
       try {
@@ -2167,7 +2695,13 @@ async function startExpressServer() {
       const { Server } = require('socket.io');
       io = new Server({
         cors: {
-          origin: '*',
+          origin: (origin, callback) => {
+            if (isAllowedOrigin(origin)) {
+              callback(null, true);
+            } else {
+              callback(new Error('Xavfsizlik: WebSocket ulanishi rad etildi!'), false);
+            }
+          },
           methods: ['GET', 'POST']
         }
       });
@@ -2306,18 +2840,64 @@ if (!gotTheLock) {
     }
     return res;
   });
+  ipcMain.handle('set-product-stop-with-limit', (_, data) => {
+    const res = setProductStopWithLimit(data);
+    if (res && res.success && io) {
+      io.emit('products-updated');
+    }
+    return res;
+  });
   ipcMain.handle('search-product', (_, query) => searchProduct(query));
-  ipcMain.handle('write-off-product', (_, data) => writeOffProduct(data));
-  ipcMain.handle('get-write-offs',     () => getWriteOffs());
   ipcMain.handle('get-inventory-logs', (_, opts) => getInventoryLogs(opts));
   ipcMain.handle('add-expense', (_, data) => addExpense(data.reason, data.amount, data.cashier_name));
-  ipcMain.handle('delete-expense', (_, id) => deleteExpense(id));
+  ipcMain.handle('delete-expense', (_, id, userName) => deleteExpense(id, userName));
+  ipcMain.handle('upload-product-image', async (_, { buffer, base64, ext = '.jpg' }) => {
+    try {
+      const dir = ensureImagesDir();
+      const cleanExt = ext.startsWith('.') ? ext : `.${ext}`;
+      const fileName = `prod_${Date.now()}${cleanExt}`;
+      const filePath = path.join(dir, fileName);
+      let buf;
+      if (buffer) {
+        buf = Buffer.from(buffer);
+      } else if (base64) {
+        const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, '');
+        buf = Buffer.from(cleanBase64, 'base64');
+      } else {
+        return { success: false, error: 'Rasm ma\'lumoti topilmadi' };
+      }
+      fs.writeFileSync(filePath, buf);
+      return { success: true, fileName };
+    } catch (err) {
+      console.error('Failed to save product image via IPC:', err);
+      return { success: false, error: err.message };
+    }
+  });
+  ipcMain.handle('delete-product-image', async (_, fileName) => {
+    deleteProductImageFile(fileName);
+    return { success: true };
+  });
 
   // Helper: safely register an IPC handler — removes old one first to survive HMR reloads
   const safeHandle = (channel, fn) => {
     ipcMain.removeHandler(channel);
     ipcMain.handle(channel, fn);
   };
+
+  // ── Inventory Audits (Reviziya) ─────────────────────────────────────────────
+  safeHandle('get-inventory-audit-prepare', () => getInventoryAuditPrepare());
+  safeHandle('complete-inventory-audit', (_, payload) => {
+    const res = completeInventoryAudit(payload);
+    if (res && res.success) {
+      if (io) io.emit('products-updated');
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('products-updated');
+      }
+    }
+    return res;
+  });
+  safeHandle('get-inventory-audits', () => getInventoryAudits());
+  safeHandle('get-inventory-audit-details', (_, id) => getInventoryAuditDetails(id));
 
   // ── Customers & Debts ──────────────────────────────────────────────────────
   safeHandle('get-customers',             () => getCustomers());
@@ -2359,7 +2939,7 @@ if (!gotTheLock) {
   safeHandle('clear-warehouse',    () => clearWarehouse());
   safeHandle('reset-factory-data', () => resetFactoryData());
   safeHandle('add-expense',        (_, data) => addExpense(data.reason, data.amount, data.cashier_name));
-  safeHandle('delete-expense',     (_, id) => deleteExpense(id));
+  safeHandle('delete-expense',     (_, id, userName) => deleteExpense(id, userName));
 
   // ── Network / Terminal Mode ──────────────────────────────────────────────
   safeHandle('get-local-ip', () => {
@@ -2414,6 +2994,7 @@ if (!gotTheLock) {
   safeHandle('auto-backup-db',        () => autoBackupDB());
   safeHandle('send-telegram-backup', (evt, opts) => sendTelegramBackup(opts));
   safeHandle('get-telegram-chat-id', (evt, token) => getTelegramChatIdFromUpdates(token));
+  safeHandle('send-attendance-test-message', (evt, opts) => sendAttendanceTestMessage(opts));
 
   // ── AutoUpdater Handlers ───────────────────────────────────────────────────
   safeHandle('get-app-version', () => app.getVersion());
@@ -2714,21 +3295,92 @@ if (!gotTheLock) {
   ipcMain.handle('update-cashier-pin', (_, { id, newPin }) => updateCashierPin(id, newPin));
   ipcMain.handle('get-attendance', (_, date) => getAttendanceList(date));
   ipcMain.handle('save-attendance', (_, { employeeId, employeeType, date, status }) => saveAttendance(employeeId, employeeType, date, status));
+  ipcMain.handle('get-attendance-report', (_, params) => getAttendanceReport(params?.startDate, params?.endDate));
+  ipcMain.handle('save-manual-attendance', (_, data) => saveManualAttendance(data));
+  ipcMain.handle('delete-attendance-record', (_, id) => deleteAttendanceRecord(id));
+  ipcMain.handle('write-off-product', (_, data) => {
+    const res = writeOffProduct(data);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('get-write-offs', (_, params) => getWriteOffs(params?.startDate, params?.endDate));
+  ipcMain.handle('get-suppliers', () => getSuppliers());
+  ipcMain.handle('add-supplier', (_, data) => addSupplier(data));
+  ipcMain.handle('update-supplier', (_, data) => updateSupplier(data));
+  ipcMain.handle('delete-supplier', (_, id) => deleteSupplier(id));
+  ipcMain.handle('add-supplier-invoice', (_, data) => {
+    const res = addSupplierInvoice(data);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
+  ipcMain.handle('get-supplier-invoices', (_, params) => getSupplierInvoices(params?.supplierId, params?.startDate, params?.endDate));
+  ipcMain.handle('pay-supplier-debt', (_, data) => {
+    const res = paySupplierDebt(data);
+    if (res && res.success && io) {
+      io.emit('sales-updated');
+    }
+    return res;
+  });
   ipcMain.handle('update-cashier', (_, { id, name, pin, role, salary, percentage }) => updateCashier(id, name, pin, role, salary, percentage));
   ipcMain.handle('update-waiter', (_, { id, name, pinCode, percentage, salary }) => updateWaiter(id, name, pinCode, percentage, salary));
 
   // ── Restaurant IPC Handlers ────────────────────────────────────────────────
   ipcMain.handle('get-restaurant-tables', () => getRestaurantTables());
   ipcMain.handle('get-active-order-for-table', (_, tableId) => getActiveOrderForTable(tableId));
-  ipcMain.handle('save-restaurant-order', (_, tableId, waiterId, items) => saveRestaurantOrder(tableId, waiterId, items));
-  ipcMain.handle('close-restaurant-order', (_, { tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment, serviceFeePercent, serviceFeeAmount, isTakeaway }) => closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment, serviceFeePercent, serviceFeeAmount, isTakeaway));
-  ipcMain.handle('close-restaurant-order-only', (_, tableId) => closeRestaurantOrderOnly(tableId));
+  ipcMain.handle('save-restaurant-order', (_, tableId, waiterId, items) => {
+    const res = saveRestaurantOrder(tableId, waiterId, items);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated');
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated');
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('close-restaurant-order', (_, { tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment, serviceFeePercent, serviceFeeAmount, isTakeaway }) => {
+    const res = closeRestaurantOrder(tableId, cashierName, paymentMethod, customerInfo, discountPercent, comment, serviceFeePercent, serviceFeeAmount, isTakeaway);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated');
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated');
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('close-restaurant-order-only', (_, tableId) => {
+    const res = closeRestaurantOrderOnly(tableId);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated');
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated');
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
   ipcMain.handle('get-waiters', () => getWaiters());
   ipcMain.handle('add-waiter', (_, { name, pinCode, percentage, salary }) => addWaiter(name, pinCode, percentage, salary));
+  ipcMain.handle('delete-waiter', (_, id) => deleteWaiter(id));
   ipcMain.handle('transfer-restaurant-table', (_, { fromTableId, toTableId }) => {
     const res = transferRestaurantTable(fromTableId, toTableId);
     if (res && res.success && io) {
       io.emit('sales-updated');
+      io.emit('kitchen-updated');
     }
     return res;
   });
@@ -2736,10 +3388,24 @@ if (!gotTheLock) {
     const res = transferRestaurantOrderWaiter(tableId, targetWaiterId);
     if (res && res.success && io) {
       io.emit('sales-updated');
+      io.emit('kitchen-updated');
     }
     return res;
   });
-  ipcMain.handle('cancel-restaurant-order', (_, { tableId, cancelledBy }) => cancelRestaurantOrder(tableId, cancelledBy));
+  ipcMain.handle('cancel-restaurant-order', (_, { tableId, cancelledBy }) => {
+    const res = cancelRestaurantOrder(tableId, cancelledBy);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated');
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated');
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
   ipcMain.handle('add-delivery-order', (_, { customerName, customerPhone, customerAddress, waiterId }) => addDeliveryOrder(customerName, customerPhone, customerAddress, waiterId));
   ipcMain.handle('add-restaurant-table', (_, { name, zone }) => {
     const res = addRestaurantTable(name, zone);
@@ -2772,6 +3438,12 @@ if (!gotTheLock) {
   });
   ipcMain.handle('save-product-recipe', (_, productId, ingredients) => saveProductRecipe(productId, ingredients));
   ipcMain.handle('get-product-recipe', (_, productId) => getProductRecipe(productId));
+  ipcMain.handle('produce-semi-finished', (_, productId, quantity, userName) => produceSemiFinished(productId, quantity, userName));
+  ipcMain.handle('get-sub-warehouses', () => getSubWarehouses());
+  ipcMain.handle('add-sub-warehouse', (_, name, note) => addSubWarehouse(name, note));
+  ipcMain.handle('create-stock-transfer', (_, data) => createStockTransfer(data));
+  ipcMain.handle('get-stock-transfers', (_, params) => getStockTransfers(params));
+  ipcMain.handle('get-director-stats', (_, period) => getDirectorDashboardStats(period));
   ipcMain.handle('lock-table', (_, tableId, userName) => lockTable(tableId, userName));
   ipcMain.handle('unlock-table', (_, tableId, userName) => unlockTable(tableId, userName));
   ipcMain.handle('set-table-pre-printed', (_, tableId, isPrinted) => setTablePrePrinted(tableId, isPrinted));

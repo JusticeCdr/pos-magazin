@@ -177,7 +177,56 @@ async function sendTelegramBackup(options = {}) {
   }
 }
 
+/**
+ * Sends a test message to the configured Attendance Telegram group
+ */
+async function sendAttendanceTestMessage(options = {}) {
+  try {
+    const settings = getSettings();
+    const token = (options.token || (settings.data ? settings.data.telegram_attendance_token : '') || '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84').trim();
+    const chatId = (options.chatId || (settings.data ? settings.data.telegram_attendance_chat_id : '')).trim();
+    const cafeName = (options.cafeName || (settings.data ? (settings.data.cafe_name || settings.data.store_name) : '') || 'Kafe').trim();
+
+    if (!token) {
+      return { success: false, error: "Telegram bot tokeni kiritilmagan!" };
+    }
+    if (!chatId) {
+      return { success: false, error: "Telegram guruh Chat ID kiritilmagan! Botni guruhga qo'shing va Chat ID ni kiriting." };
+    }
+
+    const message = `✅ Aloqa o'rnatildi! ${cafeName} uchun davomat xabarlari ushbu guruhga keladi.`;
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    });
+
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.description || "Telegram API ga xabar yuborishda xatolik");
+    }
+
+    return {
+      success: true,
+      message: "Guruhga ulandi!",
+      telegramResponse: result.result
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: "Telegram xatoligi: " + err.message
+    };
+  }
+}
+
 module.exports = {
   sendTelegramBackup,
-  getTelegramChatIdFromUpdates
+  getTelegramChatIdFromUpdates,
+  sendAttendanceTestMessage
 };

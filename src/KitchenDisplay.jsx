@@ -14,50 +14,77 @@ import {
   Check, 
   Flame, 
   ArrowLeft,
-  Tv
+  Tv,
+  Maximize2,
+  Minimize2,
+  Bell
 } from 'lucide-react';
 
-// Web Audio API Synthesizer for Kitchen Chimes & Beeps
-function playBeep(type = 'new-order') {
+// Web Audio API Synthesizer for Kitchen Chimes & Voice Alerts
+function playKitchenOrderAlert(type = 'new-order') {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
 
     if (type === 'new-order') {
-      // 2-tone cheerful energetic kitchen bell
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain = ctx.createGain();
+      // Loud, attention-grabbing double kitchen chime: Ding-Dong! Ding-Dong!
+      const chords = [
+        { freq: 880, time: 0, duration: 0.22, gain: 0.8 },       // A5
+        { freq: 1174.66, time: 0.16, duration: 0.45, gain: 0.9 }, // D6
+        { freq: 880, time: 0.42, duration: 0.22, gain: 0.8 },     // A5
+        { freq: 1318.51, time: 0.58, duration: 0.6, gain: 0.95 }   // E6
+      ];
 
-      osc1.type = 'triangle';
-      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc1.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+      chords.forEach(({ freq, time, duration, gain: gVal }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
 
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(1174.66, ctx.currentTime); // D6
-      osc2.frequency.setValueAtTime(1760, ctx.currentTime + 0.15); // A6
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + time);
 
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        gain.gain.setValueAtTime(gVal, ctx.currentTime + time);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + time + duration);
 
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(ctx.destination);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
 
-      osc1.start();
-      osc2.start();
-      osc1.stop(ctx.currentTime + 0.6);
-      osc2.stop(ctx.currentTime + 0.6);
+        osc.start(ctx.currentTime + time);
+        osc.stop(ctx.currentTime + time + duration);
+      });
+
+      // Voice Alert in Uzbek: "Yangi zakaz!"
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance("Yangi zakaz!");
+        const voices = window.speechSynthesis.getVoices();
+        const voice = voices.find(v => v.lang.startsWith('uz')) || 
+                      voices.find(v => v.lang.startsWith('ru')) || 
+                      voices.find(v => v.lang.startsWith('tr')) || 
+                      voices[0];
+        if (voice) utterance.voice = voice;
+        utterance.rate = 1.0;
+        utterance.pitch = 1.1;
+        utterance.volume = 1.0;
+
+        setTimeout(() => {
+          try {
+            window.speechSynthesis.speak(utterance);
+          } catch (e) {
+            console.warn("Speech error:", e);
+          }
+        }, 700);
+      }
     } else if (type === 'ready') {
-      // Success chord
+      // Success completion chord
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
       osc.frequency.exponentialRampToValueAtTime(1046.50, ctx.currentTime + 0.25); // C6
 
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
 
       osc.connect(gain);
@@ -66,7 +93,7 @@ function playBeep(type = 'new-order') {
       osc.stop(ctx.currentTime + 0.4);
     }
   } catch (e) {
-    console.error("Audio error:", e);
+    console.error("Audio alert error:", e);
   }
 }
 
@@ -86,15 +113,63 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [hasInteracted, setHasInteracted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [newOrderAlertBanner, setNewOrderAlertBanner] = useState(false);
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'preparing' | 'ready'
   const [currentTime, setCurrentTime] = useState(new Date());
   const [actionLoading, setActionLoading] = useState({});
-  const prevOrderIdsRef = useRef(new Set());
+  
+  const prevOrderMapRef = useRef(new Map()); // id -> { itemCount }
+  const isFirstLoadRef = useRef(true);
 
   // Real-time clock tick
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Prevent outer window scrolling
+  useEffect(() => {
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = origOverflow;
+    };
+  }, []);
+
+  // Track Fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    try {
+      if (!document.fullscreenElement) {
+        const rootElem = document.documentElement;
+        if (rootElem.requestFullscreen) {
+          rootElem.requestFullscreen().catch(err => console.warn("Fullscreen request error:", err));
+        } else if (rootElem.webkitRequestFullscreen) {
+          rootElem.webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(err => console.warn("Exit fullscreen error:", err));
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn("Fullscreen toggle error:", e);
+    }
   }, []);
 
   // Fetch kitchen orders
@@ -112,16 +187,34 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
       if (res && res.success) {
         const newOrders = res.data || [];
         
-        // Detect newly arrived orders for audio alert
-        if (!isInitial && soundEnabled) {
-          const newPreparingOrders = newOrders.filter(o => o.kitchen_status === 'preparing');
-          const hasNew = newPreparingOrders.some(o => !prevOrderIdsRef.current.has(o.id));
-          if (hasNew) {
-            playBeep('new-order');
+        // Detect newly arrived orders or added items for immediate audio alert
+        if (!isFirstLoadRef.current && soundEnabled) {
+          const preparingOrders = newOrders.filter(o => o.kitchen_status === 'preparing');
+          const hasNewOrderOrItems = preparingOrders.some(o => {
+            const currentItemCount = (o.items || []).reduce((acc, it) => acc + (parseFloat(it.qty) || 1), 0);
+            if (!prevOrderMapRef.current.has(o.id)) {
+              return true; // Brand new order
+            }
+            const prevItemCount = prevOrderMapRef.current.get(o.id) || 0;
+            return currentItemCount > prevItemCount; // Additional dishes added
+          });
+
+          if (hasNewOrderOrItems) {
+            playKitchenOrderAlert('new-order');
+            setNewOrderAlertBanner(true);
+            setTimeout(() => setNewOrderAlertBanner(false), 4000);
           }
+        } else {
+          isFirstLoadRef.current = false;
         }
 
-        prevOrderIdsRef.current = new Set(newOrders.map(o => o.id));
+        // Store latest order item counts
+        const newMap = new Map();
+        newOrders.forEach(o => {
+          const count = (o.items || []).reduce((acc, it) => acc + (parseFloat(it.qty) || 1), 0);
+          newMap.set(o.id, count);
+        });
+        prevOrderMapRef.current = newMap;
         setOrders(newOrders);
       }
     } catch (err) {
@@ -134,7 +227,7 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
   // Initial load and auto-polling backup
   useEffect(() => {
     fetchKitchenOrders(true);
-    const interval = setInterval(() => fetchKitchenOrders(false), 3000);
+    const interval = setInterval(() => fetchKitchenOrders(false), 2500);
     return () => clearInterval(interval);
   }, [fetchKitchenOrders]);
 
@@ -205,9 +298,41 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
   }, [orders]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans select-none">
+    <div 
+      onClick={() => { if (!hasInteracted) { setHasInteracted(true); playKitchenOrderAlert('new-order'); } }}
+      className="fixed inset-0 w-screen h-screen max-w-screen max-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans select-none overflow-hidden"
+    >
+      {/* ── Top Flash Alert Banner for New Incoming Orders ────────────────── */}
+      {newOrderAlertBanner && (
+        <div className="shrink-0 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-gray-950 font-black px-6 py-2.5 flex items-center justify-center gap-3 shadow-2xl animate-pulse z-50">
+          <Bell className="animate-bounce" size={22} />
+          <span className="text-base tracking-wide uppercase">YANGI BUYURTMA KELDI! OSHPAZGA XABAR BERILDI!</span>
+        </div>
+      )}
+
+      {/* ── First-Time Audio Unlock Prompt Banner ─────────────────────────── */}
+      {!hasInteracted && (
+        <div 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setHasInteracted(true); 
+            playKitchenOrderAlert('new-order'); 
+            toggleFullscreen(); 
+          }}
+          className="shrink-0 bg-gradient-to-r from-blue-900/90 to-indigo-900/90 border-b border-blue-500/40 text-white px-6 py-2.5 text-xs flex items-center justify-between cursor-pointer hover:brightness-110 transition-all z-40"
+        >
+          <div className="flex items-center gap-2">
+            <Volume2 size={16} className="text-blue-300 animate-pulse" />
+            <span className="font-bold">Oshpaz ekrani: Ovozli xabarlar va to'liq ekranni yoqish uchun shu yerga bosing!</span>
+          </div>
+          <button className="px-3.5 py-1 bg-blue-500 hover:bg-blue-400 text-white rounded-xl text-xs font-black shadow-lg cursor-pointer transition-all active:scale-95">
+            To'liq ekran & Ovozni yoqish
+          </button>
+        </div>
+      )}
+
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="bg-gray-900/90 backdrop-blur-md border-b border-gray-800 px-6 py-4 sticky top-0 z-40 flex items-center justify-between shadow-2xl">
+      <header className="shrink-0 bg-gray-900/95 backdrop-blur-md border-b border-gray-800 px-6 py-3.5 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-4">
           {onBack && (
             <button
@@ -219,18 +344,18 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
             </button>
           )}
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
-              <ChefHat size={26} className="text-white" />
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
+              <ChefHat size={24} className="text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight text-white">OSHXONA EKRANI (KDS)</h1>
+                <h1 className="text-lg font-black tracking-tight text-white">OSHXONA EKRANI (KDS)</h1>
                 <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                   Jonli
                 </span>
               </div>
-              <p className="text-xs text-gray-400 font-medium">Oshpazlar uchun buyurtmalar monitoringi</p>
+              <p className="text-[11px] text-gray-400 font-medium">Oshpazlar uchun buyurtmalar monitoringi</p>
             </div>
           </div>
         </div>
@@ -239,7 +364,7 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
         <div className="flex bg-gray-800/80 p-1 rounded-2xl border border-gray-700/60">
           <button
             onClick={() => setFilterTab('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
               filterTab === 'all'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                 : 'text-gray-400 hover:text-white'
@@ -250,7 +375,7 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
           </button>
           <button
             onClick={() => setFilterTab('preparing')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
               filterTab === 'preparing'
                 ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
                 : 'text-gray-400 hover:text-white'
@@ -261,7 +386,7 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
           </button>
           <button
             onClick={() => setFilterTab('ready')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
               filterTab === 'ready'
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-gray-400 hover:text-white'
@@ -273,17 +398,27 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
         </div>
 
         {/* Right side controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {onOpenTv && (
             <button
               onClick={onOpenTv}
-              className="px-3.5 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer active:scale-95"
+              className="px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer active:scale-95"
               title="Zaldagi TV-Tabloni ochish"
             >
               <Tv size={16} />
-              TV-Tablo
+              <span className="hidden sm:inline">TV-Tablo</span>
             </button>
           )}
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={toggleFullscreen}
+            className="p-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 text-xs font-bold shadow-md"
+            title={isFullscreen ? "To'liq ekrandan chiqish" : "To'liq ekran (Fullscreen)"}
+          >
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            <span className="hidden lg:inline">{isFullscreen ? "Kichraytirish" : "To'liq ekran"}</span>
+          </button>
 
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
@@ -294,7 +429,7 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
             }`}
             title={soundEnabled ? "Ovoz yoqilgan (O'chirish)" : "Ovoz o'chirilgan (Yoqish)"}
           >
-            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
           </button>
 
           <button
@@ -302,11 +437,11 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
             className="p-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 transition-all cursor-pointer active:scale-95"
             title="Yangilash"
           >
-            <RefreshCw size={18} className={loading ? 'animate-spin text-blue-400' : ''} />
+            <RefreshCw size={16} className={loading ? 'animate-spin text-blue-400' : ''} />
           </button>
 
-          <div className="bg-gray-800 px-4 py-2 rounded-xl border border-gray-700 text-right">
-            <span className="text-lg font-black text-amber-400 tracking-wider">
+          <div className="bg-gray-800 px-3.5 py-1.5 rounded-xl border border-gray-700 text-right">
+            <span className="text-base font-black text-amber-400 tracking-wider">
               {currentTime.toLocaleTimeString('ru-RU')}
             </span>
           </div>
@@ -314,7 +449,7 @@ export default function KitchenDisplay({ onBack, onOpenTv }) {
       </header>
 
       {/* ── Main Orders Grid ──────────────────────────────────────────────── */}
-      <main className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 min-h-0 p-6 overflow-y-auto custom-scrollbar">
         {filteredOrders.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center py-24 text-center">
             <div className="w-24 h-24 rounded-3xl bg-gray-900 border border-gray-800 flex items-center justify-center mb-4 text-gray-600">

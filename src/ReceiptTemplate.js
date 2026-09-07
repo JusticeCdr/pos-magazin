@@ -50,16 +50,33 @@ const zReportTranslations = {
     closedAt: "Yopilgan vaqti:",
     openedBy: "Smena ochgan:",
     closedBy: "Smena yopgan:",
-    jamiSavdo: "JAMI SAVDO:",
+    
+    secFinance: "--- MOLIYAVIY HISOBOT ---",
+    jamiSavdo: "JAMI SAVDO (TUSHUM):",
+    cheklarSoni: "Cheklar soni:",
+    ortachaChek: "O'rtacha chek:",
+    xizmatHaqi: "Xizmat haqi (Usluga):",
+    chegirmalar: "Chegirmalar:",
+    vozvrat: "Qaytarish (Vozvrat):",
+    
+    secPayments: "--- TO'LOV TURLARI ---",
     naqd: "Naqd pul:",
     card: "Plastik karta:",
-    debt: "Qarzga:",
-    chegirmalar: "Chegirmalar:",
-    vozvrat: "Qaytarilgan cheklar",
+    debt: "Nasiya (Qarzga):",
+    debtPayments: "Qarz qaytarish:",
+    
+    secCash: "--- KASSA NAQD PUL HARAKATI ---",
+    naqdSavdo: "Naqd savdo:",
+    qarzTushum: "Qarzdan tushum:",
     rashod: "Chiqim (Rasxod):",
-    kassadagiNaqd: "KASSADAGI NAQD PUL:",
-    cheklarSoni: "Cheklar soni:",
-    rahmat: "Xaridingiz uchun rahmat!"
+    kassadagiNaqd: "KASSADA BO'LISHI KERAK:",
+    
+    secWaiters: "--- OFITSIANTLAR NATIJASI ---",
+    secCategories: "--- KATEGORIYALAR BO'YICHA ---",
+    secWriteOffs: "--- SPISANIYA (CHIQIM) ---",
+    spisaniya: "Yaroqsiz/Chiqim:",
+
+    rahmat: "Smena muvaffaqiyatli yopildi!"
   },
   ru: {
     zReport: "Z-ОТЧЕТ",
@@ -68,16 +85,33 @@ const zReportTranslations = {
     closedAt: "Время закрытия:",
     openedBy: "Смену открыл:",
     closedBy: "Смену закрыл:",
-    jamiSavdo: "ОБЩИЕ ПРОДАЖИ:",
-    naqd: "Наличные:",
-    card: "Пластиковая карта:",
-    debt: "В долг:",
-    chegirmalar: "Скидки:",
-    vozvrat: "Возвращенные чеки",
-    rashod: "Расход (Выдача):",
-    kassadagiNaqd: "НАЛИЧНЫЕ В КАССЕ:",
+    
+    secFinance: "--- ФИНАНСОВЫЙ ОТЧЕТ ---",
+    jamiSavdo: "ОБЩАЯ ВЫРУЧКА:",
     cheklarSoni: "Количество чеков:",
-    rahmat: "Спасибо за покупку!"
+    ortachaChek: "Средний чек:",
+    xizmatHaqi: "Обслуживание (Услуга):",
+    chegirmalar: "Скидки:",
+    vozvrat: "Возвраты (Возврат):",
+    
+    secPayments: "--- ВИДЫ ОПЛАТЫ ---",
+    naqd: "Наличные:",
+    card: "Банковская карта:",
+    debt: "В долг (Кредит):",
+    debtPayments: "Оплата долга:",
+    
+    secCash: "--- ДВИЖЕНИЕ НАЛИЧНЫХ В КАССЕ ---",
+    naqdSavdo: "Наличные с продаж:",
+    qarzTushum: "Поступление долгов:",
+    rashod: "Расход (Выдача):",
+    kassadagiNaqd: "ИТОГО В КАССЕ (НАЛИЧНЫЕ):",
+    
+    secWaiters: "--- ПРОДАЖИ ОФИЦИАНТОВ ---",
+    secCategories: "--- ПРОДАЖИ ПО КАТЕГОРИЯМ ---",
+    secWriteOffs: "--- СПИСАНИЕ ТОВАРОВ ---",
+    spisaniya: "Списание:",
+
+    rahmat: "Смена успешно закрыта!"
   }
 };
 
@@ -619,16 +653,29 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
           border-top: 1px dashed #000;
           margin: 10px 0;
         }
+        .section-title {
+          font-weight: bold;
+          text-align: center;
+          margin: 6px 0 3px 0;
+          font-size: ${isKatta ? '13px' : '11px'};
+          text-transform: uppercase;
+        }
         .total-row {
           display: flex;
           justify-content: space-between;
           font-weight: bold;
-          font-size: 13px;
+          font-size: ${isKatta ? '14px' : '12px'};
           margin-bottom: 4px;
         }
         .sub-row {
           display: flex;
           justify-content: space-between;
+          margin-bottom: 2px;
+        }
+        .table-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: ${isKatta ? '12px' : '10px'};
           margin-bottom: 2px;
         }
         .footer {
@@ -666,10 +713,12 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
     <body>
       <div class="receipt" id="printable-receipt">
         <div class="header">
-          <img src="${shopLogo}" alt="Logo" style="width: 200px; height: auto; display: block; margin: 10px auto 10px auto;" />
-          <h2>${storeName || "Do'kon"}</h2>
-          <p style="font-weight: bold; font-size: 14px; margin-top: 5px;">${zLabels.zReport} ${stats.shift_number ? `№${stats.shift_number}` : ''}</p>
-          <p>${zLabels.shiftClose}</p>
+          <img src="${shopLogo}" alt="Logo" style="width: 180px; height: auto; display: block; margin: 6px auto;" />
+          <h2>${storeName || "Do'kon / Restoran"}</h2>
+          <p style="font-weight: bold; font-size: ${isKatta ? '16px' : '14px'}; margin-top: 4px;">
+            ${zLabels.zReport} ${stats.shift_number ? `№${stats.shift_number}` : ''}
+          </p>
+          <p style="font-size: 11px;">${zLabels.shiftClose}</p>
         </div>
         
         <div class="info">
@@ -691,66 +740,141 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
           </div>
         </div>
 
+        <!-- 1. MOLIYAVIY HISOBOT -->
+        <div class="divider"></div>
+        <div class="section-title">${zLabels.secFinance}</div>
         <div class="divider"></div>
 
         <div class="total-row">
           <span>${zLabels.jamiSavdo}</span>
-          <span>${formatNumber(stats.total_sales)} so'm</span>
-        </div>
-        
-        <div class="divider"></div>
-
-        <div class="sub-row">
-          <span>${zLabels.naqd}</span>
-          <span>${formatNumber(stats.cash_sales)} so'm</span>
+          <span>${formatNumber(stats.total_sales || 0)} so'm</span>
         </div>
         <div class="sub-row">
-          <span>${zLabels.card}</span>
-          <span>${formatNumber(stats.card_sales)} so'm</span>
+          <span>${zLabels.cheklarSoni}</span>
+          <span>${stats.receipts_count || 0} ta</span>
         </div>
         <div class="sub-row">
-          <span>${zLabels.debt}</span>
-          <span>${formatNumber(stats.debt_sales)} so'm</span>
+          <span>${zLabels.ortachaChek}</span>
+          <span>${formatNumber(stats.average_check || 0)} so'm</span>
         </div>
-        
+        ${stats.service_fee_total > 0 ? `
+        <div class="sub-row">
+          <span>${zLabels.xizmatHaqi}</span>
+          <span>+${formatNumber(stats.service_fee_total)} so'm</span>
+        </div>
+        ` : ''}
         ${stats.total_discounts > 0 ? `
         <div class="sub-row">
           <span>${zLabels.chegirmalar}</span>
           <span>-${formatNumber(stats.total_discounts)} so'm</span>
         </div>
         ` : ''}
-
         ${stats.total_refunds > 0 ? `
-        <div class="sub-row">
-          <span>${zLabels.vozvrat} (${stats.refunds_count} ta):</span>
+        <div class="sub-row" style="color: #000;">
+          <span>${zLabels.vozvrat} (${stats.refunds_count || 0} ta):</span>
           <span>-${formatNumber(stats.total_refunds)} so'm</span>
         </div>
         ` : ''}
 
-        ${stats.total_expenses > 0 ? `
+        <!-- 2. TO'LOV TURLARI -->
         <div class="divider"></div>
-        <div class="sub-row" style="color: #000; font-weight: bold;">
+        <div class="section-title">${zLabels.secPayments}</div>
+        <div class="divider"></div>
+
+        <div class="sub-row">
+          <span>${zLabels.naqd}</span>
+          <span>${formatNumber(stats.cash_sales || 0)} so'm</span>
+        </div>
+        <div class="sub-row">
+          <span>${zLabels.card}</span>
+          <span>${formatNumber(stats.card_sales || 0)} so'm</span>
+        </div>
+        <div class="sub-row">
+          <span>${zLabels.debt}</span>
+          <span>${formatNumber(stats.debt_sales || 0)} so'm</span>
+        </div>
+        ${stats.debt_payments > 0 ? `
+        <div class="sub-row">
+          <span>${zLabels.debtPayments}</span>
+          <span>${formatNumber(stats.debt_payments)} so'm</span>
+        </div>
+        ` : ''}
+
+        <!-- 3. KASSA NAQD PUL HARAKATI -->
+        <div class="divider"></div>
+        <div class="section-title">${zLabels.secCash}</div>
+        <div class="divider"></div>
+
+        <div class="sub-row">
+          <span>${zLabels.naqdSavdo}</span>
+          <span>+${formatNumber(stats.cash_sales || 0)} so'm</span>
+        </div>
+        ${stats.debt_payments > 0 ? `
+        <div class="sub-row">
+          <span>${zLabels.qarzTushum}</span>
+          <span>+${formatNumber(stats.debt_payments)} so'm</span>
+        </div>
+        ` : ''}
+        ${stats.total_expenses > 0 ? `
+        <div class="sub-row">
           <span>${zLabels.rashod}</span>
           <span>-${formatNumber(stats.total_expenses)} so'm</span>
+        </div>
+        ` : ''}
+        <div class="divider"></div>
+        <div class="total-row" style="font-size: ${isKatta ? '15px' : '13px'};">
+          <span>${zLabels.kassadagiNaqd}</span>
+          <span>${formatNumber(stats.expected_cash || 0)} so'm</span>
+        </div>
+
+        <!-- 4. OFITSIANTLAR NATIJASI (RESTORAN / CAFE) -->
+        ${(stats.waiter_stats && stats.waiter_stats.length > 0) ? `
+        <div class="divider"></div>
+        <div class="section-title">${zLabels.secWaiters}</div>
+        <div class="divider"></div>
+        ${stats.waiter_stats.map(w => `
+          <div class="table-row" style="font-weight: bold; margin-top: 3px;">
+            <span>${w.waiter_name} (${w.receipts_count} chek):</span>
+            <span>${formatNumber(w.total_sales)} so'm</span>
+          </div>
+          ${w.total_commission > 0 ? `
+          <div class="table-row" style="padding-left: 10px; font-size: 10px; color: #444;">
+            <span>Ulush/Komissiya:</span>
+            <span>${formatNumber(w.total_commission)} so'm</span>
+          </div>
+          ` : ''}
+        `).join('')}
+        ` : ''}
+
+        <!-- 5. KATEGORIYALAR BO'YICHA -->
+        ${(stats.category_stats && stats.category_stats.length > 0) ? `
+        <div class="divider"></div>
+        <div class="section-title">${zLabels.secCategories}</div>
+        <div class="divider"></div>
+        ${stats.category_stats.map(c => `
+          <div class="table-row">
+            <span>${c.category_name} (${c.total_qty}):</span>
+            <span>${formatNumber(c.total_amount)} so'm</span>
+          </div>
+        `).join('')}
+        ` : ''}
+
+        <!-- 6. SPISANIYA (CHIQIM) -->
+        ${stats.write_offs_total > 0 ? `
+        <div class="divider"></div>
+        <div class="section-title">${zLabels.secWriteOffs}</div>
+        <div class="divider"></div>
+        <div class="sub-row">
+          <span>${zLabels.spisaniya}</span>
+          <span>-${formatNumber(stats.write_offs_total)} so'm</span>
         </div>
         ` : ''}
 
         <div class="divider"></div>
 
-        <div class="total-row">
-          <span>${zLabels.kassadagiNaqd}</span>
-          <span>${formatNumber(stats.expected_cash)} so'm</span>
-        </div>
-
-        <div class="divider"></div>
-        
-        <div class="sub-row">
-          <span>${zLabels.cheklarSoni}</span>
-          <span>${stats.receipts_count} ta</span>
-        </div>
-
         <div class="footer">
-          <p>${zLabels.rahmat}</p>
+          <p style="font-weight: bold; font-size: 11px;">${zLabels.rahmat}</p>
+          <p style="margin-top: 4px; font-size: 9px; color: #666;">Chop etildi: ${closedAtStr}</p>
         </div>
       </div>
     </body>

@@ -2,15 +2,37 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, Banknote, CreditCard, Clock,
   X, CheckCircle2, AlertCircle, Store, Truck, ChevronRight, Users, Package, Printer, Wifi, ShieldAlert,
-  ArrowRightLeft, Ban
+  ArrowRightLeft, Ban, Eye, EyeOff
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from './context/AppContext';
-import { formatCurrency, formatThousands } from './utils';
+import { formatCurrency, formatThousands, getProductImageUrl } from './utils';
 import { useReactToPrint } from 'react-to-print';
 import { PrintableReceipt } from './components/PrintableReceipt';
 import { generateReceiptHTML } from './ReceiptTemplate';
 import { AlertModal, ConfirmModal } from './components/Modals';
+import StopListModal from './components/StopListModal';
+
+const FALLBACK_GRADIENTS = [
+  'from-rose-500 to-red-600',
+  'from-orange-500 to-amber-600',
+  'from-amber-500 to-yellow-600',
+  'from-emerald-500 to-teal-600',
+  'from-teal-500 to-cyan-600',
+  'from-blue-500 to-indigo-600',
+  'from-indigo-500 to-purple-600',
+  'from-purple-500 to-pink-600',
+];
+
+const getGradientForName = (name) => {
+  if (!name) return FALLBACK_GRADIENTS[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % FALLBACK_GRADIENTS.length;
+  return FALLBACK_GRADIENTS[index];
+};
 
 const DEFAULT_ZONES = ['Stol', 'Zal', 'Terrassa', 'Chorpoya', '2-qavat', 'Podval', 'Banket', 'Dostavka'];
 
@@ -491,6 +513,205 @@ function AddZoneModal({ onAdd, onClose }) {
   );
 }
 
+/* ── Waiters Modal ────────────────────────────────────────────────────────── */
+function WaitersModal({ waiters, onAddWaiter, onDeleteWaiter, onClose }) {
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [percentage, setPercentage] = useState(10);
+  const [salary, setSalary] = useState('');
+  const [revealedPins, setRevealedPins] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || pin.length !== 4) return;
+    setSubmitting(true);
+    setError('');
+    const res = await onAddWaiter({
+      name: name.trim(),
+      pinCode: pin,
+      percentage: Number(percentage) || 10,
+      salary: Number(salary) || 0
+    });
+    setSubmitting(false);
+    if (res?.success) {
+      setName('');
+      setPin('');
+      setPercentage(10);
+      setSalary('');
+    } else if (res?.error === 'pin_exists') {
+      setError("Ushbu PIN-kod allaqachon mavjud!");
+    } else {
+      setError(res?.error || "Xatolik yuz berdi");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="p-5 border-b border-gray-150 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+              <Users size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-gray-900 dark:text-white">
+                Ofitsiantlar boshqaruvi
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Jami {waiters.length} nafar ofitsiant ro'yxatdan o'tgan
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-gray-650 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition cursor-pointer"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-5 overflow-y-auto custom-scrollbar space-y-5">
+          {/* Add Waiter Form */}
+          <form onSubmit={handleSubmit} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200/80 dark:border-gray-700 space-y-3">
+            <span className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide block">
+              Yangi ofitsiant qo'shish
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <input
+                type="text"
+                placeholder="Ismi (F.I.O)"
+                required
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <input
+                type="password"
+                maxLength={4}
+                placeholder="4 xonali PIN"
+                required
+                value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-center tracking-widest text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">
+                  Xizmat haqi ulushi (%)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  placeholder="10"
+                  value={percentage}
+                  onChange={e => setPercentage(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">
+                  Oylik maosh (so'm)
+                </label>
+                <input
+                  type="number"
+                  placeholder="0 so'm"
+                  value={salary}
+                  onChange={e => setSalary(e.target.value)}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+            {error && (
+              <p className="text-xs text-rose-500 font-bold">{error}</p>
+            )}
+            <button
+              type="submit"
+              disabled={submitting || !name.trim() || pin.length !== 4}
+              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
+            >
+              <Plus size={16} /> Qo'shish
+            </button>
+          </form>
+
+          {/* Waiters List */}
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide block">
+              Mavjud ofitsiantlar
+            </span>
+            {waiters.length === 0 ? (
+              <p className="text-xs text-gray-400 italic py-3 text-center">
+                Ofitsiantlar mavjud emas. Yuqoridagi shakldan qo'shing.
+              </p>
+            ) : (
+              waiters.map(w => {
+                const isRevealed = revealedPins[w.id];
+                return (
+                  <div
+                    key={w.id}
+                    className="p-3 bg-gray-50 dark:bg-gray-700/20 rounded-xl border border-gray-150 dark:border-gray-700 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-900 dark:text-white">
+                          {w.name}
+                        </span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                          {w.percentage || 10}% xizmat
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <span>PIN: {isRevealed ? w.pin_code : '••••'}</span>
+                        {Number(w.salary) > 0 && (
+                          <span>Oylik: {Number(w.salary).toLocaleString()} so'm</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setRevealedPins(prev => ({ ...prev, [w.id]: !prev[w.id] }))}
+                        className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md transition cursor-pointer"
+                        title={isRevealed ? "Yashirish" : "PIN ko'rish"}
+                      >
+                        {isRevealed ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteWaiter(w.id, w.name)}
+                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition cursor-pointer"
+                        title="O'chirish"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-150 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold text-xs rounded-xl transition cursor-pointer"
+          >
+            Yopish
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Transfer Table Modal ─────────────────────────────────────────────────── */
 function TransferTableModal({ currentTable, tables, zones, onTransfer, onClose, processing }) {
   const [selectedZone, setSelectedZone] = useState(() => {
@@ -647,7 +868,7 @@ function TransferTableModal({ currentTable, tables, zones, onTransfer, onClose, 
 
 /* ── Restaurant Cashier (main component) ───────────────────────────────────── */
 export default function RestaurantCashier({ isActive }) {
-  const { t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts, globalCustomers: customers, allowMobileQr } = useApp();
+  const { t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts, globalCustomers: customers, allowMobileQr, allowAttendanceQr } = useApp();
 
   // Zone & table selection
   const [zones, setZones] = useState(DEFAULT_ZONES);
@@ -678,6 +899,11 @@ export default function RestaurantCashier({ isActive }) {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAddTableModal, setShowAddTableModal] = useState(false);
   const [showAddZoneModal, setShowAddZoneModal] = useState(false);
+  const [showWaitersModal, setShowWaitersModal] = useState(false);
+  const [showStopListModal, setShowStopListModal] = useState(false);
+  const stoppedProductsCount = useMemo(() => {
+    return (globalProducts || []).filter(p => p.business_type === 'restaurant' && (p.is_stopped === 1 || !!p.stop_reason)).length;
+  }, [globalProducts]);
   const [showDeleteZoneConfirm, setShowDeleteZoneConfirm] = useState(false);
   const [showDeleteTableConfirm, setShowDeleteTableConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -704,6 +930,22 @@ export default function RestaurantCashier({ isActive }) {
   const [localIps, setLocalIps] = useState([]);
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [expressPort, setExpressPort] = useState(4000);
+  const [attendanceUnlocked, setAttendanceUnlocked] = useState(false);
+  const [showAttendancePinModal, setShowAttendancePinModal] = useState(false);
+  const [attendancePinInput, setAttendancePinInput] = useState('');
+  const [attendancePinError, setAttendancePinError] = useState('');
+
+  const handleUnlockAttendance = (e) => {
+    if (e) e.preventDefault();
+    if (attendancePinInput === 'xxMpos7532.') {
+      setAttendanceUnlocked(true);
+      setShowAttendancePinModal(false);
+      setAttendancePinInput('');
+      setAttendancePinError('');
+    } else {
+      setAttendancePinError("Noto'g'ri PIN kod!");
+    }
+  };
 
   useEffect(() => {
     if (!window.api) return;
@@ -822,6 +1064,42 @@ export default function RestaurantCashier({ isActive }) {
       console.error('loadWaiters error:', err);
     }
   }, []);
+
+  const handleAddWaiter = async (data) => {
+    if (!window.api || !window.api.addWaiter) return { success: false, error: 'API mavjud emas' };
+    try {
+      const res = await window.api.addWaiter(data);
+      if (res && res.success) {
+        await loadWaiters();
+        setToast("Ofitsiant muvaffaqiyatli qo'shildi!");
+      }
+      return res;
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const handleDeleteWaiter = (id, name) => {
+    setConfirmModal({
+      title: "Ofitsiantni o'chirish",
+      message: `Haqiqatan ham "${name}" ofitsiantini o'chirmoqchimisiz?`,
+      confirmText: "Ha, o'chirish",
+      cancelText: "Bekor qilish",
+      onConfirm: async () => {
+        try {
+          const res = await window.api.deleteWaiter(id);
+          if (res && res.success) {
+            await loadWaiters();
+            setToast("Ofitsiant o'chirildi!");
+          } else {
+            setAlertModal({ title: "Xatolik", message: res?.error || "O'chirib bo'lmadi", type: "error" });
+          }
+        } catch (err) {
+          setAlertModal({ title: "Xatolik", message: err.message, type: "error" });
+        }
+      }
+    });
+  };
 
   useEffect(() => {
     loadTables();
@@ -1043,12 +1321,13 @@ export default function RestaurantCashier({ isActive }) {
     }
   };
 
-  // Extract unique categories from globalProducts (excluding 1-ombor raw materials)
+  // Extract unique categories from globalProducts (including sellable raw materials if sell_price > 0)
   const uniqueCategories = useMemo(() => {
     const cats = new Set();
     if (globalProducts && Array.isArray(globalProducts)) {
       globalProducts.forEach(p => {
-        if (p.type !== 'raw_material' && p.category && p.category.trim() !== '') {
+        const isSellableRaw = p.type === 'raw_material' && p.sell_price > 0;
+        if ((p.type !== 'raw_material' || isSellableRaw) && p.category && p.category.trim() !== '') {
           cats.add(p.category.trim());
         }
       });
@@ -1056,9 +1335,9 @@ export default function RestaurantCashier({ isActive }) {
     return Array.from(cats);
   }, [globalProducts]);
 
-  // ── Products filter (Only 2-ombor sellable products: ready dishes & goods) ──
+  // ── Products filter (2-ombor sellable products + sellable raw materials) ──
   const filteredProducts = useMemo(() => {
-    let list = (globalProducts || []).filter(p => p.type !== 'raw_material');
+    let list = (globalProducts || []).filter(p => p.type !== 'raw_material' || (p.type === 'raw_material' && p.sell_price > 0));
     if (selectedCategory !== 'All') {
       list = list.filter(p => p.category === selectedCategory);
     }
@@ -1076,7 +1355,7 @@ export default function RestaurantCashier({ isActive }) {
   const serviceFeeAmount = isEffectiveTakeaway ? 0 : Math.round(itemsSubtotal * ((parseFloat(serviceFeePercent) || 0) / 100));
   const total = itemsSubtotal + serviceFeeAmount;
 
-  // ── Add product to cart (Checks Stop-List) ──
+  // ── Add product to cart (Checks Stop-List and Stop-Limit) ──
   const addToCart = useCallback((product) => {
     if (product.is_stopped === 1 || product.stop_reason) {
       setAlertModal({
@@ -1086,20 +1365,41 @@ export default function RestaurantCashier({ isActive }) {
       });
       return;
     }
+    if (product.stop_limit !== null && product.stop_limit !== undefined) {
+      const existingInCart = cart.find(i => i.id === product.id)?.qty || 0;
+      if (existingInCart + 1 > product.stop_limit) {
+        setAlertModal({
+          title: "⚠️ Qoldiq cheklangan!",
+          message: `"${product.name}" uchun faqat ${product.stop_limit} dona qolgan! Savatga bundan ortiq qo'shib bo'lmaydi.`,
+          type: 'warning'
+        });
+        return;
+      }
+    }
     setCart(prev => {
       const ex = prev.find(i => i.id === product.id);
       if (ex) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i);
       const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
       return [...prev, { ...product, qty: 1, discount: 0, added_at: nowStr }];
     });
-  }, []);
+  }, [cart]);
 
   const changeQty = (id, qty) => {
     const isWaiter = currentUser?.role === 'waiter';
     const saved = savedItems.find(x => x.id === id);
     const minQty = isWaiter && saved ? saved.qty : 0;
 
-    const v = Math.max(minQty, parseFloat(qty) || 0);
+    const prod = (globalProducts || []).find(p => p.id === id);
+    let v = Math.max(minQty, parseFloat(qty) || 0);
+    if (prod && prod.stop_limit !== null && prod.stop_limit !== undefined && v > prod.stop_limit) {
+      setAlertModal({
+        title: "⚠️ Qoldiq cheklangan!",
+        message: `"${prod.name}" uchun faqat ${prod.stop_limit} dona qolgan!`,
+        type: 'warning'
+      });
+      v = prod.stop_limit;
+    }
+
     setCart(prev => prev.map(i => i.id === id ? { ...i, qty: v } : i).filter(i => i.qty > 0));
   };
 
@@ -1395,6 +1695,8 @@ export default function RestaurantCashier({ isActive }) {
             <span>Zona qo'shish</span>
           </button>
         )}
+
+
       </div>
 
       {/* ── Content Area ────────────────────────────────────────────────────── */}
@@ -1432,6 +1734,28 @@ export default function RestaurantCashier({ isActive }) {
                       className="flex items-center gap-1 text-xs px-3 py-1.5 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-lg font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition cursor-pointer"
                     >
                       <Trash2 size={13} /> Zonani o'chirish
+                    </button>
+                  )}
+                  {currentUser?.role !== 'waiter' && (
+                    <button
+                      onClick={() => setShowStopListModal(true)}
+                      className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                        stoppedProductsCount > 0
+                          ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 animate-pulse'
+                          : 'bg-gray-100 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                      title="Stop-List boshqaruvi"
+                    >
+                      <Ban size={13} /> Stop-List {stoppedProductsCount > 0 && `(${stoppedProductsCount})`}
+                    </button>
+                  )}
+                  {currentUser?.role !== 'waiter' && (
+                    <button
+                      onClick={() => setShowWaitersModal(true)}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-lg font-bold hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition cursor-pointer"
+                      title="Ofitsiantlar ro'yxati va yangi qo'shish"
+                    >
+                      <Users size={13} /> Ofitsiantlar ({waiters.length})
                     </button>
                   )}
                   <button
@@ -1566,30 +1890,47 @@ export default function RestaurantCashier({ isActive }) {
 
               {/* Category tabs */}
               {uniqueCategories.length > 0 && (
-                <div className="flex gap-1.5 overflow-x-auto pb-2 mb-2 custom-scrollbar shrink-0">
+                <div className="flex gap-2 overflow-x-auto py-1 mb-3 custom-scrollbar shrink-0 items-center">
                   <button
                     onClick={() => setSelectedCategory('All')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    className={`px-4 py-2.5 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base font-extrabold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 active:scale-95 border ${
                       selectedCategory === 'All'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-150 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-md shadow-blue-500/30 border-blue-600 ring-2 ring-blue-500/30'
+                        : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60 shadow-sm'
                     }`}
                   >
-                    Barchasi
+                    <span>Barchasi</span>
+                    <span className={`px-2 py-0.5 text-xs font-bold rounded-full transition-colors ${
+                      selectedCategory === 'All'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                    }`}>
+                      {(globalProducts || []).filter(p => p.type !== 'raw_material' || p.sell_price > 0).length}
+                    </span>
                   </button>
-                  {uniqueCategories.map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => setSelectedCategory(cat)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                        selectedCategory === cat
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-150 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                  {uniqueCategories.map(cat => {
+                    const count = (globalProducts || []).filter(p => (p.type !== 'raw_material' || p.sell_price > 0) && p.category === cat).length;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-4 py-2.5 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl text-sm sm:text-base font-extrabold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 active:scale-95 border ${
+                          selectedCategory === cat
+                            ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-md shadow-blue-500/30 border-blue-600 ring-2 ring-blue-500/30'
+                            : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60 shadow-sm'
+                        }`}
+                      >
+                        <span>{cat}</span>
+                        <span className={`px-2 py-0.5 text-xs font-bold rounded-full transition-colors ${
+                          selectedCategory === cat
+                            ? 'bg-white/25 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
@@ -1612,7 +1953,7 @@ export default function RestaurantCashier({ isActive }) {
                   )}
                 </div>
 
-                {(allowMobileQr || currentUser?.pin === 'xxMpos7532.') && (
+                {(allowMobileQr || allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.' || true) && (
                   <button
                     type="button"
                     onClick={() => setShowNetworkModal(true)}
@@ -1622,12 +1963,33 @@ export default function RestaurantCashier({ isActive }) {
                     <Wifi size={18} />
                   </button>
                 )}
+
+                {currentUser?.role !== 'waiter' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowStopListModal(true)}
+                    title="Stop-List boshqaruvi"
+                    className={`px-3 py-2 border rounded-xl flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer shadow-sm active:scale-95 ${
+                      stoppedProductsCount > 0
+                        ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 text-red-600 dark:text-red-400'
+                        : 'bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    <Ban size={16} />
+                    <span className="hidden sm:inline">Stop-List</span>
+                    {stoppedProductsCount > 0 && (
+                      <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                        {stoppedProductsCount}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Products list grid */}
               <div className="flex-1 overflow-y-auto custom-scrollbar min-h-[350px]">
                 {filteredProducts.length > 0 ? (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 gap-2 pb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 pb-4">
                     {filteredProducts.slice(0, visibleCount).map(p => {
                       const inCart = cart.find(i => i.id === p.id);
                       const isStopped = p.is_stopped === 1 || !!p.stop_reason;
@@ -1635,35 +1997,97 @@ export default function RestaurantCashier({ isActive }) {
                         <button
                           key={p.id}
                           onClick={() => addToCart(p)}
-                          className={`relative flex flex-col bg-white dark:bg-gray-800 border-2 rounded-xl p-3 text-left transition-all ${
+                          className={`group relative flex flex-col bg-white dark:bg-gray-800 border-2 rounded-2xl overflow-hidden text-left transition-all duration-150 ${
                             isStopped
                               ? 'opacity-60 border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/20 cursor-not-allowed'
-                              : 'border-gray-100 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 active:scale-[0.97] cursor-pointer shadow-sm'
+                              : 'border-gray-150 dark:border-gray-700/80 hover:border-blue-400 dark:hover:border-blue-500 shadow-sm hover:shadow-md cursor-pointer active:scale-95'
                           }`}
                         >
-                          {isStopped ? (
-                            <div className="absolute top-2 right-2 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shadow z-10 flex items-center gap-0.5">
-                              <Ban size={9} /> STOP
+                          {/* Top Image / Fallback Area (h-28) */}
+                          <div className="relative w-full h-28 bg-gray-100 dark:bg-gray-700 overflow-hidden shrink-0">
+                            {p.image ? (
+                              <img
+                                src={getProductImageUrl(p.image)}
+                                alt={p.name}
+                                className="w-full h-full object-cover rounded-t-xl group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  if (e.target.nextElementSibling) {
+                                    e.target.nextElementSibling.style.display = 'flex';
+                                  }
+                                }}
+                              />
+                            ) : null}
+
+                            {/* Fallback Gradient with big letter */}
+                            <div
+                              className={`w-full h-full bg-gradient-to-br ${getGradientForName(p.name)} flex items-center justify-center rounded-t-xl select-none ${p.image ? 'hidden' : 'flex'}`}
+                            >
+                              <span className="text-4xl font-black text-white/90 drop-shadow-md tracking-wider">
+                                {p.name ? p.name.charAt(0).toUpperCase() : '?'}
+                              </span>
+                              <span className="absolute bottom-1.5 left-2 text-[9px] font-bold text-white/80 bg-black/25 px-1.5 py-0.5 rounded-md backdrop-blur-xs">
+                                {p.category || 'Boshqa'}
+                              </span>
                             </div>
-                          ) : inCart ? (
-                            <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800 z-10 shadow">
-                              {inCart.qty}
+
+                            {/* Badges Overlaid on top of image */}
+                            {isStopped ? (
+                              <div className="absolute top-2 right-2 bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow-md z-10 flex items-center gap-1 backdrop-blur-xs">
+                                <Ban size={10} /> STOP
+                              </div>
+                            ) : p.stop_limit !== null && p.stop_limit !== undefined ? (
+                              <div className="absolute top-2 right-2 bg-amber-500 text-white text-[9px] font-black px-2 py-0.5 rounded-md shadow-md z-10">
+                                {p.stop_limit} ta qoldi
+                              </div>
+                            ) : inCart ? (
+                              <div className="absolute top-2 right-2 bg-blue-600 text-white text-xs font-black min-w-6 h-6 px-1.5 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800 z-10 shadow-lg">
+                                {inCart.qty}
+                              </div>
+                            ) : null}
+
+                            {/* Info pill on bottom right of image */}
+                            {!isStopped && p.has_recipe === 1 && (
+                              <div className="absolute bottom-1.5 right-1.5 bg-black/60 text-amber-300 text-[10px] font-black px-1.5 py-0.5 rounded-md backdrop-blur-xs flex items-center gap-1">
+                                🍽️ {p.recipe_available_portions ?? 0}
+                              </div>
+                            )}
+                            {!isStopped && p.is_unlimited === 1 && (
+                              <div className="absolute bottom-1.5 right-1.5 bg-black/60 text-blue-300 text-[10px] font-black px-1.5 py-0.5 rounded-md backdrop-blur-xs">
+                                ∞ Cheksiz
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Bottom Info Area */}
+                          <div className="p-2.5 flex-1 flex flex-col justify-between">
+                            <div>
+                              <p className={`font-bold text-xs sm:text-sm line-clamp-2 leading-tight ${isStopped ? 'text-red-700 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                                {p.name}
+                              </p>
+                              {p.image && (
+                                <span className="text-[11px] text-gray-400 dark:text-gray-500 font-medium block truncate mt-0.5">
+                                  {p.category || 'Boshqa'}
+                                </span>
+                              )}
+                              {isStopped && p.stop_reason && (
+                                <span className="text-[10px] text-red-600 dark:text-red-400 font-semibold line-clamp-1 mt-0.5">
+                                  {p.stop_reason}
+                                </span>
+                              )}
                             </div>
-                          ) : null}
-                          
-                          <p className={`font-bold text-xs line-clamp-2 mb-1 ${isStopped ? 'text-red-700 dark:text-red-400' : 'text-gray-800 dark:text-gray-100'}`}>
-                            {p.name}
-                          </p>
-                          {isStopped && p.stop_reason ? (
-                            <span className="text-[10px] text-red-600 dark:text-red-400 font-semibold line-clamp-1 mb-1">
-                              {p.stop_reason}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 dark:text-gray-500">{p.category || 'Boshqa'}</span>
-                          )}
-                          <span className={`text-sm font-black mt-2 ${isStopped ? 'text-gray-400 dark:text-gray-500' : 'text-blue-600 dark:text-blue-400'}`}>
-                            {formatCurrency(p.sell_price, lang)}
-                          </span>
+
+                            <div className="mt-2 pt-1.5 border-t border-gray-100 dark:border-gray-700/60 flex items-center justify-between">
+                              <span className={`text-sm font-black ${isStopped ? 'text-gray-400 dark:text-gray-500' : 'text-blue-600 dark:text-blue-400'}`}>
+                                {formatCurrency(p.sell_price, lang)}
+                              </span>
+                              {inCart && (
+                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                                  {inCart.qty} ta
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </button>
                       );
                     })}
@@ -2007,6 +2431,15 @@ export default function RestaurantCashier({ isActive }) {
         />
       )}
 
+      {showWaitersModal && (
+        <WaitersModal
+          waiters={waiters}
+          onAddWaiter={handleAddWaiter}
+          onDeleteWaiter={handleDeleteWaiter}
+          onClose={() => setShowWaitersModal(false)}
+        />
+      )}
+
       {showDeleteZoneConfirm && (
         <ConfirmModal
           isOpen={showDeleteZoneConfirm}
@@ -2040,7 +2473,7 @@ export default function RestaurantCashier({ isActive }) {
       {/* Network / Connection QR Codes Modal */}
       {showNetworkModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 transition-colors">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 transition-colors">
             {/* Header */}
             <div className="p-6 border-b border-gray-150 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/10">
               <div className="flex items-center gap-3">
@@ -2074,13 +2507,14 @@ export default function RestaurantCashier({ isActive }) {
                     {localIps.map((ip, idx) => {
                       const mainUrl = `http://${ip}:${expressPort}`;
                       const waiterUrl = `http://${ip}:${expressPort}/mobile`;
+                      const attendanceUrl = `http://${ip}:${expressPort}/attendance`;
                       return (
                         <div key={idx} className="space-y-3">
                           <span className="text-xs font-black px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg inline-block">
                             Lokal IP: {ip}
                           </span>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {/* Card 1: Kompyuter / Planshet */}
                             <div className="p-4 bg-white dark:bg-gray-800/60 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3 shadow-sm">
                               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -2134,6 +2568,51 @@ export default function RestaurantCashier({ isActive }) {
                                 <p className="text-[10px] text-gray-400 dark:text-gray-500">
                                   Sozlamalardan maxfiy PIN kod orqali ruxsat berilganda ko'rinadi.
                                 </p>
+                              </div>
+                            )}
+
+                            {/* Card 3: Xodimlar Davomati (Selfi) */}
+                            {(allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.') ? (
+                              <div className="p-4 bg-purple-50/30 dark:bg-purple-950/10 rounded-2xl border border-purple-100 dark:border-purple-900/30 flex flex-col items-center gap-3 shadow-sm">
+                                <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
+                                  📸 Xodimlar Davomati
+                                </span>
+                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-purple-100">
+                                  <QRCodeSVG value={attendanceUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                                </div>
+                                <a href={attendanceUrl} target="_blank" rel="noreferrer"
+                                  className="text-[11px] font-mono font-bold text-purple-600 dark:text-purple-400 break-all underline hover:text-purple-500 block text-center">
+                                  {attendanceUrl}
+                                </a>
+                                <button type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(attendanceUrl);
+                                    setAlertModal({ title: "Muvaffaqiyatli", message: "Davomat havolasi nusxalandi!", type: "success" });
+                                  }}
+                                  className="w-full py-1.5 px-3 text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40 rounded-xl transition-colors cursor-pointer">
+                                  📋 Nusxalash
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-center gap-2">
+                                <span className="text-2xl">🔒</span>
+                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                                  Davomat QR kodi yashiringan
+                                </span>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                  Admin sozlamalaridan ruxsat berilmagan.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowAttendancePinModal(true);
+                                    setAttendancePinInput('');
+                                    setAttendancePinError('');
+                                  }}
+                                  className="mt-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                >
+                                  <span>🔓 PIN kod terish</span>
+                                </button>
                               </div>
                             )}
                           </div>
@@ -2316,6 +2795,57 @@ export default function RestaurantCashier({ isActive }) {
           </div>
         </div>
       )}
+
+      {/* Attendance PIN Modal */}
+      {showAttendancePinModal && (
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95">
+            <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-1">
+              <span>🔒</span>
+              Davomat QR kodini ochish
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              QR kodni ko'rish uchun maxfiy admin PIN kodini kiriting:
+            </p>
+            <form onSubmit={handleUnlockAttendance} className="space-y-3">
+              <input
+                type="password"
+                autoFocus
+                value={attendancePinInput}
+                onChange={(e) => {
+                  setAttendancePinInput(e.target.value);
+                  if (attendancePinError) setAttendancePinError('');
+                }}
+                placeholder="PIN kodni kiriting..."
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-center text-base tracking-widest font-mono font-bold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 dark:text-white"
+              />
+              {attendancePinError && (
+                <p className="text-xs text-rose-500 font-bold text-center">
+                  {attendancePinError}
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAttendancePinModal(false)}
+                  className="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer"
+                >
+                  Kiritish
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Stop-List Modal */}
+      <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
 
       {/* Hidden printing layout */}
       <div style={{ display: 'none' }}>

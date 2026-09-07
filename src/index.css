@@ -119,4 +119,13 @@ body {
   }
 }
 
-
+/* Hide scrollbars for TV and full-screen displays */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}

@@ -50,7 +50,7 @@ export default memo(function Cashier({ isActive }) {
   const { cart, setCart, carts, activeCartId, setActiveCartId } = useCart();
   const { 
     t, lang, currentUser, storeName, globalProducts, fetchGlobalProducts,
-    globalCustomers: customers, fetchGlobalCustomers, businessType, allowMobileQr
+    globalCustomers: customers, fetchGlobalCustomers, businessType, allowMobileQr, allowAttendanceQr
   } = useApp();
   const [debtForm, setDebtForm] = useState({ id: '', name: '', phone: '' });
   const [checkComment, setCheckComment] = useState('');
@@ -60,6 +60,22 @@ export default memo(function Cashier({ isActive }) {
   const [localIps, setLocalIps] = useState([]);
   const [ngrokUrl, setNgrokUrl] = useState('');
   const [expressPort, setExpressPort] = useState(4000);
+  const [attendanceUnlocked, setAttendanceUnlocked] = useState(false);
+  const [showAttendancePinModal, setShowAttendancePinModal] = useState(false);
+  const [attendancePinInput, setAttendancePinInput] = useState('');
+  const [attendancePinError, setAttendancePinError] = useState('');
+
+  const handleUnlockAttendance = (e) => {
+    if (e) e.preventDefault();
+    if (attendancePinInput === 'xxMpos7532.') {
+      setAttendanceUnlocked(true);
+      setShowAttendancePinModal(false);
+      setAttendancePinInput('');
+      setAttendancePinError('');
+    } else {
+      setAttendancePinError("Noto'g'ri PIN kod!");
+    }
+  };
 
   const [query, setQuery]             = useState('');
   const [toast, setToast]             = useState(null);
@@ -809,7 +825,7 @@ export default memo(function Cashier({ isActive }) {
               </button>
             )}
           </div>
-          {(allowMobileQr || currentUser?.pin === 'xxMpos7532.') && (
+          {(allowMobileQr || allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.' || true) && (
             <button
               type="button"
               onClick={() => setShowNetworkModal(true)}
@@ -1302,7 +1318,7 @@ export default memo(function Cashier({ isActive }) {
       {/* Network / Connection QR Codes Modal */}
       {showNetworkModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 transition-colors">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 transition-colors">
             {/* Header */}
             <div className="p-6 border-b border-gray-150 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/10">
               <div className="flex items-center gap-3">
@@ -1344,13 +1360,14 @@ export default memo(function Cashier({ isActive }) {
                     {localIps.map((ip, idx) => {
                       const mainUrl = `http://${ip}:${expressPort}`;
                       const mobileUrl = `http://${ip}:${expressPort}/mobile`;
+                      const attendanceUrl = `http://${ip}:${expressPort}/attendance`;
                       return (
                         <div key={idx} className="space-y-3">
                           <span className="text-xs font-black px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg inline-block">
                             Lokal IP: {ip}
                           </span>
 
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {/* Card 1: Planshet / Kompyuter */}
                             <div className="p-4 bg-white dark:bg-gray-800/60 rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3 shadow-sm">
                               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -1398,6 +1415,48 @@ export default memo(function Cashier({ isActive }) {
                                 <p className="text-[10px] text-gray-400 dark:text-gray-500">
                                   Sozlamalardan maxfiy PIN kod orqali ruxsat berilganda ko'rinadi.
                                 </p>
+                              </div>
+                            )}
+
+                            {/* Card 3: Xodimlar Davomati */}
+                            {(allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.') ? (
+                              <div className="p-4 bg-purple-50/30 dark:bg-purple-950/10 rounded-2xl border border-purple-100 dark:border-purple-900/30 flex flex-col items-center gap-3 shadow-sm">
+                                <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
+                                  📸 Xodimlar Davomati
+                                </span>
+                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-purple-100">
+                                  <QRCodeSVG value={attendanceUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
+                                </div>
+                                <a href={attendanceUrl} target="_blank" rel="noreferrer"
+                                  className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400 break-all underline hover:text-purple-500 text-center w-full px-1">
+                                  {attendanceUrl}
+                                </a>
+                                <button type="button"
+                                  onClick={() => { navigator.clipboard.writeText(attendanceUrl); setToast('Davomat havolasi nusxalandi!'); }}
+                                  className="w-full py-2 px-3 text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40 rounded-xl transition-colors cursor-pointer">
+                                  📋 Nusxalash
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-center gap-2">
+                                <span className="text-2xl">🔒</span>
+                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                                  Davomat QR kodi yashiringan
+                                </span>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                  Admin sozlamalaridan ruxsat berilmagan.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowAttendancePinModal(true);
+                                    setAttendancePinInput('');
+                                    setAttendancePinError('');
+                                  }}
+                                  className="mt-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                >
+                                  <span>🔓 PIN kod terish</span>
+                                </button>
                               </div>
                             )}
                           </div>
@@ -1530,6 +1589,54 @@ export default memo(function Cashier({ isActive }) {
                 Bekor qilish
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance PIN Modal */}
+      {showAttendancePinModal && (
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95">
+            <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-1">
+              <span>🔒</span>
+              Davomat QR kodini ochish
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              QR kodni ko'rish uchun maxfiy admin PIN kodini kiriting:
+            </p>
+            <form onSubmit={handleUnlockAttendance} className="space-y-3">
+              <input
+                type="password"
+                autoFocus
+                value={attendancePinInput}
+                onChange={(e) => {
+                  setAttendancePinInput(e.target.value);
+                  if (attendancePinError) setAttendancePinError('');
+                }}
+                placeholder="PIN kodni kiriting..."
+                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-center text-base tracking-widest font-mono font-bold focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 dark:text-white"
+              />
+              {attendancePinError && (
+                <p className="text-xs text-rose-500 font-bold text-center">
+                  {attendancePinError}
+                </p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAttendancePinModal(false)}
+                  className="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer"
+                >
+                  Kiritish
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

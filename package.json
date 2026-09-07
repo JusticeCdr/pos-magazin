@@ -50,6 +50,7 @@
     "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.16.0",
+    "multer": "^2.3.0",
     "ngrok": "^5.0.0-beta.2",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.6",

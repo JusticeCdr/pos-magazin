@@ -6,14 +6,18 @@ import { AlertModal } from './components/Modals';
 
 // ── Action meta ───────────────────────────────────────────────────────────────
 const ACTION_META = {
-  kirim:      { label: 'Kirim',              color: 'text-emerald-600 dark:text-emerald-400',  bg: 'bg-emerald-50 dark:bg-emerald-900/30',  icon: ArrowUpCircle },
-  sotuv:      { label: 'Sotuv',              color: 'text-blue-600   dark:text-blue-400',      bg: 'bg-blue-50   dark:bg-blue-900/30',      icon: ArrowDownCircle },
-  sotuv_qarz: { label: 'Sotuv (Qarzga)',     color: 'text-orange-600 dark:text-orange-400',    bg: 'bg-orange-50 dark:bg-orange-900/30',    icon: ArrowDownCircle },
-  qarz_tulov: { label: 'Qarz to\'lovi',      color: 'text-green-600  dark:text-green-400',     bg: 'bg-green-50  dark:bg-green-900/30',     icon: ArrowUpCircle },
-  vozvrat:    { label: 'Qaytarish',          color: 'text-amber-600  dark:text-amber-400',     bg: 'bg-amber-50  dark:bg-amber-900/30',     icon: RefreshCw },
-  spisaniya:  { label: 'Hisobdan chiqarish', color: 'text-red-600    dark:text-red-400',       bg: 'bg-red-50    dark:bg-red-900/30',       icon: Minus },
-  ochirildi:  { label: 'O\'chirildi',        color: 'text-red-700    dark:text-red-500',       bg: 'bg-red-100   dark:bg-red-950/40',       icon: Minus },
-  tahrirlash: { label: 'Tahrirlash',         color: 'text-purple-600 dark:text-purple-400',    bg: 'bg-purple-50 dark:bg-purple-900/30',    icon: Filter },
+  kirim:         { label: 'Kirim',              color: 'text-emerald-600 dark:text-emerald-400',  bg: 'bg-emerald-50 dark:bg-emerald-900/30',  icon: ArrowUpCircle },
+  sotuv:         { label: 'Sotuv',              color: 'text-blue-600   dark:text-blue-400',      bg: 'bg-blue-50   dark:bg-blue-900/30',      icon: ArrowDownCircle },
+  sotuv_qarz:    { label: 'Sotuv (Qarzga)',     color: 'text-orange-600 dark:text-orange-400',    bg: 'bg-orange-50 dark:bg-orange-900/30',    icon: ArrowDownCircle },
+  qarz_tulov:    { label: 'Qarz to\'lovi',      color: 'text-green-600  dark:text-green-400',     bg: 'bg-green-50  dark:bg-green-900/30',     icon: ArrowUpCircle },
+  vozvrat:       { label: 'Qaytarish',          color: 'text-amber-600  dark:text-amber-400',     bg: 'bg-amber-50  dark:bg-amber-900/30',     icon: RefreshCw },
+  chiqim:        { label: 'Xom-ashyo sarfi',    color: 'text-indigo-600 dark:text-indigo-400',    bg: 'bg-indigo-50 dark:bg-indigo-900/30',    icon: ArrowDownCircle },
+  rasxod:        { label: 'Chiqim (Rasxod)',    color: 'text-red-600    dark:text-red-400',       bg: 'bg-red-50    dark:bg-red-900/30',       icon: Minus },
+  rasxod_bekor:  { label: 'Chiqim bekor',       color: 'text-gray-600   dark:text-gray-400',      bg: 'bg-gray-50   dark:bg-gray-900/30',      icon: RefreshCw },
+  spisaniya:     { label: 'Hisobdan chiqarish', color: 'text-rose-600   dark:text-rose-400',      bg: 'bg-rose-50   dark:bg-rose-900/30',      icon: Minus },
+  reviziya:      { label: 'Reviziya',           color: 'text-teal-600   dark:text-teal-400',      bg: 'bg-teal-50   dark:bg-teal-900/30',      icon: Filter },
+  ochirildi:     { label: 'O\'chirildi',        color: 'text-red-700    dark:text-red-500',       bg: 'bg-red-100   dark:bg-red-950/40',       icon: Minus },
+  tahrirlash:    { label: 'Tahrirlash',         color: 'text-purple-600 dark:text-purple-400',    bg: 'bg-purple-50 dark:bg-purple-900/30',    icon: Filter },
   smena_yopildi: { label: 'Smena yopildi',   color: 'text-rose-600   dark:text-rose-400',      bg: 'bg-rose-50   dark:bg-rose-900/30',      icon: Lock },
   smena_ochildi: { label: 'Smena ochildi',   color: 'text-emerald-600 dark:text-emerald-400',  bg: 'bg-emerald-50 dark:bg-emerald-900/30',  icon: Unlock },
 };
@@ -195,7 +199,11 @@ export default memo(function InventoryHistory({ isActive }) {
               <option value="sotuv_qarz">Sotuv (Qarzga)</option>
               <option value="qarz_tulov">Qarz to'lovi</option>
               <option value="vozvrat">Qaytarish (Возврат)</option>
-              <option value="spisaniya">Hisobdan chiqarish</option>
+              <option value="chiqim">Xom-ashyo sarfi (Chiqim)</option>
+              <option value="rasxod">Chiqim (Rasxod)</option>
+              <option value="rasxod_bekor">Chiqim bekor qilingan</option>
+              <option value="spisaniya">Hisobdan chiqarish (Spisaniya)</option>
+              <option value="reviziya">Reviziya (Audit)</option>
               <option value="ochirildi">O'chirildi (Удалено)</option>
               <option value="smena_yopildi">Smena yopilishi</option>
               <option value="smena_ochildi">Smena ochilishi</option>

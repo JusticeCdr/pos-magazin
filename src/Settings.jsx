@@ -2,13 +2,13 @@ import { useState, useEffect, memo } from 'react';
 import { 
   DatabaseBackup, Download, Upload, Users, Store, Trash2, Plus, RefreshCw, 
   Printer, AlertTriangle, Phone, Eye, EyeOff, Percent, ChefHat, Tv, ExternalLink, 
-  Copy, Check, Smartphone, Wifi, Globe, Monitor, ShieldCheck
+  Copy, Check, Smartphone, Wifi, Globe, Monitor, ShieldCheck, CheckCircle2, AlertCircle, Camera, UserCheck, Clock
 } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
 
 export default memo(function Settings() {
-  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate, allowMobileQr, updateAllowMobileQr } = useApp();
+  const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate, allowMobileQr, updateAllowMobileQr, allowAttendanceQr, updateAllowAttendanceQr } = useApp();
   const [isMasterUnlocked, setIsMasterUnlocked] = useState(false);
   const [showMasterUnlockModal, setShowMasterUnlockModal] = useState(false);
   const [masterPinInput, setMasterPinInput] = useState('');
@@ -198,6 +198,17 @@ export default memo(function Settings() {
   const [telegramChatId, setTelegramChatId] = useState('');
   const [isSendingTelegramBackup, setIsSendingTelegramBackup] = useState(false);
   const [isDetectingTelegramChatId, setIsDetectingTelegramChatId] = useState(false);
+
+  // Multi-venue Attendance Telegram Bot states
+  const [cafeName, setCafeName] = useState('');
+  const [telegramAttendanceToken, setTelegramAttendanceToken] = useState('8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84');
+  const [telegramAttendanceChatId, setTelegramAttendanceChatId] = useState('');
+  const [isTestingAttendanceTg, setIsTestingAttendanceTg] = useState(false);
+  const [attendanceTgStatus, setAttendanceTgStatus] = useState(null); // { success: boolean, message: string }
+  const [isDetectingAttendanceChatId, setIsDetectingAttendanceChatId] = useState(false);
+  const [workStartTime, setWorkStartTime] = useState('09:00');
+  const [workEndTime, setWorkEndTime] = useState('18:00');
+  const [lateGraceMinutes, setLateGraceMinutes] = useState('5');
   const [appVersion, setAppVersion] = useState('v1.5.0');
   const [updateState, setUpdateState] = useState('idle'); // 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -206,6 +217,9 @@ export default memo(function Settings() {
   const [showMobileQrPinModal, setShowMobileQrPinModal] = useState(false);
   const [mobileQrPinInput, setMobileQrPinInput] = useState('');
   const [mobileQrPinError, setMobileQrPinError] = useState('');
+  const [showAttendanceQrPinModal, setShowAttendanceQrPinModal] = useState(false);
+  const [attendanceQrPinInput, setAttendanceQrPinInput] = useState('');
+  const [attendanceQrPinError, setAttendanceQrPinError] = useState('');
   const [localIp, setLocalIp] = useState('');
   const [copiedLink, setCopiedLink] = useState('');
 
@@ -293,6 +307,7 @@ export default memo(function Settings() {
         setWaiterPercentage(10);
         setWaiterSalary('');
         await loadWaiters();
+        await loadCashiers();
       } else if (res?.error === 'pin_exists') {
         setToastMsg(t('pinExists'));
       } else {
@@ -310,6 +325,7 @@ export default memo(function Settings() {
       const res = await window.api.deleteWaiter(id);
       if (res && res.success) {
         await loadWaiters();
+        await loadCashiers();
       } else {
         setToastMsg('Xatolik: ' + res?.error);
       }
@@ -322,7 +338,7 @@ export default memo(function Settings() {
 
   useEffect(() => {
     loadCashiers();
-    if (businessType === 'restaurant') {
+    if (businessType === 'restaurant' || isMasterAdmin) {
       loadWaiters();
     }
     loadPrinters();
@@ -431,6 +447,13 @@ export default memo(function Settings() {
         if (res.data.gemini_api_key) setGeminiApiKey(res.data.gemini_api_key);
         if (res.data.telegram_bot_token) setTelegramBotToken(res.data.telegram_bot_token);
         if (res.data.telegram_chat_id) setTelegramChatId(res.data.telegram_chat_id);
+        if (res.data.cafe_name) setCafeName(res.data.cafe_name);
+        else if (res.data.store_name) setCafeName(res.data.store_name);
+        if (res.data.telegram_attendance_token) setTelegramAttendanceToken(res.data.telegram_attendance_token);
+        if (res.data.telegram_attendance_chat_id) setTelegramAttendanceChatId(res.data.telegram_attendance_chat_id);
+        if (res.data.work_start_time) setWorkStartTime(res.data.work_start_time);
+        if (res.data.work_end_time) setWorkEndTime(res.data.work_end_time);
+        if (res.data.late_grace_minutes) setLateGraceMinutes(res.data.late_grace_minutes);
         if (res.data.usd_rate) setNewUsdRate(res.data.usd_rate);
         if (res.data.auto_usd_rate) setAutoUsdRate(res.data.auto_usd_rate === '1');
         
@@ -692,6 +715,23 @@ export default memo(function Settings() {
     );
   };
 
+  const handleConfirmAttendanceQrPin = async () => {
+    if (attendanceQrPinInput !== 'xxMpos7532.') {
+      setAttendanceQrPinError('Maxfiy PIN kod noto\'g\'ri!');
+      return;
+    }
+    const newStatus = !allowAttendanceQr;
+    await updateAllowAttendanceQr(newStatus);
+    setShowAttendanceQrPinModal(false);
+    setAttendanceQrPinInput('');
+    setAttendanceQrPinError('');
+    setToastMsg(
+      newStatus
+        ? 'Xodimlar davomati QR kodiga ruxsat berildi! Kassa oynasida ko\'rinadi.'
+        : 'Xodimlar davomati QR kodi taqiqlandi! Kassa oynasidan yashirildi.'
+    );
+  };
+
   const handleConfirmMasterUnlock = () => {
     if (masterPinInput.trim() === 'xxMpos7532.') {
       setIsMasterUnlocked(true);
@@ -722,6 +762,78 @@ export default memo(function Settings() {
       setToastMsg('Telegram sozlamalari saqlandi!');
     } catch (err) {
       setToastMsg('Sozlamalarni saqlashda xatolik: ' + err.message);
+    }
+  };
+
+  const handleSaveAttendanceSettings = async () => {
+    if (!window.api || !window.api.updateSetting) return;
+    try {
+      await window.api.updateSetting({ key: 'cafe_name', value: cafeName.trim() });
+      await window.api.updateSetting({ key: 'telegram_attendance_token', value: telegramAttendanceToken.trim() });
+      await window.api.updateSetting({ key: 'telegram_attendance_chat_id', value: telegramAttendanceChatId.trim() });
+      await window.api.updateSetting({ key: 'work_start_time', value: workStartTime });
+      await window.api.updateSetting({ key: 'work_end_time', value: workEndTime });
+      await window.api.updateSetting({ key: 'late_grace_minutes', value: String(lateGraceMinutes) });
+      setToastMsg(lang === 'uz' ? "Davomat va ish grafigi sozlamalari saqlandi!" : "Настройки посещаемости и графика сохранены!");
+    } catch (err) {
+      setToastMsg("Xatolik: " + err.message);
+    }
+  };
+
+  const handleDetectAttendanceChatId = async () => {
+    if (!window.api || !window.api.getTelegramChatId) return;
+    setIsDetectingAttendanceChatId(true);
+    setAttendanceTgStatus(null);
+    try {
+      const res = await window.api.getTelegramChatId(telegramAttendanceToken.trim());
+      if (res && res.success && res.chatId) {
+        setTelegramAttendanceChatId(res.chatId);
+        await window.api.updateSetting({ key: 'telegram_attendance_chat_id', value: res.chatId });
+        await window.api.updateSetting({ key: 'telegram_attendance_token', value: telegramAttendanceToken.trim() });
+        setToastMsg(`Guruh ID si topildi va saqlandi: ${res.chatId} (${res.chatTitle || ''})`);
+      } else {
+        setToastMsg(res?.error || "Guruh ID topilmadi. Botni guruhga qo'shib /id deb yuboring.");
+      }
+    } catch (err) {
+      setToastMsg("ID aniqlashda xatolik: " + err.message);
+    } finally {
+      setIsDetectingAttendanceChatId(false);
+    }
+  };
+
+  const handleTestAttendanceTelegram = async () => {
+    if (!window.api || !window.api.sendAttendanceTestMessage) return;
+    const chat = telegramAttendanceChatId.trim();
+    if (!chat) {
+      setAttendanceTgStatus({ success: false, message: "Telegram Guruh Chat ID kiritilmagan!" });
+      setToastMsg("Telegram Guruh Chat ID kiritilmagan!");
+      return;
+    }
+    setIsTestingAttendanceTg(true);
+    setAttendanceTgStatus(null);
+    try {
+      await window.api.updateSetting({ key: 'cafe_name', value: cafeName.trim() });
+      await window.api.updateSetting({ key: 'telegram_attendance_token', value: telegramAttendanceToken.trim() });
+      await window.api.updateSetting({ key: 'telegram_attendance_chat_id', value: chat });
+
+      const res = await window.api.sendAttendanceTestMessage({
+        token: telegramAttendanceToken.trim(),
+        chatId: chat,
+        cafeName: cafeName.trim() || storeName || 'Kafe'
+      });
+
+      if (res && res.success) {
+        setAttendanceTgStatus({ success: true, message: "Guruhga ulandi!" });
+        setToastMsg("✅ Guruhga test xabar yuborildi: Aloqa o'rnatildi!");
+      } else {
+        setAttendanceTgStatus({ success: false, message: res?.error || "Xabar yuborishda xatolik yuz berdi" });
+        setToastMsg("Xatolik: " + (res?.error || "Xabar yuborilmadi"));
+      }
+    } catch (err) {
+      setAttendanceTgStatus({ success: false, message: err.message });
+      setToastMsg("Xatolik: " + err.message);
+    } finally {
+      setIsTestingAttendanceTg(false);
     }
   };
 
@@ -867,6 +979,28 @@ export default memo(function Settings() {
     e.preventDefault();
     if (!window.api || cashierPin.length !== 4) return;
     try {
+      if (cashierRole === 'waiter') {
+        const res = await window.api.addWaiter({
+          name: cashierName,
+          pinCode: cashierPin,
+          percentage: Number(cashierPercentage) || 10,
+          salary: Number(cashierSalary) || 0
+        });
+        if (res && res.success) {
+          setCashierName('');
+          setCashierPin('');
+          setCashierRole('cashier');
+          setCashierSalary('');
+          setCashierPercentage('');
+          await loadWaiters();
+          await loadCashiers();
+        } else if (res?.error === 'pin_exists') {
+          setToastMsg(t('pinExists'));
+        } else {
+          setToastMsg('Xatolik: ' + res?.error);
+        }
+        return;
+      }
       const res = await window.api.addCashier({
         name: cashierName,
         pin: cashierPin,
@@ -1156,6 +1290,67 @@ export default memo(function Settings() {
               <button
                 onClick={handleConfirmMobileQrPin}
                 className="flex-1 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-md cursor-pointer"
+              >
+                Tasdiqlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance QR Permission PIN Modal */}
+      {showAttendanceQrPinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center gap-3 mb-4 text-indigo-600 dark:text-indigo-400">
+              <Camera size={28} />
+              <h3 className="font-bold text-lg text-gray-900 dark:text-white">
+                Davomat QR ruxsati
+              </h3>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm font-medium">
+              {allowAttendanceQr
+                ? "Xodimlar davomati QR kodini KASSA OYNASIDAN YASHIRISH uchun maxfiy PIN kodni kiriting:"
+                : "Xodimlar davomati QR kodini KASSA OYNASIDA KO'RSATISH uchun maxfiy PIN kodni kiriting:"}
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
+                Maxfiy PIN kod:
+              </label>
+              <input 
+                type="password" 
+                value={attendanceQrPinInput}
+                onChange={e => {
+                  setAttendanceQrPinInput(e.target.value);
+                  setAttendanceQrPinError('');
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleConfirmAttendanceQrPin();
+                }}
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 text-center font-bold text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white"
+                placeholder="PIN kod..."
+                autoFocus
+              />
+              {attendanceQrPinError && (
+                <p className="text-xs text-rose-500 font-bold mt-2 text-center">
+                  {attendanceQrPinError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowAttendanceQrPinModal(false);
+                  setAttendanceQrPinInput('');
+                  setAttendanceQrPinError('');
+                }}
+                className="flex-1 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-xl transition-colors cursor-pointer"
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={handleConfirmAttendanceQrPin}
+                className="flex-1 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-md cursor-pointer"
               >
                 Tasdiqlash
               </button>
@@ -1996,6 +2191,37 @@ export default memo(function Settings() {
                 </button>
               </div>
 
+              {/* Xodimlar Davomati QR kodi va havolasi ruxsati */}
+              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                    <span className="text-purple-500">📸</span>
+                    Xodimlar Davomati QR kodi (Kassa oynasida ko'rsatish)
+                  </h4>
+                  <span className={`text-xs px-2.5 py-1 font-bold rounded-lg shrink-0 ${allowAttendanceQr ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'}`}>
+                    {allowAttendanceQr ? 'Ruxsat berilgan' : 'Ruxsat berilmagan'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                  Kassa va restoran oyna panellarida xodimlarning keldi/ketdi davomatini selfi orqali qayd etish QR kodini ko'rsatish yoki yashirish. O'zgartirish uchun maxfiy PIN kod talab etiladi.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttendanceQrPinModal(true);
+                    setAttendanceQrPinInput('');
+                    setAttendanceQrPinError('');
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    allowAttendanceQr
+                      ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                      : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                  }`}
+                >
+                  {allowAttendanceQr ? "Ruxsatni bekor qilish va yashirish" : "Ruxsat berish va ko'rsatish"}
+                </button>
+              </div>
+
               {/* Masofaviy boshqaruv (Telefon uchun) */}
               {(isMasterAdmin || allowMobileQr) && (
                 <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
@@ -2412,6 +2638,65 @@ export default memo(function Settings() {
                           </div>
                         </div>
                       )}
+
+                      {/* Card 5: Xodimlar Davomati (Keldi-Ketdi QR) - Asosiy Admin sozlamalarida */}
+                      <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-200/80 dark:border-indigo-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-1.5 uppercase tracking-wide">
+                              <Camera size={16} className="text-indigo-600 dark:text-indigo-400" />
+                              Xodimlar Davomati (Selfi)
+                            </span>
+                            <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-black px-2 py-0.5 rounded-md">
+                              /attendance
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                            Xodimlar ishga kelganida va ketganida telefon kamerasida selfi rasmga tushib davomat qilish havolasi.
+                          </p>
+                          
+                          <div className="flex items-center gap-3">
+                            <div className="shrink-0 bg-white p-2 rounded-xl border border-indigo-200/60 shadow-sm flex items-center justify-center">
+                              <QRCodeCanvas
+                                value={`http://${localIp || 'localhost'}:4000/attendance`}
+                                size={76}
+                                className="bg-white"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
+                              <a
+                                href={`http://${localIp || 'localhost'}:4000/attendance`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-mono font-bold text-indigo-700 dark:text-indigo-400 break-all underline hover:text-indigo-600 block"
+                              >
+                                {`http://${localIp || 'localhost'}:4000/attendance`}
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2 border-t border-indigo-100 dark:border-indigo-900/30">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/attendance`, 'loc-attendance')}
+                            className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            {copiedLink === 'loc-attendance' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                            <span>Nusxalash</span>
+                          </button>
+                          <a
+                            href={`http://${localIp || 'localhost'}:4000/attendance`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <ExternalLink size={14} />
+                            <span>Ochish</span>
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2609,6 +2894,268 @@ export default memo(function Settings() {
                   </h3>
 
                 <div className="space-y-4">
+                  {/* Telegram & Bildirishnomalar (Davomat Boti - Multi-Kafe) */}
+                  <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-900/10 space-y-4">
+                    <div className="flex items-center justify-between gap-3 border-b border-indigo-100 dark:border-indigo-900/30 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">📸</span>
+                        <div>
+                          <h4 className="font-bold text-gray-900 dark:text-white text-sm">
+                            Telegram & Bildirishnomalar (Davomat Boti)
+                          </h4>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Xodimlar selfi fotosi va kelgan vaqti to'g'ridan-to'g'ri filial Telegram guruhiga yuboriladi.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                          Kafe/Restoran nomi:
+                        </label>
+                        <input
+                          type="text"
+                          value={cafeName}
+                          onChange={e => setCafeName(e.target.value)}
+                          placeholder="Masalan: Oqtepa Kattaqo'rg'on"
+                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                            Davomat Boti Tokeni:
+                          </label>
+                          <input
+                            type="text"
+                            value={telegramAttendanceToken}
+                            onChange={e => setTelegramAttendanceToken(e.target.value)}
+                            placeholder="8621843458:AAGBnjR3Lw..."
+                            className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                              Telegram Guruh Chat ID:
+                            </label>
+                            <button
+                              type="button"
+                              disabled={isDetectingAttendanceChatId}
+                              onClick={handleDetectAttendanceChatId}
+                              className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              {isDetectingAttendanceChatId ? (
+                                <span className="w-3 h-3 border border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <span>🔍 ID ni aniqlash (/id)</span>
+                              )}
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            value={telegramAttendanceChatId}
+                            onChange={e => setTelegramAttendanceChatId(e.target.value)}
+                            placeholder="Masalan: -100xxxxxxxxxx"
+                            className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Standart Ish Grafigi (Kelish / Ketish vaqti & Kechikish nazorati) */}
+                      <div className="pt-3 border-t border-indigo-100 dark:border-indigo-900/30">
+                        <h5 className="text-xs font-bold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-1.5">
+                          <Clock size={14} className="text-indigo-600 dark:text-indigo-400" />
+                          Standart Ish Grafigi (Kechikkanlarni avtomatik hisoblash):
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                              Ish boshlanish vaqti (Kelish):
+                            </label>
+                            <input
+                              type="time"
+                              value={workStartTime}
+                              onChange={e => setWorkStartTime(e.target.value)}
+                              className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                              Ish tugash vaqti (Ketish):
+                            </label>
+                            <input
+                              type="time"
+                              value={workEndTime}
+                              onChange={e => setWorkEndTime(e.target.value)}
+                              className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                              Kechikish chegarasi (daqiqa):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="60"
+                              value={lateGraceMinutes}
+                              onChange={e => setLateGraceMinutes(e.target.value)}
+                              placeholder="5"
+                              className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5">
+                          💡 Agar xodim belgilangan vaqtdan ({workStartTime || '09:00'}) {lateGraceMinutes || 5} daqiqadan ko'proq kech kelsa, hisobotlarda dastur avtomatik ravishda kechikkanini va qancha daqiqa kechikkanini hisoblab ko'rsatadi.
+                        </p>
+                      </div>
+                    </div>
+
+                    {attendanceTgStatus && (
+                      <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                        attendanceTgStatus.success
+                          ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                          : 'bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-700'
+                      }`}>
+                        {attendanceTgStatus.success ? (
+                          <>
+                            <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>Guruhga ulandi!</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle size={16} className="text-red-600 dark:text-red-400 shrink-0" />
+                            <span>{attendanceTgStatus.message}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        💡 Guruhga botni qo'shib admin qiling, so'ng test xabar yuborib tekshiring.
+                      </p>
+
+                      <div className="flex gap-2 w-full sm:w-auto shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleSaveAttendanceSettings}
+                          className="px-3.5 py-2 text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Saqlash
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isTestingAttendanceTg}
+                          onClick={handleTestAttendanceTelegram}
+                          className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer whitespace-nowrap"
+                        >
+                          {isTestingAttendanceTg ? (
+                            <>
+                              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Tekshirilmoqda...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>🧪 Guruhga test xabar yuborish</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Davomat QR kodini chop etish va ko'rish */}
+                    <div className="pt-4 border-t border-indigo-100 dark:border-indigo-900/30">
+                      <div className="bg-white dark:bg-gray-800/80 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800/60 flex flex-col md:flex-row items-center gap-5">
+                        <div className="shrink-0 bg-white p-3 rounded-2xl border-2 border-indigo-300 shadow-md flex flex-col items-center justify-center">
+                          <QRCodeCanvas
+                            id="attendance-qr-canvas"
+                            value={`http://${localIp || 'localhost'}:4000/attendance`}
+                            size={120}
+                            className="bg-white"
+                          />
+                          <span className="text-[10px] font-bold text-indigo-700 mt-1 uppercase tracking-wider">Davomat QR</span>
+                        </div>
+                        <div className="flex-1 min-w-0 text-center md:text-left">
+                          <h5 className="font-bold text-sm text-gray-900 dark:text-white flex items-center justify-center md:justify-start gap-2">
+                            <span>📸</span>
+                            Devorga ilish uchun Davomat QR kodi
+                          </h5>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-2">
+                            Ushbu QR kodni chop etib, xodimlar kirish eshigiga yoki kassa yoniga ilib qo'ying. Xodimlar telefon kamerasida skaner qilib selfi tushadi.
+                          </p>
+                          <div className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 break-all bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1.5 rounded-lg inline-block">
+                            {`http://${localIp || 'localhost'}:4000/attendance`}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap md:flex-col gap-2 shrink-0 w-full md:w-auto">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/attendance`, 'att-tg-link')}
+                            className="flex-1 md:flex-initial py-2 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            {copiedLink === 'att-tg-link' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                            <span>Nusxalash</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const printWindow = window.open('', '_blank');
+                              if (printWindow) {
+                                printWindow.document.write(`
+                                  <!DOCTYPE html>
+                                  <html>
+                                  <head>
+                                    <title>Xodimlar Davomati QR - ${storeName || 'POS'}</title>
+                                    <style>
+                                      body { font-family: 'Segoe UI', Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; margin: 0; text-align: center; }
+                                      .card { border: 4px solid #4f46e5; border-radius: 24px; padding: 40px; max-width: 420px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+                                      h1 { font-size: 26px; color: #1e1b4b; margin: 0 0 8px 0; }
+                                      h2 { font-size: 18px; color: #4f46e5; margin: 0 0 20px 0; }
+                                      .qr-box { background: white; padding: 16px; border-radius: 16px; display: inline-block; border: 2px dashed #6366f1; margin-bottom: 20px; }
+                                      p { font-size: 14px; color: #4b5563; margin: 6px 0; line-height: 1.5; }
+                                      .url { font-family: monospace; font-size: 12px; color: #6b7280; margin-top: 15px; word-break: break-all; }
+                                      @media print { button { display: none; } }
+                                    </style>
+                                  </head>
+                                  <body>
+                                    <div class="card">
+                                      <h1>${storeName || 'KORXONA'}</h1>
+                                      <h2>📸 XODIMLAR DAVOMATI</h2>
+                                      <div class="qr-box">
+                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`http://${localIp || 'localhost'}:4000/attendance`)}" width="250" height="250" alt="QR Code" />
+                                      </div>
+                                      <p><strong>1. Telefon kamerasini QR kodga qarating</strong></p>
+                                      <p><strong>2. Ismingizni tanlab, selfi rasmga tushing</strong></p>
+                                      <p><strong>3. "Keldim" yoki "Ketdim" tugmasini bosing</strong></p>
+                                      <div class="url">http://${localIp || 'localhost'}:4000/attendance</div>
+                                    </div>
+                                    <script>
+                                      window.onload = function() { window.print(); }
+                                    </script>
+                                  </body>
+                                  </html>
+                                `);
+                                printWindow.document.close();
+                              }
+                            }}
+                            className="flex-1 md:flex-initial py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                          >
+                            <Printer size={14} />
+                            <span>QR Chop etish</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Telegram Guruhga Zaxiralash */}
                   <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-900/10 space-y-4">
                     <div className="flex items-center justify-between gap-3 border-b border-blue-100 dark:border-blue-900/30 pb-3">
@@ -2970,6 +3517,7 @@ export default memo(function Settings() {
                       <option value="cashier">Kassir</option>
                       <option value="manager">Menejer</option>
                       <option value="cook">Oshpaz</option>
+                      <option value="waiter">Ofitsiant</option>
                       <option value="worker">Ishchi</option>
                       <option value="admin">Asosiy Admin</option>
                     </select>
@@ -3155,8 +3703,8 @@ export default memo(function Settings() {
             </div>
           </div>
 
-          {/* Waiters Management Card (Faqat Asosiy Admin) */}
-          {isMasterAdmin && (
+          {/* Waiters Management Card */}
+          {(businessType === 'restaurant' || isMasterAdmin) && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
               <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
                 <Users className="text-blue-500" size={20} />
@@ -3343,8 +3891,8 @@ export default memo(function Settings() {
             </div>
           )}
 
-          {/* Kafe Xizmat Foiz Stavkasi Card (Faqat Asosiy Admin) */}
-          {isMasterAdmin && (
+          {/* Kafe Xizmat Foiz Stavkasi Card */}
+          {(businessType === 'restaurant' || isMasterAdmin) && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
               <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
                 <Percent className="text-emerald-500" size={20} />

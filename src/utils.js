@@ -32,3 +32,23 @@ export function formatThousands(val) {
   return parts.join('.');
 }
 
+export function getProductImageUrl(imageName) {
+  if (!imageName) return null;
+  if (imageName.startsWith('http://') || imageName.startsWith('https://') || imageName.startsWith('data:')) {
+    return imageName;
+  }
+  const host = window.location.hostname || 'localhost';
+  const port = 4000;
+  return `http://${host}:${port}/product-images/${imageName}`;
+}
+
+export function getAttendancePhotoUrl(imageName) {
+  if (!imageName) return null;
+  if (imageName.startsWith('http://') || imageName.startsWith('https://') || imageName.startsWith('data:')) {
+    return imageName;
+  }
+  const host = window.location.hostname || 'localhost';
+  const port = 4000;
+  return `http://${host}:${port}/attendance-photos/${imageName}`;
+}
+

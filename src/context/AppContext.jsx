@@ -81,12 +81,20 @@ export function AppProvider({ children }) {
   const [businessType, setBusinessType] = useState('retail');
   const [terminalMode, setTerminalMode] = useState(false);
   const [allowMobileQr, setAllowMobileQr] = useState(false);
+  const [allowAttendanceQr, setAllowAttendanceQr] = useState(false);
   const [usdRate, setUsdRate] = useState(12800);
 
   const updateAllowMobileQr = async (val) => {
     setAllowMobileQr(val);
     if (window.api) {
       await window.api.updateSetting({ key: 'allow_mobile_qr', value: val ? 'true' : 'false' });
+    }
+  };
+
+  const updateAllowAttendanceQr = async (val) => {
+    setAllowAttendanceQr(val);
+    if (window.api) {
+      await window.api.updateSetting({ key: 'allow_attendance_qr', value: val ? 'true' : 'false' });
     }
   };
   const [shopLogo, setShopLogoState] = useState(() => {
@@ -147,6 +155,7 @@ export function AppProvider({ children }) {
           if (res.data.business_type) setBusinessType(res.data.business_type);
           if (res.data.terminal_mode) setTerminalMode(res.data.terminal_mode === 'true');
           if (res.data.allow_mobile_qr !== undefined) setAllowMobileQr(res.data.allow_mobile_qr === 'true');
+          if (res.data.allow_attendance_qr !== undefined) setAllowAttendanceQr(res.data.allow_attendance_qr === 'true');
           if (res.data.usd_rate) setUsdRate(parseFloat(res.data.usd_rate) || 12800);
            if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
           if (res.data.label_printer_name) localStorage.setItem('labelPrinterName', res.data.label_printer_name);
@@ -205,6 +214,11 @@ export function AppProvider({ children }) {
         fetchGlobalCustomers();
         window.dispatchEvent(new CustomEvent('debts-updated', { detail: data }));
       });
+
+      socket.on('kitchen-updated', (data) => {
+        console.log('🍳 WebSocket: Kitchen updated...', data);
+        window.dispatchEvent(new CustomEvent('kitchen-updated', { detail: data }));
+      });
     };
 
     if (window.api && typeof window.api.getExpressPort === 'function') {
@@ -235,6 +249,7 @@ export function AppProvider({ children }) {
       currentUser, setCurrentUser, storeName, setStoreName, businessType, setBusinessType, shopLogo, setShopLogo, receiptLogo, setReceiptLogo,
       terminalMode, updateTerminalMode,
       allowMobileQr, setAllowMobileQr, updateAllowMobileQr,
+      allowAttendanceQr, setAllowAttendanceQr, updateAllowAttendanceQr,
       globalProducts, setGlobalProducts, fetchGlobalProducts, productsLoaded,
       globalCustomers, setGlobalCustomers, fetchGlobalCustomers, customersLoaded,
       usdRate, setUsdRate

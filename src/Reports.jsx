@@ -1,14 +1,19 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertTriangle, AlertCircle, X, Plus, Trash2, Users, ArrowLeft, ChevronRight, DollarSign, Percent } from 'lucide-react';
+import { 
+  Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertCircle, AlertTriangle, 
+  X, Plus, Users, ArrowLeft, ChevronRight, DollarSign, Percent, Camera, UserCheck, 
+  Settings as SettingsIcon, Edit2, Trash2, Image, CheckCircle2, UserX, RefreshCw
+} from 'lucide-react';
 
 import { useApp } from './context/AppContext';
-import { formatCurrency, parseSQLiteDate } from './utils';
+import { formatCurrency, parseSQLiteDate, getAttendancePhotoUrl } from './utils';
 import { ConfirmModal, AlertModal } from './components/Modals';
 
-// Helper to convert JS Date to SQLite compatible UTC string (YYYY-MM-DD HH:mm:ss)
-const toSQLiteUTC = (date) => {
+// Helper to convert JS Date to SQLite compatible local string (YYYY-MM-DD HH:mm:ss)
+const toSQLiteLocal = (date) => {
   if (!date || isNaN(date.getTime())) return '';
-  return date.toISOString().replace('T', ' ').substring(0, 19);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 };
 
 export default memo(function Reports({ isActive }) {
@@ -44,17 +49,38 @@ export default memo(function Reports({ isActive }) {
   const [selectedWaitersReport, setSelectedWaitersReport] = useState(null);
   const [selectedWaiterId, setSelectedWaiterId] = useState(null);
   
-  // Staff & Attendance states
-  const [attendanceDate, setAttendanceDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
-  });
-  const [attendanceList, setAttendanceList] = useState([]);
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
-  
-  // Expense State
+  // Staff report states
   const [expenseModal, setExpenseModal] = useState({ isOpen: false, reason: '', amount: '' });
   const [expenseToDelete, setExpenseToDelete] = useState(null);
   const [unsoldDaysLimit, setUnsoldDaysLimit] = useState(10);
+
+  // Attendance report states
+  const [attendanceList, setAttendanceList] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceStaff, setAttendanceStaff] = useState([]);
+  const [attendanceSettings, setAttendanceSettings] = useState({
+    workStartTime: '09:00',
+    workEndTime: '18:00',
+    lateGraceMinutes: 5
+  });
+  const [attendanceFilterStaff, setAttendanceFilterStaff] = useState('all');
+  const [attendanceFilterStatus, setAttendanceFilterStatus] = useState('all');
+  const [viewingPhoto, setViewingPhoto] = useState(null);
+  const [manualAttendanceModal, setManualAttendanceModal] = useState({
+    isOpen: false,
+    id: null,
+    employeeKey: '',
+    date: new Date().toISOString().split('T')[0],
+    checkInTime: '',
+    checkOutTime: ''
+  });
+  const [scheduleModal, setScheduleModal] = useState({
+    isOpen: false,
+    workStartTime: '09:00',
+    workEndTime: '18:00',
+    lateGraceMinutes: '5'
+  });
+  const [attendanceToDelete, setAttendanceToDelete] = useState(null);
 
   useEffect(() => {
     if (filter === 'custom' && customStart && customEnd && customStart.length === 10 && customEnd.length === 10) {
@@ -99,9 +125,45 @@ export default memo(function Reports({ isActive }) {
     }
 
     return {
-      start: toSQLiteUTC(start),
-      end: toSQLiteUTC(end)
+      start: toSQLiteLocal(start),
+      end: toSQLiteLocal(end)
     };
+  };
+
+  const getAttendanceDates = (type) => {
+    const formatDateLocal = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const now = new Date();
+    if (type === 'shift' || type === 'today') {
+      const s = formatDateLocal(now);
+      return { start: s, end: s };
+    }
+    if (type === 'yesterday') {
+      const y = new Date(now);
+      y.setDate(now.getDate() - 1);
+      const s = formatDateLocal(y);
+      return { start: s, end: s };
+    }
+    if (type === 'week') {
+      const day = now.getDay() || 7;
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - day + 1);
+      return { start: formatDateLocal(mon), end: formatDateLocal(now) };
+    }
+    if (type === 'month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start: formatDateLocal(firstDay), end: formatDateLocal(now) };
+    }
+    if (type === 'custom') {
+      return { start: customStart, end: customEnd };
+    }
+    const s = formatDateLocal(now);
+    return { start: s, end: s };
   };
 
   // ── Data fetching ──────────────────────────────────────────────────────────
@@ -173,55 +235,124 @@ export default memo(function Reports({ isActive }) {
     }
   };
 
-  const fetchAttendance = async (dateStr, showLoader = true) => {
-    if (!window.api || !window.api.getAttendance) return;
+  const fetchAttendanceData = async (showLoader = false) => {
+    if (!window.api || !window.api.getAttendanceReport) return;
     if (showLoader) setAttendanceLoading(true);
     try {
-      const res = await window.api.getAttendance(dateStr);
+      const dates = getAttendanceDates(filter);
+      const res = await window.api.getAttendanceReport(dates.start, dates.end);
       if (res && res.success) {
         setAttendanceList(res.data || []);
+        if (res.allStaff) setAttendanceStaff(res.allStaff);
+        setAttendanceSettings({
+          workStartTime: res.workStartTime || '09:00',
+          workEndTime: res.workEndTime || '18:00',
+          lateGraceMinutes: Number(res.lateGraceMinutes ?? 5)
+        });
+        setScheduleModal(prev => ({
+          ...prev,
+          workStartTime: res.workStartTime || '09:00',
+          workEndTime: res.workEndTime || '18:00',
+          lateGraceMinutes: String(res.lateGraceMinutes ?? 5)
+        }));
       }
     } catch (err) {
-      console.error(err);
+      console.error("fetchAttendanceData error:", err);
     } finally {
-      if (showLoader) setAttendanceLoading(false);
+      setAttendanceLoading(false);
     }
   };
 
-  const handleSetAttendance = async (employeeId, employeeType, newStatus) => {
-    if (!window.api || !window.api.saveAttendance) return;
-    
-    // Optimistic UI Update
-    setAttendanceList(prevList => 
-      prevList.map(emp => 
-        (emp.id === employeeId && emp.type === employeeType) 
-          ? { ...emp, status: newStatus } 
-          : emp
-      )
-    );
-
+  const handleSaveManualAttendance = async (e) => {
+    e.preventDefault();
+    if (!manualAttendanceModal.employeeKey || !manualAttendanceModal.date) {
+      setAlertState({
+        isOpen: true,
+        title: "Xatolik",
+        message: "Xodim va sana kiritilishi shart!"
+      });
+      return;
+    }
+    const [empType, empId] = manualAttendanceModal.employeeKey.split('_');
     try {
-      const res = await window.api.saveAttendance({
-        employeeId,
-        employeeType,
-        date: attendanceDate,
-        status: newStatus
+      const res = await window.api.saveManualAttendance({
+        employeeId: parseInt(empId, 10),
+        employeeType: empType,
+        date: manualAttendanceModal.date,
+        checkInTime: manualAttendanceModal.checkInTime || null,
+        checkOutTime: manualAttendanceModal.checkOutTime || null
       });
       if (res && res.success) {
-        await fetchAttendance(attendanceDate, false);
-        await fetchReports(false);
+        setManualAttendanceModal({
+          isOpen: false,
+          id: null,
+          employeeKey: '',
+          date: new Date().toISOString().split('T')[0],
+          checkInTime: '',
+          checkOutTime: ''
+        });
+        fetchAttendanceData();
+      } else {
+        setAlertState({
+          isOpen: true,
+          title: "Xatolik",
+          message: res?.error || "Davomatni saqlab bo'lmadi"
+        });
       }
     } catch (err) {
-      console.error(err);
-      await fetchAttendance(attendanceDate, false);
+      setAlertState({
+        isOpen: true,
+        title: "Xatolik",
+        message: err.message
+      });
     }
   };
 
-  useEffect(() => {
-    if (reportSubTab === 'staff') {
-      fetchAttendance(attendanceDate);
+  const handleSaveScheduleSettings = async (e) => {
+    e.preventDefault();
+    try {
+      await window.api.updateSetting('work_start_time', scheduleModal.workStartTime);
+      await window.api.updateSetting('work_end_time', scheduleModal.workEndTime);
+      await window.api.updateSetting('late_grace_minutes', scheduleModal.lateGraceMinutes);
+      setAttendanceSettings({
+        workStartTime: scheduleModal.workStartTime,
+        workEndTime: scheduleModal.workEndTime,
+        lateGraceMinutes: parseInt(scheduleModal.lateGraceMinutes || '5', 10)
+      });
+      setScheduleModal(prev => ({ ...prev, isOpen: false }));
+      fetchAttendanceData();
+    } catch (err) {
+      setAlertState({
+        isOpen: true,
+        title: "Xatolik",
+        message: err.message
+      });
     }
-  }, [reportSubTab, attendanceDate]);
+  };
+
+  const confirmDeleteAttendance = async () => {
+    if (!attendanceToDelete) return;
+    try {
+      const res = await window.api.deleteAttendanceRecord(attendanceToDelete);
+      if (res && res.success) {
+        fetchAttendanceData();
+      } else {
+        setAlertState({
+          isOpen: true,
+          title: "Xatolik",
+          message: res?.error || "Davomat yozuvini o'chirishda xatolik yuz berdi"
+        });
+      }
+    } catch (err) {
+      setAlertState({
+        isOpen: true,
+        title: "Xatolik",
+        message: err.message
+      });
+    } finally {
+      setAttendanceToDelete(null);
+    }
+  };
 
   // Effect 1 — Fetch when tab is active or filter/dates change.
   useEffect(() => {
@@ -236,8 +367,11 @@ export default memo(function Reports({ isActive }) {
         fetchSingleWaiterReport(selectedWaiterId);
       }
     }
+    if (reportSubTab === 'attendance') {
+      fetchAttendanceData(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, filterKey, businessType, selectedWaiterId]);
+  }, [isActive, filterKey, businessType, selectedWaiterId, reportSubTab]);
 
   useEffect(() => {
     if (reportSubTab === 'waiters' && businessType === 'restaurant') {
@@ -245,6 +379,8 @@ export default memo(function Reports({ isActive }) {
       if (selectedWaiterId) {
         fetchSingleWaiterReport(selectedWaiterId);
       }
+    } else if (reportSubTab === 'attendance') {
+      fetchAttendanceData(true);
     }
   }, [reportSubTab, selectedWaiterId, filterKey, businessType]);
 
@@ -255,16 +391,26 @@ export default memo(function Reports({ isActive }) {
       if (isActive) {
         fetchReports(false);
         fetchLowStock();
+        if (reportSubTab === 'attendance') {
+          fetchAttendanceData(false);
+        }
+      }
+    };
+    const handleAttendanceUpdate = () => {
+      if (isActive && reportSubTab === 'attendance') {
+        fetchAttendanceData(false);
       }
     };
     window.addEventListener('sales-updated', handleUpdate);
     window.addEventListener('debts-updated', handleUpdate);
+    window.addEventListener('attendance-updated', handleAttendanceUpdate);
     return () => {
       window.removeEventListener('sales-updated', handleUpdate);
       window.removeEventListener('debts-updated', handleUpdate);
+      window.removeEventListener('attendance-updated', handleAttendanceUpdate);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, filterKey]);
+  }, [isActive, filterKey, reportSubTab]);
 
 
 
@@ -295,7 +441,7 @@ export default memo(function Reports({ isActive }) {
   const confirmDeleteExpense = async () => {
     if (!expenseToDelete) return;
     try {
-      const res = await window.api.deleteExpense(expenseToDelete);
+      const res = await window.api.deleteExpense(expenseToDelete, currentUser?.name || 'Admin');
       if (res && res.success) {
         fetchReports();
       } else {
@@ -346,12 +492,20 @@ export default memo(function Reports({ isActive }) {
       }
     ] : []),
     { 
-      title: t('debtIssued'), 
-      value: data.totalDebtIssued, 
-      icon: Clock, 
-      color: 'bg-orange-500', 
-      bg: 'bg-orange-50 dark:bg-orange-900/20',
-      text: 'text-orange-600 dark:text-orange-400' 
+      title: lang === 'uz' ? 'Kirim (Xaridlar / Faktura)' : 'Закупки (Приход)', 
+      value: data.totalPurchases || 0, 
+      icon: Package, 
+      color: 'bg-teal-600', 
+      bg: 'bg-teal-50 dark:bg-teal-900/20',
+      text: 'text-teal-700 dark:text-teal-300' 
+    },
+    { 
+      title: lang === 'uz' ? 'Tannarx (Sotilgan mahsulot)' : 'Себестоимость (COGS)', 
+      value: data.totalCogs || 0, 
+      icon: DollarSign, 
+      color: 'bg-cyan-600', 
+      bg: 'bg-cyan-50 dark:bg-cyan-900/20',
+      text: 'text-cyan-700 dark:text-cyan-300' 
     },
     { 
       title: 'Chiqim (Rasxod)', 
@@ -360,6 +514,22 @@ export default memo(function Reports({ isActive }) {
       color: 'bg-red-500', 
       bg: 'bg-red-50 dark:bg-red-900/20',
       text: 'text-red-600 dark:text-red-400' 
+    },
+    { 
+      title: lang === 'uz' ? 'Spisaniya (Chiqim/Ziyon)' : 'Списание (Убыль/Брак)', 
+      value: data.totalWriteOffs || 0, 
+      icon: AlertTriangle, 
+      color: 'bg-rose-500', 
+      bg: 'bg-rose-50 dark:bg-rose-900/20',
+      text: 'text-rose-600 dark:text-rose-400' 
+    },
+    { 
+      title: t('debtIssued'), 
+      value: data.totalDebtIssued, 
+      icon: Clock, 
+      color: 'bg-orange-500', 
+      bg: 'bg-orange-50 dark:bg-orange-900/20',
+      text: 'text-orange-600 dark:text-orange-400' 
     },
     { 
       title: lang === 'uz' ? "Qarz to'lovi (yig'ilgan)" : 'Оплата долга (собрано)', 
@@ -389,151 +559,78 @@ export default memo(function Reports({ isActive }) {
 
   const renderStaffReportView = () => {
     return (
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-200">
-        {/* Left Column: Attendance Toggle Sheet */}
-        <div className="xl:col-span-1 bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-          <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
-            <Users className="text-blue-500" size={20} />
-            Kundalik Davomat
-          </h3>
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
-              Davomat Sanasi
-            </label>
-            <input
-              type="date"
-              value={attendanceDate}
-              onChange={e => setAttendanceDate(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-          </div>
-          {attendanceLoading ? (
-            <div className="flex justify-center py-12">
-              <Clock className="animate-spin text-gray-400" size={24} />
-            </div>
-          ) : (
-            <div className="space-y-2 flex-1 overflow-y-auto max-h-[450px] pr-1">
-              {attendanceList.length === 0 ? (
-                <div className="text-center py-12 text-gray-400">Xodimlar topilmadi.</div>
-              ) : (
-                attendanceList.map(emp => {
-                  return (
-                    <div key={`${emp.type}_${emp.id}`} className="flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/30">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-gray-800 dark:text-gray-200 text-sm">
-                          {emp.name}
-                        </span>
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider">
-                          {emp.type === 'waiter' ? 'Ofitsiant' : (emp.role === 'admin' ? 'Admin' : emp.role === 'manager' ? 'Menejer' : 'Kassir')}
-                        </span>
-                      </div>
-                      <div className="flex gap-1.5 shrink-0">
-                        <button
-                          onClick={() => handleSetAttendance(emp.id, emp.type, 'present')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                            emp.status === 'present'
-                              ? 'bg-emerald-500/15 dark:bg-emerald-950/30 border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25'
-                              : 'bg-gray-100 dark:bg-gray-700/60 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          }`}
-                        >
-                          Keldi
-                        </button>
-                        <button
-                          onClick={() => handleSetAttendance(emp.id, emp.type, 'absent')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                            emp.status === 'absent'
-                              ? 'bg-red-500/15 dark:bg-red-950/30 border-red-500 text-red-600 dark:text-red-400 hover:bg-red-500/25'
-                              : 'bg-gray-100 dark:bg-gray-700/60 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          }`}
-                        >
-                          Kelmadi
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
+      <div className="w-full bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
+          <Banknote className="text-emerald-500" size={20} />
+          Oylik Maosh va Statistikalar
+        </h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">
+          Davr: <span className="font-bold text-gray-700 dark:text-gray-300">{filter === 'custom' ? `${customStart} dan ${customEnd} gacha` : filter}</span> bo'yicha hisoblangan oylik maoshlar:
+        </p>
 
-        {/* Right Column: Salaries Table */}
-        <div className="xl:col-span-2 bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col">
-          <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
-            <Banknote className="text-emerald-500" size={20} />
-            Oylik Maosh va Statistikalar
-          </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">
-            Davr: <span className="font-bold text-gray-700 dark:text-gray-300">{filter === 'custom' ? `${customStart} dan ${customEnd} gacha` : filter}</span> bo'yicha hisoblangan oylik maoshlar:
-          </p>
-
-          <div className="overflow-x-auto flex-1">
-            <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
-              <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs uppercase font-bold text-gray-700 dark:text-gray-300">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+            <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs uppercase font-bold text-gray-700 dark:text-gray-300">
+              <tr>
+                <th className="px-4 py-3 rounded-l-lg">Xodim</th>
+                <th className="px-4 py-3">Lavozimi</th>
+                <th className="px-4 py-3 text-right">Asosiy oylik</th>
+                <th className="px-4 py-3 text-right">Hisoblangan oylik</th>
+                {businessType === 'restaurant' && <th className="px-4 py-3 text-right">Komissiya</th>}
+                <th className="px-4 py-3 text-right rounded-r-lg">Jami oylik</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {(data.cashiersList || []).length === 0 && (data.waitersList || []).length === 0 ? (
                 <tr>
-                  <th className="px-4 py-3 rounded-l-lg">Xodim</th>
-                  <th className="px-4 py-3">Lavozimi</th>
-                  <th className="px-4 py-3 text-right">Asosiy oylik</th>
-                  <th className="px-4 py-3 text-center">Kelgan kunlari</th>
-                  <th className="px-4 py-3 text-right">Hisoblangan oylik</th>
-                  {businessType === 'restaurant' && <th className="px-4 py-3 text-right">Komissiya</th>}
-                  <th className="px-4 py-3 text-right rounded-r-lg">Jami oylik</th>
+                  <td colSpan={businessType === 'restaurant' ? 6 : 5} className="text-center py-8 text-gray-400">
+                    Ma'lumotlar mavjud emas.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {(data.cashiersList || []).length === 0 && (data.waitersList || []).length === 0 ? (
-                  <tr>
-                    <td colSpan={businessType === 'restaurant' ? 7 : 6} className="text-center py-8 text-gray-400">
-                      Ma'lumotlar mavjud emas.
-                    </td>
-                  </tr>
-                ) : (
-                  <>
-                    {(data.cashiersList || []).map(c => (
-                      <tr key={`cashier_${c.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{c.name}</td>
-                        <td className="px-4 py-3 text-xs uppercase text-gray-500">
-                          {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : 'Kassir'}
+              ) : (
+                <>
+                  {(data.cashiersList || []).map(c => (
+                    <tr key={`cashier_${c.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{c.name}</td>
+                      <td className="px-4 py-3 text-xs uppercase text-gray-500">
+                        {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : 'Kassir'}
+                      </td>
+                      <td className="px-4 py-3 text-right">{formatCurrency(c.salary, lang)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
+                        {formatCurrency(c.earned_salary || 0, lang)}
+                      </td>
+                      {businessType === 'restaurant' && (
+                        <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
+                          {c.commissions > 0 ? `${formatCurrency(c.commissions, lang)} (${c.percentage}%)` : (c.percentage > 0 ? `${c.percentage}%` : '-')}
                         </td>
-                        <td className="px-4 py-3 text-right">{formatCurrency(c.salary, lang)}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-gray-700 dark:text-gray-300">{c.present_days || 0} kun</td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
-                          {formatCurrency(c.earned_salary || 0, lang)}
+                      )}
+                      <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(c.total_earned || 0, lang)}
+                      </td>
+                    </tr>
+                  ))}
+                  {(data.waitersList || []).map(w => (
+                    <tr key={`waiter_${w.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{w.name}</td>
+                      <td className="px-4 py-3 text-xs uppercase text-gray-500">Ofitsiant ({w.percentage}%)</td>
+                      <td className="px-4 py-3 text-right">{formatCurrency(w.salary, lang)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
+                        {formatCurrency(w.earned_salary || 0, lang)}
+                      </td>
+                      {businessType === 'restaurant' && (
+                        <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
+                          {formatCurrency(w.commissions || 0, lang)}
                         </td>
-                        {businessType === 'restaurant' && (
-                          <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
-                            {c.commissions > 0 ? `${formatCurrency(c.commissions, lang)} (${c.percentage}%)` : (c.percentage > 0 ? `${c.percentage}%` : '-')}
-                          </td>
-                        )}
-                        <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(c.total_earned || 0, lang)}
-                        </td>
-                      </tr>
-                    ))}
-                    {(data.waitersList || []).map(w => (
-                      <tr key={`waiter_${w.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{w.name}</td>
-                        <td className="px-4 py-3 text-xs uppercase text-gray-500">Ofitsiant ({w.percentage}%)</td>
-                        <td className="px-4 py-3 text-right">{formatCurrency(w.salary, lang)}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-gray-700 dark:text-gray-300">{w.present_days || 0} kun</td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
-                          {formatCurrency(w.earned_salary || 0, lang)}
-                        </td>
-                        {businessType === 'restaurant' && (
-                          <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
-                            {formatCurrency(w.commissions || 0, lang)}
-                          </td>
-                        )}
-                        <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(w.total_earned || 0, lang)}
-                        </td>
-                      </tr>
-                    ))}
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                      <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(w.total_earned || 0, lang)}
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     );
@@ -807,6 +904,421 @@ export default memo(function Reports({ isActive }) {
     );
   };
 
+  const renderAttendanceReportView = () => {
+    // Filter list
+    const filteredList = attendanceList.filter(item => {
+      // 1. Staff filter
+      if (attendanceFilterStaff !== 'all') {
+        const key = `${item.employee_type}_${item.employee_id}`;
+        if (key !== attendanceFilterStaff) return false;
+      }
+      // 2. Status filter
+      if (attendanceFilterStatus === 'late') {
+        return item.is_late;
+      }
+      if (attendanceFilterStatus === 'on_time') {
+        return item.check_in_time && !item.is_late;
+      }
+      if (attendanceFilterStatus === 'working') {
+        return item.check_in_time && !item.check_out_time;
+      }
+      if (attendanceFilterStatus === 'completed') {
+        return item.check_in_time && item.check_out_time;
+      }
+      if (attendanceFilterStatus === 'absent') {
+        return !item.check_in_time;
+      }
+      return true;
+    });
+
+    // Summary calculations
+    const totalStaffCount = attendanceStaff.length > 0 ? attendanceStaff.length : attendanceList.length;
+    const presentCount = attendanceList.filter(i => !!i.check_in_time).length;
+    const lateCount = attendanceList.filter(i => i.is_late).length;
+    const workingCount = attendanceList.filter(i => !!i.check_in_time && !i.check_out_time).length;
+    const completedList = attendanceList.filter(i => i.worked_minutes > 0);
+    const avgMinutes = completedList.length > 0 
+      ? Math.round(completedList.reduce((sum, i) => sum + i.worked_minutes, 0) / completedList.length)
+      : 0;
+    const avgDurationText = avgMinutes > 0 
+      ? `${Math.floor(avgMinutes / 60)} soat ${avgMinutes % 60 > 0 ? (avgMinutes % 60) + ' daq' : ''}`.trim()
+      : '-';
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-200">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                Jami xodimlar
+              </p>
+              <h3 className="text-2xl font-black text-gray-900 dark:text-white">
+                {totalStaffCount} nafar
+              </h3>
+            </div>
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
+              <Users size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">
+                Kelganlar (Davomat)
+              </p>
+              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                {presentCount} nafar
+              </h3>
+            </div>
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
+              <UserCheck size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-amber-200 dark:border-amber-800/40 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1">
+                Kechikkanlar
+              </p>
+              <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                {lateCount} nafar
+                {lateCount > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 font-bold">⚠️ Ogohlantirish</span>}
+              </h3>
+            </div>
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl">
+              <AlertTriangle size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">
+                Hozir ishda
+              </p>
+              <h3 className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                {workingCount} nafar
+              </h3>
+            </div>
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl">
+              <Clock size={22} />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider mb-1">
+                O'rtacha ishlash
+              </p>
+              <h3 className="text-2xl font-black text-teal-600 dark:text-teal-400">
+                {avgDurationText}
+              </h3>
+            </div>
+            <div className="p-3 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-xl">
+              <TrendingUp size={22} />
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar & Filters */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Staff filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Xodim:</span>
+              <select
+                value={attendanceFilterStaff}
+                onChange={(e) => setAttendanceFilterStaff(e.target.value)}
+                className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Barcha xodimlar</option>
+                {attendanceStaff.map((s) => (
+                  <option key={`${s.type}_${s.id}`} value={`${s.type}_${s.id}`}>
+                    {s.name} ({s.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Holati:</span>
+              <select
+                value={attendanceFilterStatus}
+                onChange={(e) => setAttendanceFilterStatus(e.target.value)}
+                className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Barcha holatlar</option>
+                <option value="late">⚠️ Faqat kechikkanlar</option>
+                <option value="on_time">✅ Vaqtida kelganlar</option>
+                <option value="working">🕒 Hozir ishda bo'lganlar</option>
+                <option value="completed">🏁 Ishni yakunlaganlar</option>
+                <option value="absent">🔴 Kelmaganlar</option>
+              </select>
+            </div>
+
+            {/* Active Work Schedule Display */}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold border border-blue-200/60 dark:border-blue-800/40">
+              <Clock size={14} />
+              Ish grafigi: <span className="font-bold">{attendanceSettings.workStartTime} - {attendanceSettings.workEndTime}</span>
+              <span className="text-[11px] opacity-75">(Chegara: +{attendanceSettings.lateGraceMinutes}m)</span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => setScheduleModal({
+                isOpen: true,
+                workStartTime: attendanceSettings.workStartTime,
+                workEndTime: attendanceSettings.workEndTime,
+                lateGraceMinutes: String(attendanceSettings.lateGraceMinutes)
+              })}
+              className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+              title="Standart ish vaqti grafigini sozlash"
+            >
+              <SettingsIcon size={15} />
+              Ish grafigi
+            </button>
+
+            <button
+              onClick={() => {
+                setManualAttendanceModal({
+                  isOpen: true,
+                  id: null,
+                  employeeKey: attendanceStaff.length > 0 ? `${attendanceStaff[0].type}_${attendanceStaff[0].id}` : '',
+                  date: new Date().toISOString().split('T')[0],
+                  checkInTime: attendanceSettings.workStartTime || '09:00',
+                  checkOutTime: ''
+                });
+              }}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-blue-500/20 active:scale-95"
+            >
+              <Plus size={15} />
+              Qo'lda davomat kiritish
+            </button>
+
+            <button
+              onClick={() => fetchAttendanceData(true)}
+              disabled={attendanceLoading}
+              className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              title="Yangilash"
+            >
+              <RefreshCw size={15} className={attendanceLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </div>
+
+        {/* Attendance Table */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+              <UserCheck size={20} className="text-blue-500" />
+              Davomat jurnali ({filteredList.length} ta yozuv)
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              * Kamerada rasm olinmagan bo'lsa ham kelgan va ketgan vaqtlari avtomatik hisoblanadi
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs uppercase font-bold text-gray-700 dark:text-gray-300">
+                <tr>
+                  <th className="px-4 py-3 rounded-l-lg">Xodim</th>
+                  <th className="px-4 py-3">Sana</th>
+                  <th className="px-4 py-3">Kelgan vaqti</th>
+                  <th className="px-4 py-3">Ketgan vaqti</th>
+                  <th className="px-4 py-3">Ishlagan vaqti</th>
+                  <th className="px-4 py-3">Holati / Kechikish</th>
+                  <th className="px-4 py-3 text-center">Rasm (Selfi)</th>
+                  <th className="px-4 py-3 rounded-r-lg text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {filteredList.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="text-center py-12 text-gray-400 dark:text-gray-500 font-medium">
+                      Tanlangan filtr va davr bo'yicha hech qanday davomat yozuvi topilmadi.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredList.map((item, idx) => {
+                    const rowKey = item.id ? `att_${item.id}` : `absent_${item.employee_type}_${item.employee_id}_${item.date}_${idx}`;
+                    return (
+                      <tr key={rowKey} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                        {/* Employee info */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900 dark:text-white text-sm">
+                              {item.employee_name}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                              item.employee_type === 'cashier' 
+                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' 
+                                : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                            }`}>
+                              {item.role || (item.employee_type === 'cashier' ? 'Kassir' : 'Ofitsiant')}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Date */}
+                        <td className="px-4 py-3.5 whitespace-nowrap font-medium text-gray-700 dark:text-gray-300 text-xs">
+                          {item.date}
+                        </td>
+
+                        {/* Check In */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {item.check_in_time ? (
+                            <span className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 text-sm">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              {item.check_in_time}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
+                          )}
+                        </td>
+
+                        {/* Check Out */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {item.check_out_time ? (
+                            <span className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 text-sm">
+                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                              {item.check_out_time}
+                            </span>
+                          ) : item.check_in_time ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300">
+                              Hali ketmadi
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
+                          )}
+                        </td>
+
+                        {/* Worked duration */}
+                        <td className="px-4 py-3.5 whitespace-nowrap font-semibold text-gray-800 dark:text-gray-200">
+                          {item.worked_duration_text || (item.check_in_time && !item.check_out_time ? "Davom etmoqda..." : "-")}
+                        </td>
+
+                        {/* Status & Lateness */}
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {item.is_late ? (
+                            <div className="inline-flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                {item.late_minutes} daqiqa kechikdi
+                              </span>
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 pl-1">
+                                Ish vaqti: {attendanceSettings.workStartTime}
+                              </span>
+                            </div>
+                          ) : item.check_in_time ? (
+                            <div className="inline-flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                Vaqtida kelgan
+                              </span>
+                              {item.is_early_departure && (
+                                <span className="text-[10px] text-orange-600 dark:text-orange-400 pl-1 font-semibold">
+                                  ⚠️ {item.early_minutes} daq vaqtli ketdi
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700/60 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                              <UserX size={13} />
+                              Hali kelmadi
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Photo Selfie Thumbnails */}
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                          {item.check_in_photo || item.check_out_photo ? (
+                            <div className="flex items-center justify-center gap-2">
+                              {item.check_in_photo && (
+                                <button
+                                  onClick={() => setViewingPhoto({
+                                    url: getAttendancePhotoUrl(item.check_in_photo),
+                                    title: `${item.employee_name} — Kelgan vaqti selfisi (${item.check_in_time || ''})`
+                                  })}
+                                  className="w-8 h-8 rounded-lg overflow-hidden border border-emerald-300 hover:scale-110 transition-transform shadow-xs cursor-pointer"
+                                  title="Kelgan vaqtidagi rasm"
+                                >
+                                  <img
+                                    src={getAttendancePhotoUrl(item.check_in_photo)}
+                                    alt="Keldi"
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
+                              )}
+                              {item.check_out_photo && (
+                                <button
+                                  onClick={() => setViewingPhoto({
+                                    url: getAttendancePhotoUrl(item.check_out_photo),
+                                    title: `${item.employee_name} — Ketgan vaqti selfisi (${item.check_out_time || ''})`
+                                  })}
+                                  className="w-8 h-8 rounded-lg overflow-hidden border border-blue-300 hover:scale-110 transition-transform shadow-xs cursor-pointer"
+                                  title="Ketgan vaqtidagi rasm"
+                                >
+                                  <img
+                                    src={getAttendancePhotoUrl(item.check_out_photo)}
+                                    alt="Ketdi"
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500 italic">
+                              Rasm yo'q (Dasturdan)
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setManualAttendanceModal({
+                                  isOpen: true,
+                                  id: item.id,
+                                  employeeKey: `${item.employee_type}_${item.employee_id}`,
+                                  date: item.date,
+                                  checkInTime: item.check_in_time || '',
+                                  checkOutTime: item.check_out_time || ''
+                                });
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors cursor-pointer"
+                              title="Tahrirlash (Vaqtlarni kiritish)"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            {item.id && (
+                              <button
+                                onClick={() => setAttendanceToDelete(item.id)}
+                                className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
+                                title="O'chirish"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6 transition-colors pb-6">
       {/* Header & Filter */}
@@ -907,14 +1419,27 @@ export default memo(function Reports({ isActive }) {
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
             }`}
           >
-            Xodimlar va Davomat
+            Xodimlar maoshi
           </button>
         )}
+        <button
+          onClick={() => { setReportSubTab('attendance'); setSelectedWaiterId(null); setSelectedWaitersReport(null); }}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            reportSubTab === 'attendance'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
+          }`}
+        >
+          <UserCheck size={16} />
+          Xodimlar davomati
+        </button>
       </div>
 
       {/* Dashboard Content (Fades during loading) */}
-      <div className={`transition-all duration-200 space-y-6 ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
-        {businessType === 'restaurant' && reportSubTab === 'staff' ? (
+      <div className={`transition-all duration-200 space-y-6 ${(loading || (reportSubTab === 'attendance' && attendanceLoading)) ? 'opacity-50 pointer-events-none' : ''}`}>
+        {reportSubTab === 'attendance' ? (
+          renderAttendanceReportView()
+        ) : businessType === 'restaurant' && reportSubTab === 'staff' ? (
           renderStaffReportView()
         ) : businessType === 'restaurant' && reportSubTab === 'waiters' ? (
           renderWaitersReportView()
@@ -945,6 +1470,12 @@ export default memo(function Reports({ isActive }) {
                     <span>Chiqim (Rasxod):</span>
                     <span className="font-semibold text-red-500">-{formatCurrency(data.totalExpenses || 0, lang)}</span>
                   </div>
+                  {data.totalWriteOffs > 0 && (
+                    <div className="flex justify-between">
+                      <span>Spisaniya (Chiqim):</span>
+                      <span className="font-semibold text-red-500">-{formatCurrency(data.totalWriteOffs || 0, lang)}</span>
+                    </div>
+                  )}
                   {businessType === 'restaurant' && (
                     <>
                       <div className="flex justify-between">
@@ -1394,6 +1925,236 @@ export default memo(function Reports({ isActive }) {
           </div>
         </div>
       )}
+
+      {/* Manual Attendance Modal */}
+      {manualAttendanceModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-100 dark:border-gray-700 animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <UserCheck className="text-blue-500" size={20} />
+                {manualAttendanceModal.id ? "Davomatni tahrirlash" : "Qo'lda davomat kiritish"}
+              </h3>
+              <button
+                onClick={() => setManualAttendanceModal({ ...manualAttendanceModal, isOpen: false })}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveManualAttendance} className="p-6 space-y-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Kamera yoki selfi rasmi shart emas. Kelgan va ketgan vaqtlarini belgilang, dastur kechikishni avtomatik hisoblab beradi.
+              </p>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  Xodim
+                </label>
+                <select
+                  required
+                  value={manualAttendanceModal.employeeKey}
+                  onChange={(e) => setManualAttendanceModal({ ...manualAttendanceModal, employeeKey: e.target.value })}
+                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                >
+                  <option value="" disabled>Xodimni tanlang</option>
+                  {attendanceStaff.map((s) => (
+                    <option key={`${s.type}_${s.id}`} value={`${s.type}_${s.id}`}>
+                      {s.name} ({s.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  Sana
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={manualAttendanceModal.date}
+                  onChange={(e) => setManualAttendanceModal({ ...manualAttendanceModal, date: e.target.value })}
+                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                    Kelgan vaqti
+                  </label>
+                  <input
+                    type="time"
+                    value={manualAttendanceModal.checkInTime}
+                    onChange={(e) => setManualAttendanceModal({ ...manualAttendanceModal, checkInTime: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                    Ketgan vaqti
+                  </label>
+                  <input
+                    type="time"
+                    value={manualAttendanceModal.checkOutTime}
+                    onChange={(e) => setManualAttendanceModal({ ...manualAttendanceModal, checkOutTime: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setManualAttendanceModal({ ...manualAttendanceModal, isOpen: false })}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-semibold transition-colors"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 transition-all active:scale-[0.98]"
+                >
+                  Saqlash
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Work Schedule Modal */}
+      {scheduleModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-100 dark:border-gray-700 animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <SettingsIcon className="text-blue-500" size={20} />
+                Ish vaqti grafigi sozlamalari
+              </h3>
+              <button
+                onClick={() => setScheduleModal({ ...scheduleModal, isOpen: false })}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveScheduleSettings} className="p-6 space-y-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Xodimlarning kechikishini avtomatik hisoblash uchun standart ish vaqtlari:
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                    Ish boshlanishi
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={scheduleModal.workStartTime}
+                    onChange={(e) => setScheduleModal({ ...scheduleModal, workStartTime: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-center"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                    Ish tugashi
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={scheduleModal.workEndTime}
+                    onChange={(e) => setScheduleModal({ ...scheduleModal, workEndTime: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  Kechikish chegarasi (daqiqa)
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  max="120"
+                  value={scheduleModal.lateGraceMinutes}
+                  onChange={(e) => setScheduleModal({ ...scheduleModal, lateGraceMinutes: e.target.value })}
+                  placeholder="5"
+                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                />
+                <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-1 block">
+                  Masalan: 5 daqiqa belgilansa, 09:05 gacha kelganlar kechikmagan hisoblanadi.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setScheduleModal({ ...scheduleModal, isOpen: false })}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-semibold transition-colors"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 transition-all active:scale-[0.98]"
+                >
+                  Saqlash
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Selfie Photo Preview Modal */}
+      {viewingPhoto && (
+        <div 
+          onClick={() => setViewingPhoto(null)}
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
+          >
+            <div className="px-5 py-3.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+              <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Camera size={16} className="text-blue-500" />
+                {viewingPhoto.title}
+              </h4>
+              <button 
+                onClick={() => setViewingPhoto(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center bg-black/10 dark:bg-black/40">
+              <img 
+                src={viewingPhoto.url} 
+                alt="Davomat selfisi"
+                className="max-h-[70vh] rounded-xl object-contain shadow-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Record Delete Confirm Modal */}
+      <ConfirmModal
+        isOpen={!!attendanceToDelete}
+        title="Davomat yozuvini o'chirish"
+        message="Rostdan ham ushbu davomat yozuvini o'chirmoqchimisiz? Bu amalni ortga qaytarib bo'lmaydi."
+        onConfirm={confirmDeleteAttendance}
+        onCancel={() => setAttendanceToDelete(null)}
+        confirmText="O'chirish"
+      />
 
       <ConfirmModal
         isOpen={!!expenseToDelete}

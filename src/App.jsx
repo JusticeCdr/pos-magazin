@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ShoppingCart, Package, PackageSearch, Users, BarChart3, Moon, Sun, Globe, LogOut, CheckCircle, X, ChefHat, Tv } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { ShoppingCart, Package, PackageSearch, Users, BarChart3, Moon, Sun, Globe, LogOut, CheckCircle, X, ChefHat, Tv, Ban } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import Cashier from './Cashier';
 import RestaurantCashier from './RestaurantCashier';
@@ -14,8 +14,12 @@ import AiBashoratchi from './AiBashoratchi';
 import ShiftModal from './components/ShiftModal';
 import KitchenDisplay from './KitchenDisplay';
 import TvQueueDisplay from './TvQueueDisplay';
+import AttendanceCheck from './AttendanceCheck';
+import DirectorDashboard from './DirectorDashboard';
+import StopListModal from './components/StopListModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles } from 'lucide-react';
+import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles, ClipboardCheck } from 'lucide-react';
+import InventoryAudit from './InventoryAudit';
 import { logoBase64 } from './logoBase64';
 import { parseSQLiteDate } from './utils';
 
@@ -182,10 +186,21 @@ function App() {
   });
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [successToast, setSuccessToast] = useState('');
-  const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName, shopLogo, terminalMode, businessType } = useApp();
+  const [showStopListModal, setShowStopListModal] = useState(false);
+  const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName, shopLogo, terminalMode, businessType, globalProducts } = useApp();
   
+  const stoppedCount = useMemo(() => {
+    return (globalProducts || []).filter(p => p.business_type === 'restaurant' && (p.is_stopped === 1 || !!p.stop_reason)).length;
+  }, [globalProducts]);
+
   const showSettings = !terminalMode || localStorage.getItem('adminSettingsAccess') === 'true';
   const showSidebar = currentUser && currentUser.role !== 'waiter' && (!terminalMode || localStorage.getItem('adminSettingsAccess') === 'true');
+
+  useEffect(() => {
+    if (businessType !== 'restaurant' && activeTab === 'audit') {
+      setActiveTab('cashier');
+    }
+  }, [businessType, activeTab]);
 
   // Waiter Shaxsiy Hisoboti states
   const [showWaiterReportModal, setShowWaiterReportModal] = useState(false);
@@ -316,13 +331,19 @@ function App() {
     setTimeout(() => setSuccessToast(''), 5000);
   }, []);
 
-  // ── Standalone URL Routing for Kitchen Display and TV (Autonomous Screens) ──
+  // ── Standalone URL Routing for Kitchen Display, TV, Attendance & Director Dashboard ──
   const currentPath = typeof window !== 'undefined' ? (window.location.pathname + window.location.hash) : '';
+  if (currentPath.includes('/director') || currentPath.includes('/direktor')) {
+    return <DirectorDashboard onBack={() => { window.history.pushState({}, '', '/'); window.location.reload(); }} />;
+  }
   if (currentPath.includes('/kitchen')) {
     return <KitchenDisplay onBack={() => { window.history.pushState({}, '', '/'); window.location.reload(); }} onOpenTv={() => { window.history.pushState({}, '', '/tv'); window.location.reload(); }} />;
   }
   if (currentPath.includes('/tv')) {
     return <TvQueueDisplay onBack={() => { window.history.pushState({}, '', '/'); window.location.reload(); }} />;
+  }
+  if (currentPath.includes('/attendance') || currentPath.includes('/davomat')) {
+    return <AttendanceCheck onBack={() => { window.history.pushState({}, '', '/'); window.location.reload(); }} />;
   }
 
   // ── Render: Boot spinner (prevents ANY flash) ────────────────────────────
@@ -358,6 +379,7 @@ function App() {
   const allTabs = [
     { id: 'cashier',   icon: ShoppingCart, label: t('cashier') },
     { id: 'warehouse', icon: PackageSearch, label: t('warehouse') },
+    ...(businessType === 'restaurant' ? [{ id: 'audit', icon: ClipboardCheck, label: t('audit') || 'Inventarizatsiya' }] : []),
     { id: 'debts',     icon: Users,         label: t('debts') },
     { id: 'history',   icon: History,       label: 'Sotuv tarixi' },
     { id: 'invlog',    icon: ClipboardList, label: 'Harakatlar jurnali' },
@@ -377,26 +399,7 @@ function App() {
     >
       {/* Global floating action buttons container in top-right corner */}
       <div className="fixed top-4 right-4 z-[99] flex items-center gap-2">
-        {businessType === 'restaurant' && (
-          <>
-            <button
-              onClick={() => setActiveTab('kitchen')}
-              title="Oshxona Ekrani (KDS)"
-              className="px-3 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs rounded-2xl shadow-xl flex items-center gap-1.5 transition-all duration-200 border border-amber-400 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
-            >
-              <ChefHat size={16} />
-              <span className="hidden sm:inline">Oshxona (KDS)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('tv')}
-              title="Zaldagi TV-Tablo"
-              className="px-3 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-2xl shadow-xl flex items-center gap-1.5 transition-all duration-200 border border-purple-400 cursor-pointer hover:scale-105 active:scale-95 shrink-0"
-            >
-              <Tv size={16} />
-              <span className="hidden sm:inline">TV-Tablo</span>
-            </button>
-          </>
-        )}
+
 
         {currentUser?.role === 'waiter' && (
           <button
@@ -529,7 +532,7 @@ function App() {
         <div
           style={{ display: activeTab !== 'cashier' ? 'block' : 'none' }}
           className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-150 dark:border-gray-700 p-6 h-full transition-colors duration-300 ${
-            ['warehouse', 'debts', 'history', 'invlog'].includes(activeTab)
+            ['warehouse', 'debts', 'history', 'invlog', 'audit'].includes(activeTab)
               ? 'flex flex-col overflow-hidden'
               : 'overflow-auto'
           }`}
@@ -539,9 +542,19 @@ function App() {
             className="h-full flex-col min-h-0 flex-1"
           >
             <ErrorBoundary name="Warehouse">
-              <Warehouse isActive={activeTab === 'warehouse'} />
+              <Warehouse isActive={activeTab === 'warehouse'} onOpenAudit={businessType === 'restaurant' ? () => setActiveTab('audit') : undefined} />
             </ErrorBoundary>
           </div>
+          {businessType === 'restaurant' && (
+            <div 
+              style={{ display: activeTab === 'audit' ? 'flex' : 'none' }} 
+              className="h-full flex-col min-h-0 flex-1"
+            >
+              <ErrorBoundary name="InventoryAudit">
+                <InventoryAudit isActive={activeTab === 'audit'} />
+              </ErrorBoundary>
+            </div>
+          )}
           <div 
             style={{ display: activeTab === 'debts' ? 'flex' : 'none' }} 
             className="h-full flex-col min-h-0 flex-1"
@@ -722,6 +735,9 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Stop-List Modal for Restaurant */}
+      <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
     </div>
   );
 }
