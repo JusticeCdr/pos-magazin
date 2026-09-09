@@ -54,18 +54,18 @@ function playKitchenOrderAlert(type = 'new-order') {
         osc.stop(ctx.currentTime + time + duration);
       });
 
-      // Voice Alert in Uzbek: "Yangi zakaz!"
+      // Voice Alert in Russian: "Новый заказ!"
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance("Yangi zakaz!");
+        const utterance = new SpeechSynthesisUtterance("Новый заказ!");
+        utterance.lang = 'ru-RU';
         const voices = window.speechSynthesis.getVoices();
-        const voice = voices.find(v => v.lang.startsWith('uz')) || 
-                      voices.find(v => v.lang.startsWith('ru')) || 
-                      voices.find(v => v.lang.startsWith('tr')) || 
-                      voices[0];
-        if (voice) utterance.voice = voice;
-        utterance.rate = 1.0;
-        utterance.pitch = 1.1;
+        const ruVoice = voices.find(v => (v.lang.includes('ru') || v.lang.includes('RU')) && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Irina') || v.name.includes('Tatyana') || v.name.includes('Pavel'))) ||
+                        voices.find(v => v.lang.startsWith('ru') || v.lang.includes('ru') || v.lang.includes('RU')) ||
+                        voices[0];
+        if (ruVoice) utterance.voice = ruVoice;
+        utterance.rate = 0.9;
+        utterance.pitch = 1.0;
         utterance.volume = 1.0;
 
         setTimeout(() => {

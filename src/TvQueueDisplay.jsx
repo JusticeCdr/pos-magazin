@@ -50,29 +50,34 @@ function playTvChime() {
   }
 }
 
-// Web Speech API Voice Announcement in Uzbek
+// Web Speech API Voice Announcement in Russian (Natural & Smooth)
 function speakOrderReady(orderNumber) {
   try {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); // Stop any pending speech
 
-    // Clean order number: extract ONLY digits so speech never pronounces '#' as 'reshotka'
+    // Clean order number: extract ONLY digits so speech never pronounces '#' or extra characters
     const cleanNum = String(orderNumber).replace(/\D/g, '') || String(orderNumber).replace('#', '').trim();
+    if (!cleanNum) return;
 
-    // As requested: "3 chi zakaz deyish kerak" (e.g. "3 chi zakaz tayyor")
-    const text = `${cleanNum} chi zakaz tayyor`;
+    // Natural Russian Announcement text: "Заказ номер X готов!"
+    const text = `Заказ номер ${cleanNum} готов!`;
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ru-RU';
     
-    // Select best voice (try uz, ru, tr, or default)
+    // Select best natural Russian voice available on system (Google, Natural, Irina, Pavel, or any ru-RU voice)
     const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find(v => v.lang.startsWith('uz')) || 
-                  voices.find(v => v.lang.startsWith('ru')) || 
-                  voices.find(v => v.lang.startsWith('tr')) || 
-                  voices[0];
+    const ruVoice = voices.find(v => (v.lang.includes('ru') || v.lang.includes('RU')) && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Irina') || v.name.includes('Tatyana') || v.name.includes('Pavel'))) ||
+                    voices.find(v => v.lang.startsWith('ru') || v.lang.includes('ru') || v.lang.includes('RU')) ||
+                    voices[0];
     
-    if (voice) utterance.voice = voice;
-    utterance.rate = 0.92;
-    utterance.pitch = 1.0;
+    if (ruVoice) {
+      utterance.voice = ruVoice;
+    }
+    
+    // Natural speech parameters
+    utterance.rate = 0.88;  // Slightly relaxed speed for clear public announcement
+    utterance.pitch = 1.0;  // Natural pitch
     utterance.volume = 1.0;
 
     // Speak right after chime
