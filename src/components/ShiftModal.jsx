@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, Printer, Lock, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, ChevronUp, Users, Tag, DollarSign, Wallet } from 'lucide-react';
+import { X, Printer, Lock, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, ChevronUp, Users, Tag, Wallet } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatCurrency, parseSQLiteDate } from '../utils';
 import { generateZReportHTML } from '../ReceiptTemplate';
 
 export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
-  const { lang, storeName, currentUser, businessType } = useApp();
+  const { storeName, currentUser } = useApp();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isClosing, setIsClosing] = useState(false);

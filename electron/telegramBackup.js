@@ -4,6 +4,9 @@ const path = require('path');
 const { app } = require('electron');
 const { getSettings, getDBPath } = require('./database');
 
+const DEFAULT_TELEGRAM_BOT_TOKEN = '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84';
+const DEFAULT_TELEGRAM_CHAT_ID = '-5583805832';
+
 /**
  * Automatically fetch Chat ID from Telegram Bot updates
  * When user adds the bot to a group and types /id
@@ -11,7 +14,7 @@ const { getSettings, getDBPath } = require('./database');
 async function getTelegramChatIdFromUpdates(customToken) {
   try {
     const settings = getSettings();
-    const token = customToken || (settings.data ? settings.data.telegram_bot_token : '') || '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84';
+    const token = (customToken || (settings.data ? settings.data.telegram_bot_token : '') || DEFAULT_TELEGRAM_BOT_TOKEN).trim();
     
     if (!token) {
       return { success: false, error: "Telegram bot token kiritilmagan!" };
@@ -94,8 +97,8 @@ async function sendTelegramBackup(options = {}) {
   let tempBackupPath = null;
   try {
     const settings = getSettings();
-    const botToken = options.botToken || (settings.data ? settings.data.telegram_bot_token : '') || '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84';
-    const chatId = options.chatId || (settings.data ? settings.data.telegram_chat_id : '');
+    const botToken = (options.botToken || (settings.data ? settings.data.telegram_bot_token : '') || DEFAULT_TELEGRAM_BOT_TOKEN).trim();
+    const chatId = (options.chatId || (settings.data ? settings.data.telegram_chat_id : '') || DEFAULT_TELEGRAM_CHAT_ID).trim();
     const rawStoreName = (settings.data ? settings.data.store_name : '') || 'xxMpos';
 
     if (!botToken) {

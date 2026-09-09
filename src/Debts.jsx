@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, memo, useRef } from 'react';
-import { Search, Users, Phone, DollarSign, Wallet, X, Trash2 } from 'lucide-react';
+import { Search, Users, Phone, DollarSign, Wallet, X, Trash2, Truck, Edit, FileText, CheckCircle } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { formatCurrency, formatThousands, parseSQLiteDate } from './utils';
 import { AlertModal } from './components/Modals';
@@ -13,7 +13,73 @@ const formatPriceInput = (val) => {
 
 export default memo(function Debts({ isActive }) {
   const { t, lang, currentUser, globalCustomers: customers, fetchGlobalCustomers } = useApp();
+  const [debtsCategory, setDebtsCategory] = useState('customers'); // 'customers' | 'suppliers'
   const [search, setSearch] = useState('');
+  
+  // Suppliers state
+  const [suppliersList, setSuppliersList] = useState([]);
+  const [paySupplierModal, setPaySupplierModal] = useState({ isOpen: false, supplier: null, amount: '', paymentMethod: 'cash', note: '' });
+
+  const fetchSuppliers = async () => {
+    if (!window.api || !window.api.getSuppliers) return;
+    try {
+      const res = await window.api.getSuppliers();
+      if (res && res.success) {
+        setSuppliersList(res.data || []);
+      }
+    } catch (err) {
+      console.error('getSuppliers error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (isActive) {
+      fetchGlobalCustomers();
+      fetchSuppliers();
+    }
+  }, [isActive]);
+
+  const totalSupplierDebtSum = useMemo(() => {
+    return suppliersList.reduce((sum, s) => sum + (parseFloat(s.balance) || 0), 0);
+  }, [suppliersList]);
+
+  const filteredSuppliers = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return suppliersList.filter(s => {
+      const nameMatch = (s.name || '').toLowerCase().includes(q);
+      const companyMatch = (s.company || '').toLowerCase().includes(q);
+      const phoneMatch = (s.phone || '').includes(q);
+      return nameMatch || companyMatch || phoneMatch;
+    });
+  }, [suppliersList, search]);
+
+  const handlePaySupplierSubmit = async (e) => {
+    e.preventDefault();
+    if (!paySupplierModal.supplier || !paySupplierModal.amount) return;
+    const amt = parseFloat(String(paySupplierModal.amount).replace(/\s/g, ''));
+    if (isNaN(amt) || amt <= 0) return;
+    setProcessing(true);
+    try {
+      const res = await window.api.paySupplierDebt({
+        supplierId: paySupplierModal.supplier.id,
+        amount: amt,
+        paymentMethod: paySupplierModal.paymentMethod,
+        note: paySupplierModal.note,
+        userName: currentUser?.name || 'Admin',
+      });
+      if (res && res.success) {
+        setAlertModal({ message: "Yetkazib beruvchiga to'lov muvaffaqiyatli saqlandi!", type: 'success' });
+        setPaySupplierModal({ isOpen: false, supplier: null, amount: '', paymentMethod: 'cash', note: '' });
+        await fetchSuppliers();
+      } else {
+        setAlertModal({ message: res?.error || 'Xatolik yuz berdi', type: 'error' });
+      }
+    } catch (err) {
+      setAlertModal({ message: 'IPC xatosi: ' + err.message, type: 'error' });
+    } finally {
+      setProcessing(false);
+    }
+  };
   
   // Filter & Sort states
   const [startDate, setStartDate] = useState('');
@@ -345,47 +411,111 @@ export default memo(function Debts({ isActive }) {
 
   return (
     <div className="h-full flex flex-col gap-6 transition-colors relative">
-      {/* Header */}
+      {/* Header & Category Switcher */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('debtsTitle')}</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('debtsSubtitle')}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Mijozlar nasiyalari va Yetkazib beruvchilar (Postavshiklar) hisob-kitobi</p>
         </div>
-        <button
-          onClick={() => setManualDebtModal(true)}
-          className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition-all shadow-sm flex items-center gap-2 cursor-pointer w-fit"
-        >
-          <DollarSign size={16} />
-          Qarz qo'shish (Kassir)
-        </button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Category Toggle Tabs */}
+          <div className="flex p-1 bg-gray-100 dark:bg-gray-700/80 rounded-xl border border-gray-200 dark:border-gray-600">
+            <button
+              onClick={() => setDebtsCategory('customers')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                debtsCategory === 'customers'
+                  ? 'bg-white dark:bg-gray-800 text-orange-600 dark:text-orange-400 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <Users size={15} />
+              <span>Mijozlar Qarzi</span>
+            </button>
+            <button
+              onClick={() => setDebtsCategory('suppliers')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                debtsCategory === 'suppliers'
+                  ? 'bg-white dark:bg-gray-800 text-teal-600 dark:text-teal-400 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <Truck size={15} />
+              <span>Postavshiklar Qarzi</span>
+              {suppliersList.filter(s => (s.balance || 0) > 0).length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-red-500 text-white font-black">
+                  {suppliersList.filter(s => (s.balance || 0) > 0).length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {debtsCategory === 'customers' && (
+            <button
+              onClick={() => setManualDebtModal(true)}
+              className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+            >
+              <DollarSign size={16} />
+              <span>Qarz qo'shish</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 dark:from-orange-600 dark:to-amber-600 p-5 rounded-2xl text-white shadow-md flex items-center justify-between transition-all hover:shadow-lg">
-          <div>
-            <span className="text-xs font-semibold opacity-90 block uppercase tracking-wider">Jami qarzdorlik summasi</span>
-            <span className="text-2xl font-black block mt-1 tracking-tight">
-              {formatCurrency(totalDebtsSum, lang)} so'm
-            </span>
+      {debtsCategory === 'customers' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-r from-orange-500 to-amber-500 dark:from-orange-600 dark:to-amber-600 p-5 rounded-2xl text-white shadow-md flex items-center justify-between transition-all hover:shadow-lg">
+            <div>
+              <span className="text-xs font-semibold opacity-90 block uppercase tracking-wider">Jami qarzdorlik summasi</span>
+              <span className="text-2xl font-black block mt-1 tracking-tight">
+                {formatCurrency(totalDebtsSum, lang)} so'm
+              </span>
+            </div>
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+              <DollarSign size={24} />
+            </div>
           </div>
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
-            <DollarSign size={24} />
-          </div>
-        </div>
 
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 dark:from-blue-600 dark:to-indigo-600 p-5 rounded-2xl text-white shadow-md flex items-center justify-between transition-all hover:shadow-lg">
-          <div>
-            <span className="text-xs font-semibold opacity-90 block uppercase tracking-wider">Qarzdorlar soni</span>
-            <span className="text-2xl font-black block mt-1 tracking-tight">
-              {totalDebtorsCount} nafar
-            </span>
-          </div>
-          <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
-            <Users size={24} />
+          <div className="bg-gradient-to-r from-blue-500 to-indigo-500 dark:from-blue-600 dark:to-indigo-600 p-5 rounded-2xl text-white shadow-md flex items-center justify-between transition-all hover:shadow-lg">
+            <div>
+              <span className="text-xs font-semibold opacity-90 block uppercase tracking-wider">Qarzdorlar soni</span>
+              <span className="text-2xl font-black block mt-1 tracking-tight">
+                {totalDebtorsCount} nafar
+              </span>
+            </div>
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+              <Users size={24} />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-r from-teal-600 to-emerald-600 dark:from-teal-700 dark:to-emerald-700 p-5 rounded-2xl text-white shadow-md flex items-center justify-between transition-all hover:shadow-lg">
+            <div>
+              <span className="text-xs font-semibold opacity-90 block uppercase tracking-wider">Postavshiklarga Jami Qarzimiz</span>
+              <span className="text-2xl font-black block mt-1 tracking-tight">
+                {formatCurrency(totalSupplierDebtSum, lang)} so'm
+              </span>
+            </div>
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+              <Truck size={24} />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-cyan-600 to-blue-600 dark:from-cyan-700 dark:to-blue-700 p-5 rounded-2xl text-white shadow-md flex items-center justify-between transition-all hover:shadow-lg">
+            <div>
+              <span className="text-xs font-semibold opacity-90 block uppercase tracking-wider">Qarzdor Postavshiklar Soni</span>
+              <span className="text-2xl font-black block mt-1 tracking-tight">
+                {suppliersList.filter(s => (s.balance || 0) > 0).length} ta
+              </span>
+            </div>
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+              <Users size={24} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters Panel */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-wrap gap-4 items-end">
@@ -413,17 +543,17 @@ export default memo(function Debts({ isActive }) {
         </button>
       </div>
 
-      {/* Debtors List */}
+      {/* Debtors List / Suppliers List */}
       <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 min-h-0 transition-colors">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            {t('debtsTitle')} ({debtors.length})
+            {debtsCategory === 'customers' ? `${t('debtsTitle')} (${debtors.length})` : `Yetkazib Beruvchilar (${filteredSuppliers.length})`}
           </span>
           <div className="relative w-72">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
-              placeholder={t('searchDebtors')}
+              placeholder={debtsCategory === 'customers' ? t('searchDebtors') : "Postavshik / Firma bo'yicha..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-gray-100 transition"
@@ -432,94 +562,163 @@ export default memo(function Debts({ isActive }) {
         </div>
 
         <div className="overflow-auto flex-1 custom-scrollbar">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 transition-colors">
-              <tr>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('clientName')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('clientPhone')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sana</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('total')}</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {debtors.length === 0 ? (
+          {debtsCategory === 'customers' ? (
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 transition-colors">
                 <tr>
-                  <td colSpan="6" className="py-16 text-center">
-                    <div className="flex flex-col items-center text-gray-400 dark:text-gray-500">
-                      <Wallet size={48} className="mb-3 opacity-20" />
-                      <p className="text-lg font-medium">{t('noDebtors')}</p>
-                    </div>
-                  </td>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('clientName')}</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('clientPhone')}</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sana</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('total')}</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Amallar</th>
                 </tr>
-              ) : (
-                displayedDebtors.map((c, index) => (
-                  <tr key={c.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <td className="py-3 px-4 text-sm text-gray-400 dark:text-gray-500">{index + 1}</td>
-                    <td className="py-3 px-4 text-sm font-bold text-gray-900 dark:text-gray-200 flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-                        {c.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex flex-col">
-                        <span>{c.name}</span>
-                        <div className="flex gap-1 mt-0.5">
-                          {c.has_manual_debt === 1 && (
-                            <span className="text-[9px] font-black uppercase bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 px-1 py-0.5 rounded leading-none border border-amber-200 dark:border-amber-900/30">
-                              💸 Kassir
-                            </span>
-                          )}
-                          {c.has_product_debt === 1 && (
-                            <span className="text-[9px] font-black uppercase bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 px-1 py-0.5 rounded leading-none border border-blue-200 dark:border-blue-900/30">
-                              📦 Savdo
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400 font-mono flex items-center gap-2">
-                      {c.phone ? <><Phone size={14} className="text-gray-400" /> {c.phone}</> : <span className="text-gray-300 dark:text-gray-600">—</span>}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
-                      {c.last_debt_date ? parseSQLiteDate(c.last_debt_date).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—'}
-                    </td>
-                    <td className={`py-3 px-4 text-base font-black ${c.total_debt > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`}>
-                      {formatCurrency(c.total_debt, lang)}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => openDetailsModal(c)}
-                          className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/50 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors flex items-center gap-1.5"
-                          title="Batafsil"
-                        >
-                          <Search size={14} /> Batafsil
-                        </button>
-                        {c.total_debt > 0 ? (
-                          <button
-                            onClick={() => openPayModal(c)}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-md text-sm font-semibold transition-colors flex items-center gap-1.5"
-                          >
-                            <DollarSign size={14} />
-                            {t('payDebtBtn')}
-                          </button>
-                        ) : (
-                          <button
-                            disabled
-                            className="bg-gray-100 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500 px-3 py-1.5 rounded-md text-sm font-semibold flex items-center gap-1.5 cursor-not-allowed"
-                          >
-                            <DollarSign size={14} />
-                            To'langan
-                          </button>
-                        )}
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {debtors.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="py-16 text-center">
+                      <div className="flex flex-col items-center text-gray-400 dark:text-gray-500">
+                        <Wallet size={48} className="mb-3 opacity-20" />
+                        <p className="text-lg font-medium">{t('noDebtors')}</p>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          {debtors.length > visibleCount && (
+                ) : (
+                  displayedDebtors.map((c, index) => (
+                    <tr key={c.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      <td className="py-3 px-4 text-sm text-gray-400 dark:text-gray-500">{index + 1}</td>
+                      <td className="py-3 px-4 text-sm font-bold text-gray-900 dark:text-gray-200 flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+                          {c.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col">
+                          <span>{c.name}</span>
+                          <div className="flex gap-1 mt-0.5">
+                            {c.has_manual_debt === 1 && (
+                              <span className="text-[9px] font-black uppercase bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 px-1 py-0.5 rounded leading-none border border-amber-200 dark:border-amber-900/30">
+                                💸 Kassir
+                              </span>
+                            )}
+                            {c.has_product_debt === 1 && (
+                              <span className="text-[9px] font-black uppercase bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 px-1 py-0.5 rounded leading-none border border-blue-200 dark:border-blue-900/30">
+                                📦 Savdo
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400 font-mono flex items-center gap-2">
+                        {c.phone ? <><Phone size={14} className="text-gray-400" /> {c.phone}</> : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400">
+                        {c.last_debt_date ? parseSQLiteDate(c.last_debt_date).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—'}
+                      </td>
+                      <td className={`py-3 px-4 text-base font-black ${c.total_debt > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`}>
+                        {formatCurrency(c.total_debt, lang)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openDetailsModal(c)}
+                            className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/50 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors flex items-center gap-1.5"
+                            title="Batafsil"
+                          >
+                            <Search size={14} /> Batafsil
+                          </button>
+                          {c.total_debt > 0 ? (
+                            <button
+                              onClick={() => openPayModal(c)}
+                              className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-md text-sm font-semibold transition-colors flex items-center gap-1.5"
+                            >
+                              <DollarSign size={14} />
+                              {t('payDebtBtn')}
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="bg-gray-100 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500 px-3 py-1.5 rounded-md text-sm font-semibold flex items-center gap-1.5 cursor-not-allowed"
+                            >
+                              <DollarSign size={14} />
+                              To'langan
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 transition-colors">
+                <tr>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">№</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Postavshik Nomi / Firma</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Telefon</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Balans (Qarzimiz)</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {filteredSuppliers.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="py-16 text-center">
+                      <div className="flex flex-col items-center text-gray-400 dark:text-gray-500">
+                        <Truck size={48} className="mb-3 opacity-20" />
+                        <p className="text-lg font-medium">Hozircha yetkazib beruvchilar kiritilmagan</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredSuppliers.map((s, index) => (
+                    <tr key={s.id} className="group transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                      <td className="py-3 px-4 text-sm text-gray-400 dark:text-gray-500">{index + 1}</td>
+                      <td className="py-3 px-4 text-sm font-bold text-gray-900 dark:text-gray-200">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0 font-black">
+                            {s.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="block font-bold">{s.name}</span>
+                            {s.company && <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">{s.company}</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-400 font-mono">
+                        {s.phone ? <><Phone size={14} className="inline mr-1 text-gray-400" />{s.phone}</> : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-right font-black">
+                        {(s.balance || 0) > 0 ? (
+                          <span className="text-red-600 dark:text-red-400 font-bold">
+                            {formatCurrency(s.balance, lang)} so'm qarz
+                          </span>
+                        ) : (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                            0 so'm (Qarz yo'q)
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {(s.balance || 0) > 0 ? (
+                          <button
+                            onClick={() => setPaySupplierModal({ isOpen: true, supplier: s, amount: formatPriceInput(s.balance), paymentMethod: 'cash', note: '' })}
+                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer shadow-sm"
+                          >
+                            Qarzni uzish
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400 font-medium">To'langan</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+          {debtsCategory === 'customers' && debtors.length > visibleCount && (
             <div className="p-4 flex justify-center border-t border-gray-100 dark:border-gray-700/50 bg-gray-50/20 dark:bg-gray-800/20">
               <button
                 onClick={() => setVisibleCount(prev => prev + 30)}
@@ -932,6 +1131,85 @@ export default memo(function Debts({ isActive }) {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer"
                 >
                   {processing ? 'Saqlanmoqda...' : 'Saqlash'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pay Supplier Debt Modal */}
+      {paySupplierModal.isOpen && paySupplierModal.supplier && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 dark:bg-black/40 backdrop-blur-sm rounded-lg">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-100 dark:border-gray-700 animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-teal-50/50 dark:bg-teal-950/20">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Truck className="text-teal-600 dark:text-teal-400" size={18} />
+                Yetkazib beruvchiga to'lov: {paySupplierModal.supplier.name}
+              </h3>
+              <button onClick={() => setPaySupplierModal({ isOpen: false, supplier: null, amount: '', paymentMethod: 'cash', note: '' })} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handlePaySupplierSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                  Hozirgi qarzimiz: <span className="text-red-600 dark:text-red-400 font-black">{formatCurrency(paySupplierModal.supplier.balance, lang)} so'm</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  To'lov summasi (so'm) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Masalan: 1 000 000"
+                  value={paySupplierModal.amount}
+                  onChange={(e) => setPaySupplierModal({ ...paySupplierModal, amount: formatPriceInput(e.target.value) })}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">To'lov turi</label>
+                <select
+                  value={paySupplierModal.paymentMethod}
+                  onChange={(e) => setPaySupplierModal({ ...paySupplierModal, paymentMethod: e.target.value })}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white font-medium"
+                >
+                  <option value="cash">Naqd pul</option>
+                  <option value="card">Plastik karta / Perevod</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Izoh (ixtiyoriy)</label>
+                <input
+                  type="text"
+                  placeholder="Masalan: 5-faktura bo'yicha to'lov"
+                  value={paySupplierModal.note}
+                  onChange={(e) => setPaySupplierModal({ ...paySupplierModal, note: e.target.value })}
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-xs text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaySupplierModal({ isOpen: false, supplier: null, amount: '', paymentMethod: 'cash', note: '' })}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-bold rounded-xl text-xs transition-colors"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  disabled={processing}
+                  className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-teal-600/30"
+                >
+                  {processing ? 'Saqlanmoqda...' : 'To\'lovni saqlash'}
                 </button>
               </div>
             </form>

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, Search, Ban, CheckCircle2, AlertTriangle, AlertCircle, ChefHat, Package, Filter, Play, RefreshCw } from 'lucide-react';
+import { X, Search, Ban, AlertTriangle, ChefHat, Package, Play, RefreshCw } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../utils';
 

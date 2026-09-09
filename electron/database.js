@@ -354,11 +354,16 @@ function initDB(customPath) {
   if (!db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get()) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('gemini_api_key', '')").run();
   }
-  if (!db.prepare("SELECT value FROM settings WHERE key = 'telegram_bot_token'").get()) {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_bot_token', '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84')").run();
+  const DEFAULT_TG_BOT_TOKEN = '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84';
+  const DEFAULT_TG_CHAT_ID = '-5583805832';
+
+  const curBotToken = db.prepare("SELECT value FROM settings WHERE key = 'telegram_bot_token'").get();
+  if (!curBotToken || !curBotToken.value || curBotToken.value.trim() === '') {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_bot_token', ?)").run(DEFAULT_TG_BOT_TOKEN);
   }
-  if (!db.prepare("SELECT value FROM settings WHERE key = 'telegram_chat_id'").get()) {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_chat_id', '')").run();
+  const curChatId = db.prepare("SELECT value FROM settings WHERE key = 'telegram_chat_id'").get();
+  if (!curChatId || !curChatId.value || curChatId.value.trim() === '') {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_chat_id', ?)").run(DEFAULT_TG_CHAT_ID);
   }
   // Telegram Attendance (Multi-venue) Settings
   try { db.exec("ALTER TABLE settings ADD COLUMN telegram_attendance_token TEXT"); } catch (_) {}
@@ -721,49 +726,6 @@ function initDB(customPath) {
         } catch (_) {}
       }
     }
-  }
-
-  // Seed restaurant products if none exist
-  const restaurantProdCount = db.prepare("SELECT COUNT(*) as count FROM products WHERE business_type = 'restaurant'").get().count;
-  if (restaurantProdCount === 0) {
-    const sampleProducts = [
-      { name: 'Palov (Osh)', barcode: '990001', buy_price: 20000, sell_price: 30000, stock: 50, unit: 'dona', printer_destination: 'kitchen', category: 'Ovqatlar' },
-      { name: 'Tovuq Shashlik', barcode: '990002', buy_price: 10000, sell_price: 15000, stock: 100, unit: 'dona', printer_destination: 'kitchen', category: 'Ovqatlar' },
-      { name: 'Coca-Cola 1.5L', barcode: '990003', buy_price: 8000, sell_price: 12000, stock: 80, unit: 'dona', printer_destination: 'bar', category: 'Ichimliklar' },
-      { name: 'Achchiq-chuchuq salati', barcode: '990004', buy_price: 5000, sell_price: 8000, stock: 40, unit: 'dona', printer_destination: 'cold', category: 'Salatlar' },
-      { name: 'Ko\'k choy', barcode: '990005', buy_price: 2000, sell_price: 5000, stock: 150, unit: 'dona', printer_destination: 'bar', category: 'Ichimliklar' }
-    ];
-    for (const p of sampleProducts) {
-      try {
-        db.prepare(`
-          INSERT INTO products (name, barcode, buy_price, sell_price, stock, unit, printer_destination, business_type, category)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'restaurant', ?)
-        `).run(p.name, p.barcode, p.buy_price, p.sell_price, p.stock, p.unit, p.printer_destination, p.category);
-      } catch (_) {}
-    }
-  }
-
-  // ── Auto Cleanup Old Sales ──
-  try {
-    // Delete items of old sales
-    db.exec(`
-      DELETE FROM sale_items WHERE sale_id IN (
-        SELECT id FROM sales 
-        WHERE created_at < datetime('now', '-30 days')
-      );
-    `);
-    // Delete the old sales themselves
-    db.exec(`
-      DELETE FROM sales 
-      WHERE created_at < datetime('now', '-30 days');
-    `);
-
-    // Delete inventory logs older than 30 days (1 month)
-    db.exec(`
-      DELETE FROM inventory_logs 
-      WHERE created_at < datetime('now', '-30 days');
-    `);
-  } catch (err) {
   }
 
   // ── Database Optimizations (Indexes) ───────────────────────────────────────
@@ -2727,6 +2689,8 @@ function resetFactoryData() {
     db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_2_printer', '')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('xolodniy_3_printer', '')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('receipt_lang', 'uz')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_bot_token', '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_chat_id', '-5583805832')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_attendance_token', '8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('telegram_attendance_chat_id', '')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('cafe_name', 'Mening Kafem')").run();
@@ -5805,7 +5769,7 @@ module.exports = {
   getCurrentShiftStats, closeShift,
   optimizeDatabase, getDBPath,
   writeOffProduct, getWriteOffs,
-  getInventoryLogs, logInventory,
+  getInventoryLogs,
   addExpense, deleteExpense,
   deleteCustomer, maybeOpenShift,
   getActivation, saveActivation, clearActivation,
@@ -5819,14 +5783,14 @@ module.exports = {
   cancelRestaurantOrder, addDeliveryOrder,
   addRestaurantTable, deleteRestaurantTable,
   saveProductRecipe, getProductRecipe,
-  getProductGroups, addProductGroup, getOrCreateProductGroup,
-  calculateAvailablePortions, updateDependentDishesStocks, projectYield,
+  getProductGroups, getOrCreateProductGroup,
+  projectYield,
   lockTable, unlockTable, setTablePrePrinted,
   getWaitersReport, getRestaurantOnlyProducts,
   clearWarehouse, getRestaurantZones, addRestaurantZone, deleteRestaurantZone,
   toggleProductStop, setProductStopWithLimit,
   getKitchenOrders, setOrderStatus, setOrderStatusByTable, getTvOrders,
-  deleteProductImageFile, getImagesDir,
+  deleteProductImageFile,
   getInventoryAuditPrepare, completeInventoryAudit, getInventoryAudits, getInventoryAuditDetails,
   getAttendanceSettings, getAttendanceReport, saveManualAttendance, deleteAttendanceRecord,
   getSuppliers, addSupplier, updateSupplier, deleteSupplier,

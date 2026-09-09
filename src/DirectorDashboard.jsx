@@ -8,7 +8,7 @@ import { useApp } from './context/AppContext';
 import { formatCurrency } from './utils';
 
 export default function DirectorDashboard({ onBack }) {
-  const { theme, toggleTheme, lang, t, shopLogo, storeName } = useApp();
+  const { theme, toggleTheme, lang, t, shopLogo, storeName, businessType } = useApp();
 
   const [pin, setPin] = useState(() => sessionStorage.getItem('director_pin') || '');
   const [pinInput, setPinInput] = useState('');
@@ -454,23 +454,25 @@ export default function DirectorDashboard({ onBack }) {
         </div>
 
         {/* ── 4. Low Stock Ingredients & Stop List Alerts ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={`grid grid-cols-1 ${businessType === 'restaurant' ? 'lg:grid-cols-2' : ''} gap-6`}>
           
           {/* Stop List Alert */}
-          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm">
-            <h3 className="text-base font-black text-gray-900 dark:text-white mb-3 flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <AlertTriangle className="text-red-500" size={20} />
-                Stop-Listdagi Taomlar
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400">
-                {stats?.stopListCount || 0} ta taom to'xtatilgan
-              </span>
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-              Masalliq tugashi yoki oshpaz to'xtatishi sababli sotish taqiqlangan taomlar va retseptlar.
-            </p>
-          </div>
+          {businessType === 'restaurant' && (
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm">
+              <h3 className="text-base font-black text-gray-900 dark:text-white mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <AlertTriangle className="text-red-500" size={20} />
+                  Stop-Listdagi Taomlar
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400">
+                  {stats?.stopListCount || 0} ta taom to'xtatilgan
+                </span>
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                Masalliq tugashi yoki oshpaz to'xtatishi sababli sotish taqiqlangan taomlar va retseptlar.
+              </p>
+            </div>
+          )}
 
           {/* Low Stock Ingredients */}
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm">

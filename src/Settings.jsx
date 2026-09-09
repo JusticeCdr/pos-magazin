@@ -195,7 +195,7 @@ export default memo(function Settings() {
   const [ngrokError, setNgrokError] = useState('');
   const [ngrokLoading, setNgrokLoading] = useState(false); // true while tunnel is starting
   const [telegramBotToken, setTelegramBotToken] = useState('8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84');
-  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('-5583805832');
   const [isSendingTelegramBackup, setIsSendingTelegramBackup] = useState(false);
   const [isDetectingTelegramChatId, setIsDetectingTelegramChatId] = useState(false);
 
@@ -446,7 +446,9 @@ export default memo(function Settings() {
         if (res.data.ngrok_domain) setNgrokDomain(res.data.ngrok_domain);
         if (res.data.gemini_api_key) setGeminiApiKey(res.data.gemini_api_key);
         if (res.data.telegram_bot_token) setTelegramBotToken(res.data.telegram_bot_token);
+        else setTelegramBotToken('8621843458:AAGBnjR3LwNDWfnKnnKmB9EQpqlm57tnr84');
         if (res.data.telegram_chat_id) setTelegramChatId(res.data.telegram_chat_id);
+        else setTelegramChatId('-5583805832');
         if (res.data.cafe_name) setCafeName(res.data.cafe_name);
         else if (res.data.store_name) setCafeName(res.data.store_name);
         if (res.data.telegram_attendance_token) setTelegramAttendanceToken(res.data.telegram_attendance_token);

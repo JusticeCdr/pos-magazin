@@ -161,10 +161,10 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
   };
 
   useEffect(() => {
-    if (businessType === 'restaurant') {
+    if (isActive) {
       fetchSuppliers();
     }
-  }, [businessType]);
+  }, [isActive]);
 
   const handleSaveSupplier = async (e) => {
     e.preventDefault();
@@ -954,6 +954,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
   };
 
   const handlePaste = useCallback((e) => {
+    if (businessType !== 'restaurant') return;
     const items = e.clipboardData?.items;
     if (!items) return;
     for (let i = 0; i < items.length; i++) {
@@ -966,7 +967,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
         }
       }
     }
-  }, []);
+  }, [businessType]);
 
   const handleAddProduct = async (e) => {
     e.preventDefault();
@@ -1049,7 +1050,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
         buy_price_usd: buyPriceUsd,
         usd_rate: isUsd ? usdRate : 0,
         is_unlimited: isUnlimited,
-        image: formData.image || null,
+        image: businessType === 'restaurant' ? (formData.image || null) : null,
       };
 
       let result;
@@ -1585,6 +1586,29 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
             </button>
           )}
 
+          <button
+            type="button"
+            onClick={() => { fetchSuppliers(); setShowSuppliersModal(true); }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-600/30 active:scale-95"
+          >
+            <Truck size={15} />
+            <span>Yetkazib Beruvchilar (Postavshiklar)</span>
+            {suppliersList.filter(s => (s.balance || 0) > 0).length > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-500 text-white font-black animate-pulse">
+                {suppliersList.filter(s => (s.balance || 0) > 0).length} qarz
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { fetchSuppliers(); setShowInvoiceModal(true); }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 active:scale-95"
+          >
+            <FileText size={15} />
+            <span>Kirim Fakturasi (Prikhod)</span>
+          </button>
+
           {businessType === 'restaurant' && (
             <div className="flex flex-wrap items-center gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner">
               <button
@@ -1660,29 +1684,6 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
               >
                 <ClipboardCheck size={15} />
                 <span>Chiqitlar tarixi</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { fetchSuppliers(); setShowSuppliersModal(true); }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-600/30 active:scale-95"
-              >
-                <Truck size={15} />
-                <span>Yetkazib Beruvchilar (Postavshiklar)</span>
-                {suppliersList.filter(s => (s.balance || 0) > 0).length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-500 text-white font-black animate-pulse">
-                    {suppliersList.filter(s => (s.balance || 0) > 0).length} qarz
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { fetchSuppliers(); setShowInvoiceModal(true); }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 active:scale-95"
-              >
-                <FileText size={15} />
-                <span>Kirim Fakturasi (Prikhod)</span>
               </button>
 
               <button
@@ -2254,81 +2255,83 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
               </div>
             )}
 
-            {/* Mahsulot rasmi bloki */}
-            <div className="col-span-2 md:col-span-4 bg-gray-50/80 dark:bg-gray-800/60 p-4 rounded-2xl border border-gray-200 dark:border-gray-700/80 mt-1">
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                Mahsulot rasmi <span className="text-gray-400 font-normal normal-case">(Ctrl+V orqali nusxalab qo'yish mumkin)</span>
-              </label>
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                {/* Preview 150x150 */}
-                <div className="relative w-[150px] h-[150px] rounded-2xl overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex items-center justify-center shrink-0 shadow-inner group">
-                  {formData.image ? (
-                    <>
-                      <img
-                        src={getProductImageUrl(formData.image)}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow-lg transition-transform hover:scale-110 cursor-pointer"
-                        title="Rasmni o'chirish"
-                      >
-                        <X size={14} />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center p-3 text-center text-gray-400 dark:text-gray-500">
-                      <ImageIcon size={36} className="mb-1 opacity-50" />
-                      <span className="text-[11px] font-semibold">Rasm yo'q</span>
-                      <span className="text-[9px] text-gray-400 mt-0.5">150 × 150 px</span>
-                    </div>
-                  )}
-                  {uploadingImage && (
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center">
-                      <span className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Buttons & Info */}
-                <div className="flex-1 space-y-2 text-center sm:text-left">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageFileChange}
-                    className="hidden"
-                  />
-                  <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingImage}
-                      className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold px-4 py-2.5 rounded-xl text-xs border border-blue-200 dark:border-blue-800 transition-all cursor-pointer shadow-sm active:scale-95"
-                    >
-                      <Upload size={14} />
-                      <span>{formData.image ? "Rasmni almashtirish" : "Rasm yuklash"}</span>
-                    </button>
-
-                    {formData.image && (
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        className="flex items-center gap-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-bold px-3 py-2.5 rounded-xl text-xs border border-red-200 dark:border-red-900/50 transition-all cursor-pointer active:scale-95"
-                      >
-                        <Trash2 size={13} />
-                        <span>O'chirish</span>
-                      </button>
+            {/* Mahsulot rasmi bloki (faqat restoran turi uchun) */}
+            {businessType === 'restaurant' && (
+              <div className="col-span-2 md:col-span-4 bg-gray-50/80 dark:bg-gray-800/60 p-4 rounded-2xl border border-gray-200 dark:border-gray-700/80 mt-1">
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
+                  Mahsulot rasmi <span className="text-emerald-600 dark:text-emerald-400 font-bold normal-case ml-1">(Ixtiyoriy — rasmsiz saqlash ham mumkin)</span> <span className="text-gray-400 font-normal normal-case font-mono">(Ctrl+V orqali joylash)</span>
+                </label>
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  {/* Preview 150x150 */}
+                  <div className="relative w-[150px] h-[150px] rounded-2xl overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex items-center justify-center shrink-0 shadow-inner group">
+                    {formData.image ? (
+                      <>
+                        <img
+                          src={getProductImageUrl(formData.image)}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow-lg transition-transform hover:scale-110 cursor-pointer"
+                          title="Rasmni o'chirish"
+                        >
+                          <X size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-3 text-center text-gray-400 dark:text-gray-500">
+                        <ImageIcon size={36} className="mb-1 opacity-50" />
+                        <span className="text-[11px] font-semibold">Rasm yo'q</span>
+                        <span className="text-[9px] text-gray-400 mt-0.5">150 × 150 px</span>
+                      </div>
+                    )}
+                    {uploadingImage && (
+                      <div className="absolute inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center">
+                        <span className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
-                    JPG, PNG yoki WEBP formatdagi rasm. Brauzerdan rasm nusxalab olingan bo'lsa, ushbu sahifada <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-[10px] font-mono font-bold">Ctrl+V</kbd> tugmasini bosib to'g'ridan-to'g'ri joylashingiz mumkin.
-                  </p>
+
+                  {/* Buttons & Info */}
+                  <div className="flex-1 space-y-2 text-center sm:text-left">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileChange}
+                      className="hidden"
+                    />
+                    <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold px-4 py-2.5 rounded-xl text-xs border border-blue-200 dark:border-blue-800 transition-all cursor-pointer shadow-sm active:scale-95"
+                      >
+                        <Upload size={14} />
+                        <span>{formData.image ? "Rasmni almashtirish" : "Rasm yuklash"}</span>
+                      </button>
+
+                      {formData.image && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="flex items-center gap-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-bold px-3 py-2.5 rounded-xl text-xs border border-red-200 dark:border-red-900/50 transition-all cursor-pointer active:scale-95"
+                        >
+                          <Trash2 size={13} />
+                          <span>O'chirish</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      JPG, PNG yoki WEBP formatdagi rasm. Brauzerdan rasm nusxalab olingan bo'lsa, ushbu sahifada <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-[10px] font-mono font-bold">Ctrl+V</kbd> tugmasini bosib to'g'ridan-to'g'ri joylashingiz mumkin.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Harakat izohi */}
             <div className="col-span-2 md:col-span-4 mt-2">
@@ -2428,14 +2431,16 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                 <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   {businessType === 'restaurant' && restaurantTab === 'dishes' ? 'Qoldiq / Portsiya' : 'Qoldiq'}
                 </th>
-                <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center">Stop-List</th>
+                {businessType === 'restaurant' && (
+                  <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center">Stop-List</th>
+                )}
                 <th className="py-3 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="py-14 text-center text-sm text-gray-400 dark:text-gray-500">
+                  <td colSpan={businessType === 'restaurant' ? 10 : (showBuyPrice ? 7 : 6)} className="py-14 text-center text-sm text-gray-400 dark:text-gray-500">
                     {restaurantTab === 'stop_list' ? (
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Ban size={36} className="mx-auto text-red-400 dark:text-red-500 mb-1 opacity-70" />
@@ -2460,7 +2465,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
               ) : (
                 <>
                   {filteredProducts.slice(0, visibleCount).map((product, index) => {
-                    const isStopped = product.is_stopped === 1 || !!product.stop_reason;
+                    const isStopped = businessType === 'restaurant' && (product.is_stopped === 1 || !!product.stop_reason);
                     const lowStock = product.stock <= 3;
                     const unitLabel = t('units')?.[product.unit] || product.unit || 'dona';
 
@@ -2476,20 +2481,22 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                         <td className="py-3.5 px-4 text-sm text-gray-400 dark:text-gray-500 font-mono">{index + 1}</td>
                         <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700/80 shrink-0 border border-gray-200 dark:border-gray-600 flex items-center justify-center shadow-xs">
-                              {product.image ? (
-                                <img
-                                  src={getProductImageUrl(product.image)}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => { e.target.style.display = 'none'; }}
-                                />
-                              ) : (
-                                <span className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase">
-                                  {product.name ? product.name.charAt(0) : '?'}
-                                </span>
-                              )}
-                            </div>
+                            {businessType === 'restaurant' && (
+                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700/80 shrink-0 border border-gray-200 dark:border-gray-600 flex items-center justify-center shadow-xs">
+                                {product.image ? (
+                                  <img
+                                    src={getProductImageUrl(product.image)}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                  />
+                                ) : (
+                                  <span className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase">
+                                    {product.name ? product.name.charAt(0) : '?'}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-2">
                                 <span className={`font-bold ${isStopped ? 'text-red-600 dark:text-red-400' : ''}`}>
@@ -2501,7 +2508,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                                   </span>
                                 )}
                               </div>
-                              {product.stop_reason && (
+                              {businessType === 'restaurant' && product.stop_reason && (
                                 <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 flex items-center gap-1 mt-0.5">
                                   <Ban size={12} className="shrink-0" />
                                   {product.stop_reason}
@@ -2570,7 +2577,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                               <ChefHat size={11} />
                               {product.recipe_available_portions ?? 0} porsiya
                             </span>
-                          ) : product.stop_limit !== null && product.stop_limit !== undefined ? (
+                          ) : businessType === 'restaurant' && product.stop_limit !== null && product.stop_limit !== undefined ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
                               Limit: {product.stop_limit} {unitLabel}
                             </span>
@@ -2592,60 +2599,62 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                         </td>
 
                         {/* Stop-List Switch & Limit */}
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex flex-col items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleStop(product, e)}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold transition-all cursor-pointer shadow-sm ${
-                                product.is_stopped
-                                  ? 'bg-red-600 text-white hover:bg-red-700 ring-2 ring-red-400/50'
-                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-200 border border-emerald-300 dark:border-emerald-700'
-                              }`}
-                              title={product.is_stopped ? "Stop-listda (Sotish bloklangan)" : "Sotuvda faol (Bosib to'xtatish mumkin)"}
-                            >
-                              {product.is_stopped ? (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-white shrink-0 animate-ping" />
-                                  <span>STOPDA</span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                                  <span>FAOL</span>
-                                </>
-                              )}
-                            </button>
+                        {businessType === 'restaurant' && (
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleStop(product, e)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold transition-all cursor-pointer shadow-sm ${
+                                  product.is_stopped
+                                    ? 'bg-red-600 text-white hover:bg-red-700 ring-2 ring-red-400/50'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-200 border border-emerald-300 dark:border-emerald-700'
+                                }`}
+                                title={product.is_stopped ? "Stop-listda (Sotish bloklangan)" : "Sotuvda faol (Bosib to'xtatish mumkin)"}
+                              >
+                                {product.is_stopped ? (
+                                  <>
+                                    <span className="w-2 h-2 rounded-full bg-white shrink-0 animate-ping" />
+                                    <span>STOPDA</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                    <span>FAOL</span>
+                                  </>
+                                )}
+                              </button>
 
-                            {/* Limit info & quick action for non-recipe dishes */}
-                            {product.type !== 'raw_material' && product.has_recipe !== 1 && (
-                              product.stop_limit !== null && product.stop_limit !== undefined ? (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <span className="text-[10px] font-black text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 rounded">
-                                    Limit: {product.stop_limit} {unitLabel}
-                                  </span>
+                              {/* Limit info & quick action for non-recipe dishes */}
+                              {product.type !== 'raw_material' && product.has_recipe !== 1 && (
+                                product.stop_limit !== null && product.stop_limit !== undefined ? (
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <span className="text-[10px] font-black text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 rounded">
+                                      Limit: {product.stop_limit} {unitLabel}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleQuickClearLimit(product, e)}
+                                      className="text-[10px] font-black text-red-500 hover:text-red-700 hover:underline cursor-pointer"
+                                      title="Limitni bekor qilish"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
                                   <button
                                     type="button"
-                                    onClick={(e) => handleQuickClearLimit(product, e)}
-                                    className="text-[10px] font-black text-red-500 hover:text-red-700 hover:underline cursor-pointer"
-                                    title="Limitni bekor qilish"
+                                    onClick={(e) => handleOpenLimitPrompt(product, e)}
+                                    className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded mt-0.5 cursor-pointer transition-colors"
+                                    title="Qoldiq limitini kiritish"
                                   >
-                                    ✕
+                                    + Limit
                                   </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleOpenLimitPrompt(product, e)}
-                                  className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded mt-0.5 cursor-pointer transition-colors"
-                                  title="Qoldiq limitini kiritish"
-                                >
-                                  + Limit
-                                </button>
-                              )
-                            )}
-                          </div>
-                        </td>
+                                )
+                              )}
+                            </div>
+                          </td>
+                        )}
 
                         {/* Actions */}
                         <td className="py-3.5 px-4 text-right">
@@ -3392,7 +3401,9 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
         lang={lang}
       />
       <ProduceSemiFinishedModal modal={produceModal} setModal={setProduceModal} onConfirm={handleConfirmProduce} lang={lang} />
-      <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
+      {businessType === 'restaurant' && (
+        <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
+      )}
     </div>
   );
 });
@@ -3405,14 +3416,12 @@ function ProduceSemiFinishedModal({ modal, setModal, onConfirm, lang }) {
   const recipe = modal.recipe || [];
 
   // Check if all ingredients have enough stock
-  let hasStockError = false;
   const evaluatedIngredients = recipe.map(ing => {
     const wastePct = parseFloat(ing.waste_percentage) || 0;
     const effectivePerUnit = (parseFloat(ing.quantity) || 0) * (1 + wastePct / 100);
     const totalRequired = effectivePerUnit * qty;
     const currentStock = ing.stock || 0;
     const isInsufficient = currentStock < totalRequired;
-    if (isInsufficient) hasStockError = true;
     return {
       ...ing,
       effectivePerUnit,
@@ -3421,6 +3430,7 @@ function ProduceSemiFinishedModal({ modal, setModal, onConfirm, lang }) {
       isInsufficient
     };
   });
+  const hasStockError = evaluatedIngredients.some(ing => ing.isInsufficient);
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
@@ -3566,10 +3576,10 @@ function StockTransferModal({
   transferSelectedProductId, setTransferSelectedProductId, transferSelectedQty, setTransferSelectedQty,
   onAddTransferItem, onRemoveTransferItem, onSaveTransfer, onFetchHistory, products, lang, loading
 }) {
-  if (!isOpen) return null;
-
   const [newSWName, setNewSWName] = useState('');
   const [showAddSW, setShowAddSW] = useState(false);
+
+  if (!isOpen) return null;
 
   const handleAddNewSubWarehouse = async () => {
     if (!newSWName.trim()) return;

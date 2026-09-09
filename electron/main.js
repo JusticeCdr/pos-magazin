@@ -388,7 +388,6 @@ const {
   getWaitersReport,
   getRestaurantOnlyProducts,
   getProductGroups,
-  addProductGroup,
   projectYield,
   getOrCreateProductGroup,
   getAttendanceList,
@@ -2789,15 +2788,6 @@ if (!gotTheLock) {
       }
 
   // ── Products ──────────────────────────────────────────────────────────────
-  ipcMain.handle('generate-unique-local-barcode', () => generateUniqueLocalBarcode());
-  ipcMain.handle('batch-add-products', (_, payload) => {
-    const res = batchAddProducts(payload);
-    if (res && res.success && io) {
-      io.emit('products-updated');
-    }
-    return res;
-  });
-
   // AI 
   ipcMain.handle('get-ai-insights', () => getAiInsights());
 
@@ -2849,8 +2839,6 @@ if (!gotTheLock) {
   });
   ipcMain.handle('search-product', (_, query) => searchProduct(query));
   ipcMain.handle('get-inventory-logs', (_, opts) => getInventoryLogs(opts));
-  ipcMain.handle('add-expense', (_, data) => addExpense(data.reason, data.amount, data.cashier_name));
-  ipcMain.handle('delete-expense', (_, id, userName) => deleteExpense(id, userName));
   ipcMain.handle('upload-product-image', async (_, { buffer, base64, ext = '.jpg' }) => {
     try {
       const dir = ensureImagesDir();
@@ -2940,32 +2928,6 @@ if (!gotTheLock) {
   safeHandle('reset-factory-data', () => resetFactoryData());
   safeHandle('add-expense',        (_, data) => addExpense(data.reason, data.amount, data.cashier_name));
   safeHandle('delete-expense',     (_, id, userName) => deleteExpense(id, userName));
-
-  // ── Network / Terminal Mode ──────────────────────────────────────────────
-  safeHandle('get-local-ip', () => {
-    const os = require('os');
-    const ifaces = os.networkInterfaces();
-    for (const name of Object.keys(ifaces)) {
-      for (const iface of ifaces[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) {
-          return { success: true, ip: iface.address };
-        }
-      }
-    }
-    return { success: false, ip: null };
-  });
-  safeHandle('get-terminal-mode', () => {
-    try {
-      const row = db.prepare("SELECT value FROM settings WHERE key = 'terminal_mode'").get();
-      return { success: true, enabled: row && row.value === '1' };
-    } catch (e) { return { success: false, enabled: false }; }
-  });
-  safeHandle('set-terminal-mode', (_, enabled) => {
-    try {
-      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('terminal_mode', ?)").run(enabled ? '1' : '0');
-      return { success: true };
-    } catch (e) { return { success: false }; }
-  });
 
   // ── Shifts ─────────────────────────────────────────────────────────────────
   safeHandle('get-current-shift-stats', () => getCurrentShiftStats());
