@@ -2559,17 +2559,7 @@ export default function RestaurantCashier({ isActive }) {
                                   📋 Nusxalash
                                 </button>
                               </div>
-                            ) : (
-                              <div className="p-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-center gap-2">
-                                <span className="text-2xl">🔒</span>
-                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
-                                  Ofitsiant (Mobil) QR kodi yashiringan
-                                </span>
-                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                                  Sozlamalardan maxfiy PIN kod orqali ruxsat berilganda ko'rinadi.
-                                </p>
-                              </div>
-                            )}
+                            ) : null}
 
                             {/* Card 3: Xodimlar Davomati (Selfi) */}
                             {(allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.') ? (
@@ -2593,28 +2583,7 @@ export default function RestaurantCashier({ isActive }) {
                                   📋 Nusxalash
                                 </button>
                               </div>
-                            ) : (
-                              <div className="p-4 bg-gray-50 dark:bg-gray-800/40 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center text-center gap-2">
-                                <span className="text-2xl">🔒</span>
-                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
-                                  Davomat QR kodi yashiringan
-                                </span>
-                                <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                                  Admin sozlamalaridan ruxsat berilmagan.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setShowAttendancePinModal(true);
-                                    setAttendancePinInput('');
-                                    setAttendancePinError('');
-                                  }}
-                                  className="mt-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
-                                >
-                                  <span>🔓 PIN kod terish</span>
-                                </button>
-                              </div>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       );
