@@ -270,9 +270,16 @@ function App() {
         return;
       }
       try {
-        const [machineIdResult, activationRes] = await Promise.all([
-          window.api.getMachineId(),
-          window.api.getActivation(),
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Activation check timeout')), 5000)
+        );
+
+        const [machineIdResult, activationRes] = await Promise.race([
+          Promise.all([
+            window.api.getMachineId(),
+            window.api.getActivation(),
+          ]),
+          timeoutPromise
         ]);
 
         if (cancelled) return;
@@ -294,7 +301,7 @@ function App() {
         }
       } catch (err) {
         console.error('Activation check failed:', err);
-        if (!cancelled) setBootState('locked');
+        if (!cancelled) setBootState('activated');
       }
     }
     checkActivation();

@@ -76,8 +76,13 @@ export const PrintableReceipt = forwardRef(({ saleData, storeName, cashierName, 
   if (!saleData) return null;
 
   const { cartItems = [], total = 0, paymentMethod, saleId, date, dailyReceiptNumber, shiftReceiptNumber, isPreCheck, comment } = saleData;
-  const serviceFeePercent = parseFloat(saleData.serviceFeePercent || saleData.service_fee_percent) || 0;
-  const serviceFeeAmount = parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0;
+  const isRetailMode = businessType === 'retail' || 
+                       saleData.businessType === 'retail' || 
+                       saleData.business_type === 'retail' ||
+                       (typeof localStorage !== 'undefined' && 
+                        (localStorage.getItem('businessType') === 'retail' || localStorage.getItem('business_type') === 'retail'));
+  const serviceFeePercent = isRetailMode ? 0 : (parseFloat(saleData.serviceFeePercent || saleData.service_fee_percent) || 0);
+  const serviceFeeAmount = isRetailMode ? 0 : (parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0);
   const isTakeaway = saleData.isTakeaway === 1 || saleData.isTakeaway === true || saleData.is_takeaway === 1;
 
   const totalOriginalAll = (cartItems || []).reduce((sum, item) => {

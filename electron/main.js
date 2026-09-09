@@ -472,13 +472,18 @@ const MAX_BACKUPS = 3;
 function getMachineId() {
   return new Promise((resolve) => {
     try {
+      const timer = setTimeout(() => {
+        resolve('UNKNOWN_MACHINE_ID');
+      }, 3000);
+
       exec('wmic csproduct get uuid', (error, stdout) => {
+        clearTimeout(timer);
         if (error) {
           resolve('UNKNOWN_MACHINE_ID');
           return;
         }
         const lines = stdout.split('\n').map(line => line.trim()).filter(line => line && line !== 'UUID');
-        if (lines.length > 0) {
+        if (lines.length > 0 && lines[0]) {
           resolve(lines[0]);
         } else {
           resolve('UNKNOWN_MACHINE_ID');

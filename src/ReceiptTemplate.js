@@ -137,8 +137,13 @@ export function generateReceiptHTML({ saleData, storeName, cashierName, isReprin
   const overallDiscountAmount = Math.max(0, totalOriginalAll - finalSaleTotal);
   const overallDiscountPercent = totalOriginalAll > 0 ? Math.round((overallDiscountAmount / totalOriginalAll) * 100) : 0;
 
-  const serviceFeePercent = parseFloat(saleData.serviceFeePercent || saleData.service_fee_percent) || 0;
-  const serviceFeeAmount = parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0;
+  const isRetail = saleData.businessType === 'retail' || 
+                   saleData.business_type === 'retail' ||
+                   (typeof localStorage !== 'undefined' && 
+                    (localStorage.getItem('businessType') === 'retail' || localStorage.getItem('business_type') === 'retail'));
+
+  const serviceFeePercent = isRetail ? 0 : (parseFloat(saleData.serviceFeePercent || saleData.service_fee_percent) || 0);
+  const serviceFeeAmount = isRetail ? 0 : (parseFloat(saleData.serviceFeeAmount || saleData.service_fee_amount) || 0);
   const isTakeaway = saleData.isTakeaway === 1 || saleData.isTakeaway === true || saleData.is_takeaway === 1;
 
   let serviceFeeHTML = '';
@@ -596,6 +601,11 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
     return String(Math.round(val)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   };
 
+  const isRetail = stats?.businessType === 'retail' || 
+                   stats?.business_type === 'retail' ||
+                   (typeof localStorage !== 'undefined' && 
+                    (localStorage.getItem('businessType') === 'retail' || localStorage.getItem('business_type') === 'retail'));
+
   const receiptLang = (typeof localStorage !== 'undefined' ? localStorage.getItem('receipt_lang') : null) || 'uz';
   const zLabels = zReportTranslations[receiptLang] || zReportTranslations.uz;
 
@@ -767,7 +777,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
           <span>${zLabels.ortachaChek}</span>
           <span>${formatNumber(stats.average_check || 0)} so'm</span>
         </div>
-        ${stats.service_fee_total > 0 ? `
+        ${(!isRetail && stats.service_fee_total > 0) ? `
         <div class="sub-row">
           <span>${zLabels.xizmatHaqi}</span>
           <span>+${formatNumber(stats.service_fee_total)} so'm</span>
@@ -838,7 +848,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         </div>
 
         <!-- 4. OFITSIANTLAR NATIJASI (RESTORAN / CAFE) -->
-        ${(stats.waiter_stats && stats.waiter_stats.length > 0) ? `
+        ${(!isRetail && stats.waiter_stats && stats.waiter_stats.length > 0) ? `
         <div class="divider"></div>
         <div class="section-title">${zLabels.secWaiters}</div>
         <div class="divider"></div>
@@ -857,7 +867,7 @@ export function generateZReportHTML({ stats, storeName, cashierName }) {
         ` : ''}
 
         <!-- 5. KATEGORIYALAR BO'YICHA -->
-        ${(stats.category_stats && stats.category_stats.length > 0) ? `
+        ${(!isRetail && stats.category_stats && stats.category_stats.length > 0) ? `
         <div class="divider"></div>
         <div class="section-title">${zLabels.secCategories}</div>
         <div class="divider"></div>

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { AppProvider } from './context/AppContext.jsx'
+import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
 // ── Fallback window.api for Web Browser Clients ──
 if (typeof window !== 'undefined' && !window.api) {
@@ -251,8 +252,10 @@ if (typeof window !== 'undefined' && !window.api) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AppProvider>
-      <App />
-    </AppProvider>
+    <ErrorBoundary name="Bosh sahifa (AppRoot)">
+      <AppProvider>
+        <App />
+      </AppProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )

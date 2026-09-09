@@ -5,7 +5,7 @@ import { formatCurrency, parseSQLiteDate } from '../utils';
 import { generateZReportHTML } from '../ReceiptTemplate';
 
 export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
-  const { storeName, currentUser } = useApp();
+  const { storeName, currentUser, lang, businessType } = useApp();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isClosing, setIsClosing] = useState(false);
@@ -42,7 +42,7 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
     try {
       // 1. Try to Print Z-Report (Non-blocking)
       const html = generateZReportHTML({ 
-        stats, 
+        stats: { ...stats, businessType }, 
         storeName: storeName, 
         cashierName: currentUser?.name || 'Admin'
       });
@@ -182,7 +182,7 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
                       <span>+{formatCurrency(stats.debt_payments, lang)}</span>
                     </div>
                   )}
-                  {stats.service_fee_total > 0 && (
+                  {businessType !== 'retail' && stats.service_fee_total > 0 && (
                     <div className="flex justify-between items-center text-blue-600 dark:text-blue-400">
                       <span>Xizmat haqi (Usluga)</span>
                       <span>+{formatCurrency(stats.service_fee_total, lang)}</span>
@@ -232,7 +232,7 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
               </div>
 
               {/* Waiters Breakdown Accordion */}
-              {stats.waiter_stats && stats.waiter_stats.length > 0 && (
+              {businessType !== 'retail' && stats.waiter_stats && stats.waiter_stats.length > 0 && (
                 <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                   <button
                     type="button"
@@ -267,7 +267,7 @@ export default function ShiftModal({ onClose, onShiftClosed, onLogout }) {
               )}
 
               {/* Categories Breakdown Accordion */}
-              {stats.category_stats && stats.category_stats.length > 0 && (
+              {businessType !== 'retail' && stats.category_stats && stats.category_stats.length > 0 && (
                 <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                   <button
                     type="button"
