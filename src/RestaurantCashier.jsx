@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, Banknote, CreditCard, Clock,
   X, CheckCircle2, AlertCircle, Store, Truck, ChevronRight, Users, Package, Printer, Wifi, ShieldAlert,
-  ArrowRightLeft, Ban, Eye, EyeOff, Sparkles
+  ArrowRightLeft, Ban, Eye, EyeOff, Sparkles, QrCode
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from './context/AppContext';
@@ -1878,6 +1878,16 @@ export default function RestaurantCashier({ isActive, onOpenStopList }) {
             <span>Zona qo'shish</span>
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => setShowNetworkModal(true)}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl font-bold text-sm bg-blue-50/60 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 border-b-2 border-transparent transition-all cursor-pointer whitespace-nowrap ml-auto"
+          title="Terminalga ulanish (Planshet, Ofitsiant, Davomat QR kodlari)"
+        >
+          <QrCode size={15} />
+          <span>QR Kodlar</span>
+        </button>
       </div>
 
       {/* ── Content Area ────────────────────────────────────────────────────── */}
@@ -2778,52 +2788,48 @@ export default function RestaurantCashier({ isActive, onOpenStopList }) {
                             </div>
 
                             {/* Card 2: Telefondan kirish (Afitsiantlar) */}
-                            {allowMobileQr ? (
-                              <div className="p-4 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex flex-col items-center gap-3 shadow-sm">
-                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
-                                  📱 Ofitsiant (Mobil)
-                                </span>
-                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-emerald-100">
-                                  <QRCodeSVG value={waiterUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
-                                </div>
-                                <a href={waiterUrl} target="_blank" rel="noreferrer"
-                                  className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 break-all underline hover:text-emerald-500 block text-center">
-                                  {waiterUrl}
-                                </a>
-                                <button type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(waiterUrl);
-                                    setAlertModal({ title: "Muvaffaqiyatli", message: "Mobil havola nusxalandi!", type: "success" });
-                                  }}
-                                  className="w-full py-1.5 px-3 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40 rounded-xl transition-colors cursor-pointer">
-                                  📋 Nusxalash
-                                </button>
+                            <div className="p-4 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                                📱 Ofitsiant (Mobil)
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-emerald-100">
+                                <QRCodeSVG value={waiterUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
                               </div>
-                            ) : null}
+                              <a href={waiterUrl} target="_blank" rel="noreferrer"
+                                className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 break-all underline hover:text-emerald-500 block text-center">
+                                {waiterUrl}
+                              </a>
+                              <button type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(waiterUrl);
+                                  setAlertModal({ title: "Muvaffaqiyatli", message: "Mobil havola nusxalandi!", type: "success" });
+                                }}
+                                className="w-full py-1.5 px-3 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/40 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
+                            </div>
 
                             {/* Card 3: Xodimlar Davomati (Selfi) */}
-                            {(allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.') ? (
-                              <div className="p-4 bg-purple-50/30 dark:bg-purple-950/10 rounded-2xl border border-purple-100 dark:border-purple-900/30 flex flex-col items-center gap-3 shadow-sm">
-                                <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
-                                  📸 Xodimlar Davomati
-                                </span>
-                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-purple-100">
-                                  <QRCodeSVG value={attendanceUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
-                                </div>
-                                <a href={attendanceUrl} target="_blank" rel="noreferrer"
-                                  className="text-[11px] font-mono font-bold text-purple-600 dark:text-purple-400 break-all underline hover:text-purple-500 block text-center">
-                                  {attendanceUrl}
-                                </a>
-                                <button type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(attendanceUrl);
-                                    setAlertModal({ title: "Muvaffaqiyatli", message: "Davomat havolasi nusxalandi!", type: "success" });
-                                  }}
-                                  className="w-full py-1.5 px-3 text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40 rounded-xl transition-colors cursor-pointer">
-                                  📋 Nusxalash
-                                </button>
+                            <div className="p-4 bg-purple-50/30 dark:bg-purple-950/10 rounded-2xl border border-purple-100 dark:border-purple-900/30 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
+                                📸 Xodimlar Davomati
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-purple-100">
+                                <QRCodeSVG value={attendanceUrl} size={130} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
                               </div>
-                            ) : null}
+                              <a href={attendanceUrl} target="_blank" rel="noreferrer"
+                                className="text-[11px] font-mono font-bold text-purple-600 dark:text-purple-400 break-all underline hover:text-purple-500 block text-center">
+                                {attendanceUrl}
+                              </a>
+                              <button type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(attendanceUrl);
+                                  setAlertModal({ title: "Muvaffaqiyatli", message: "Davomat havolasi nusxalandi!", type: "success" });
+                                }}
+                                className="w-full py-1.5 px-3 text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

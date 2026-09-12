@@ -3,7 +3,7 @@ import {
   Search, ShoppingCart, Trash2, Plus, Minus,
   User, Barcode, HelpCircle, Check, Play,
   CheckCircle2, CreditCard, Clock, ArrowLeft, RefreshCw, Eye, EyeOff, Wifi, X,
-  ShieldAlert, Banknote, Users, PackageOpen, AlertCircle
+  ShieldAlert, Banknote, Users, PackageOpen, AlertCircle, QrCode
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp, useCart } from './context/AppContext';
@@ -834,6 +834,15 @@ export default memo(function Cashier({ isActive }) {
               </button>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => setShowNetworkModal(true)}
+            className="flex items-center gap-2 px-4 py-3.5 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 text-gray-700 dark:text-gray-200 rounded-2xl font-bold text-sm shadow-sm transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            title="Qurilmalarni ulash (Planshet, Telefon, Davomat QR kodlari)"
+          >
+            <QrCode size={20} className="text-blue-600 dark:text-blue-400" />
+            <span className="hidden sm:inline">QR Kodlar</span>
+          </button>
         </div>
 
         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
@@ -1387,46 +1396,42 @@ export default memo(function Cashier({ isActive }) {
                             </div>
 
                             {/* Card 2: Telefondan kirish */}
-                            {allowMobileQr ? (
-                              <div className="p-4 bg-orange-50/30 dark:bg-orange-950/10 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex flex-col items-center gap-3 shadow-sm">
-                                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">
-                                  📱 Telefondan kirish
-                                </span>
-                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-orange-100">
-                                  <QRCodeSVG value={mobileUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
-                                </div>
-                                <a href={mobileUrl} target="_blank" rel="noreferrer"
-                                  className="text-[10px] font-mono font-bold text-orange-600 dark:text-orange-400 break-all underline hover:text-orange-500 text-center w-full px-1">
-                                  {mobileUrl}
-                                </a>
-                                <button type="button"
-                                  onClick={() => { navigator.clipboard.writeText(mobileUrl); setToast('Mobil havola nusxalandi!'); }}
-                                  className="w-full py-2 px-3 text-[11px] font-bold bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-900/40 rounded-xl transition-colors cursor-pointer">
-                                  📋 Nusxalash
-                                </button>
+                            <div className="p-4 bg-orange-50/30 dark:bg-orange-950/10 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">
+                                📱 Telefondan kirish
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-orange-100">
+                                <QRCodeSVG value={mobileUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
                               </div>
-                            ) : null}
+                              <a href={mobileUrl} target="_blank" rel="noreferrer"
+                                className="text-[10px] font-mono font-bold text-orange-600 dark:text-orange-400 break-all underline hover:text-orange-500 text-center w-full px-1">
+                                {mobileUrl}
+                              </a>
+                              <button type="button"
+                                onClick={() => { navigator.clipboard.writeText(mobileUrl); setToast('Mobil havola nusxalandi!'); }}
+                                className="w-full py-2 px-3 text-[11px] font-bold bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/20 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-900/40 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
+                            </div>
 
                             {/* Card 3: Xodimlar Davomati */}
-                            {(allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.') ? (
-                              <div className="p-4 bg-purple-50/30 dark:bg-purple-950/10 rounded-2xl border border-purple-100 dark:border-purple-900/30 flex flex-col items-center gap-3 shadow-sm">
-                                <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
-                                  📸 Xodimlar Davomati
-                                </span>
-                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-purple-100">
-                                  <QRCodeSVG value={attendanceUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
-                                </div>
-                                <a href={attendanceUrl} target="_blank" rel="noreferrer"
-                                  className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400 break-all underline hover:text-purple-500 text-center w-full px-1">
-                                  {attendanceUrl}
-                                </a>
-                                <button type="button"
-                                  onClick={() => { navigator.clipboard.writeText(attendanceUrl); setToast('Davomat havolasi nusxalandi!'); }}
-                                  className="w-full py-2 px-3 text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40 rounded-xl transition-colors cursor-pointer">
-                                  📋 Nusxalash
-                                </button>
+                            <div className="p-4 bg-purple-50/30 dark:bg-purple-950/10 rounded-2xl border border-purple-100 dark:border-purple-900/30 flex flex-col items-center gap-3 shadow-sm">
+                              <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
+                                📸 Xodimlar Davomati
+                              </span>
+                              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-purple-100">
+                                <QRCodeSVG value={attendanceUrl} size={150} level="M" includeMargin={false} fgColor="#0f172a" bgColor="#ffffff" />
                               </div>
-                            ) : null}
+                              <a href={attendanceUrl} target="_blank" rel="noreferrer"
+                                className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400 break-all underline hover:text-purple-500 text-center w-full px-1">
+                                {attendanceUrl}
+                              </a>
+                              <button type="button"
+                                onClick={() => { navigator.clipboard.writeText(attendanceUrl); setToast('Davomat havolasi nusxalandi!'); }}
+                                className="w-full py-2 px-3 text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40 rounded-xl transition-colors cursor-pointer">
+                                📋 Nusxalash
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

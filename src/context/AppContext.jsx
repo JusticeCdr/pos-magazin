@@ -80,8 +80,8 @@ export function AppProvider({ children }) {
   const [storeName, setStoreName] = useState("Mening Do'konim");
   const [businessType, setBusinessType] = useState('retail');
   const [terminalMode, setTerminalMode] = useState(false);
-  const [allowMobileQr, setAllowMobileQr] = useState(false);
-  const [allowAttendanceQr, setAllowAttendanceQr] = useState(false);
+  const [allowMobileQr, setAllowMobileQr] = useState(true);
+  const [allowAttendanceQr, setAllowAttendanceQr] = useState(true);
   const [usdRate, setUsdRate] = useState(12800);
 
   const updateAllowMobileQr = async (val) => {
@@ -154,8 +154,16 @@ export function AppProvider({ children }) {
           if (res.data.store_name) setStoreName(res.data.store_name);
           if (res.data.business_type) setBusinessType(res.data.business_type);
           if (res.data.terminal_mode) setTerminalMode(res.data.terminal_mode === 'true');
-          if (res.data.allow_mobile_qr !== undefined) setAllowMobileQr(res.data.allow_mobile_qr === 'true');
-          if (res.data.allow_attendance_qr !== undefined) setAllowAttendanceQr(res.data.allow_attendance_qr === 'true');
+          if (res.data.allow_mobile_qr !== undefined) {
+            setAllowMobileQr(res.data.allow_mobile_qr !== 'false');
+          } else {
+            setAllowMobileQr(true);
+          }
+          if (res.data.allow_attendance_qr !== undefined) {
+            setAllowAttendanceQr(res.data.allow_attendance_qr !== 'false');
+          } else {
+            setAllowAttendanceQr(true);
+          }
           if (res.data.usd_rate) setUsdRate(parseFloat(res.data.usd_rate) || 12800);
            if (res.data.receipt_printer_name) localStorage.setItem('receiptPrinterName', res.data.receipt_printer_name);
           if (res.data.label_printer_name) localStorage.setItem('labelPrinterName', res.data.label_printer_name);
