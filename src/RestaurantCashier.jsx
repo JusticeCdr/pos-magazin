@@ -1878,16 +1878,6 @@ export default function RestaurantCashier({ isActive, onOpenStopList }) {
             <span>Zona qo'shish</span>
           </button>
         )}
-
-        <button
-          type="button"
-          onClick={() => setShowNetworkModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-t-xl font-bold text-sm bg-blue-50/60 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 border-b-2 border-transparent transition-all cursor-pointer whitespace-nowrap ml-auto"
-          title="Terminalga ulanish (Planshet, Ofitsiant, Davomat QR kodlari)"
-        >
-          <QrCode size={15} />
-          <span>QR Kodlar</span>
-        </button>
       </div>
 
       {/* ── Content Area ────────────────────────────────────────────────────── */}

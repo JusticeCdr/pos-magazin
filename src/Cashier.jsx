@@ -813,36 +813,25 @@ export default memo(function Cashier({ isActive }) {
     <div className="h-full flex gap-4 min-h-0">
       {/* ══ LEFT: Search Panel ══════════════════════════════════════════════ */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        <div className="flex gap-2 mb-4 shrink-0">
-          <div className="relative flex-1">
-            <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={query}
-              onChange={handleQueryChange}
-              onKeyDown={handleKeyDown}
-              placeholder={t('searchPlaceholder')}
-              className="w-full pl-12 pr-12 py-4 text-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:outline-none rounded-2xl transition-colors shadow-sm"
-            />
-            {query && (
-              <button
-                onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <X size={20} />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowNetworkModal(true)}
-            className="flex items-center gap-2 px-4 py-3.5 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 text-gray-700 dark:text-gray-200 rounded-2xl font-bold text-sm shadow-sm transition-all cursor-pointer whitespace-nowrap active:scale-95"
-            title="Qurilmalarni ulash (Planshet, Telefon, Davomat QR kodlari)"
-          >
-            <QrCode size={20} className="text-blue-600 dark:text-blue-400" />
-            <span className="hidden sm:inline">QR Kodlar</span>
-          </button>
+        <div className="relative mb-4 shrink-0">
+          <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={query}
+            onChange={handleQueryChange}
+            onKeyDown={handleKeyDown}
+            placeholder={t('searchPlaceholder')}
+            className="w-full pl-12 pr-12 py-4 text-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:outline-none rounded-2xl transition-colors shadow-sm"
+          />
+          {query && (
+            <button
+              onClick={() => { setQuery(''); searchInputRef.current?.focus(); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <X size={20} />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
