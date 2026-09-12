@@ -13,7 +13,7 @@ export const TRANSLATIONS = {
     clearDataTitle: 'Очистить историю продаж',
     clearDataDesc: 'Удаляет все продажи и обнуляет долги. Товары, кассиры и настройки сохраняются.',
     clearDataBtn: 'Очистить историю продаж (Сброс)',
-    version: 'Версия 1.0.0',
+    version: 'Версия 1.5.4',
     darkMode: 'Тёмная тема',
     lightMode: 'Светлая тема',
     // Cashier / Cart
@@ -148,7 +148,7 @@ export const TRANSLATIONS = {
     clearDataTitle: 'Savdo tarixini tozalash',
     clearDataDesc: "Barcha sotuvlarni o'chiradi va qarzlarni nollaydi. Tovarlar, kassirlar va sozlamalar saqlanadi.",
     clearDataBtn: "Savdo tarixini tozalash (Reset)",
-    version: 'Versiya 1.5.3',
+    version: 'Versiya 1.5.4',
     darkMode: "Qorong'i rejim",
     lightMode: 'Yorug\' rejim',
     // Cashier / Cart

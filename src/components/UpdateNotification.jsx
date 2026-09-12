@@ -61,7 +61,7 @@ export default function UpdateNotification() {
 
     // ── Developer / Test simulation trigger ─────────────────────────────────
     if (typeof window !== 'undefined') {
-      window.__simulateUpdate = (mockVersion = '1.5.3') => {
+      window.__simulateUpdate = (mockVersion = '1.5.4') => {
         setUpdateInfo({ version: mockVersion, releaseDate: new Date().toLocaleDateString() });
         setUpdateState('available');
         setDownloadPercent(0);

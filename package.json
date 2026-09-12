@@ -2,7 +2,7 @@
   "name": "xxmpos",
   "productName": "xxMpos",
   "private": true,
-  "version": "1.5.3",
+  "version": "1.5.4",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
