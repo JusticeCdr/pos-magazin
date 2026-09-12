@@ -1755,13 +1755,39 @@ export default memo(function Settings() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('settingsSubtitle')}</p>
         </div>
 
-        {isMasterAdmin && (
+        {isMasterAdmin ? (
           <div className="flex items-center gap-2">
             <div className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-2 shadow-sm">
               <span>👑</span>
               <span>Asosiy Admin (Barcha sozlamalar ochiq)</span>
             </div>
+            {isMasterUnlocked && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMasterUnlocked(false);
+                  setToastMsg("Admin rejimi qulflindi!");
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 text-xs font-bold transition-colors cursor-pointer"
+                title="Qulflash"
+              >
+                🔒 Qulflash
+              </button>
+            )}
           </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setShowMasterUnlockModal(true);
+              setMasterPinInput('');
+              setMasterPinError('');
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+          >
+            <span>🔐</span>
+            <span>Asosiy Admin PIN (xxMpos7532.)</span>
+          </button>
         )}
       </div>
 
@@ -2167,8 +2193,9 @@ export default memo(function Settings() {
             </div>
           </div>
 
-          {/* ── 2. Printerlar va Shtrix-kod Skanerlari (Har doim ochiq) ── */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-6">
+          {/* ── 2. Printerlar va Shtrix-kod Skanerlari (Faqat Asosiy Admin) ── */}
+          {isMasterAdmin && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
@@ -2486,9 +2513,11 @@ export default memo(function Settings() {
               </div>
             )}
           </div>
+        )}
 
-          {/* ── 3. Do'kon / Kafe nomi, Logotip va Aloqa telefonlari (Har doim ochiq) ── */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-6">
+          {/* ── 3. Do'kon / Kafe nomi, Logotip va Aloqa telefonlari (Faqat Asosiy Admin) ── */}
+          {isMasterAdmin && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors space-y-6">
             <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
               <Store className="text-emerald-500" size={20} />
               {businessType === 'restaurant' ? 'Kafe / Restoran ma\'lumotlari' : t('storeNameLabel')}
@@ -2681,6 +2710,7 @@ export default memo(function Settings() {
               </div>
             </div>
           </div>
+        )}
 
           {/* ── 4. Masofaviy Boshqaruv (Ngrok & AI) (Faqat Asosiy Admin) ── */}
           {isMasterAdmin && (
@@ -4125,8 +4155,8 @@ export default memo(function Settings() {
             </div>
           )}
 
-          {/* Kafe Xizmat Foiz Stavkasi Card */}
-          {(businessType === 'restaurant' || isMasterAdmin) && (
+          {/* Kafe Xizmat Foiz Stavkasi Card (Faqat Asosiy Admin) */}
+          {(businessType === 'restaurant' && isMasterAdmin) && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
               <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
                 <Percent className="text-emerald-500" size={20} />
