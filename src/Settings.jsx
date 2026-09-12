@@ -2,10 +2,29 @@ import { useState, useEffect, memo } from 'react';
 import { 
   DatabaseBackup, Download, Upload, Users, Store, Trash2, Plus, RefreshCw, 
   Printer, AlertTriangle, Phone, Eye, EyeOff, Percent, ChefHat, Tv, ExternalLink, 
-  Copy, Check, Smartphone, Wifi, Globe, Monitor, ShieldCheck, CheckCircle2, AlertCircle, Camera, UserCheck, Clock
+  Copy, Check, Smartphone, Wifi, Globe, Monitor, ShieldCheck, CheckCircle2, AlertCircle, Camera, UserCheck, Clock,
+  Banknote, DollarSign
 } from 'lucide-react';
 import { useApp } from './context/AppContext';
 import { QRCodeCanvas } from 'qrcode.react';
+
+const ALL_STAFF_ROLES = [
+  { id: 'cashier', label: 'Kassir', needPin: true },
+  { id: 'senior_cashier', label: 'Katta kassir', needPin: true },
+  { id: 'manager', label: 'Menejer', needPin: true },
+  { id: 'waiter', label: 'Ofitsiant', needPin: true },
+  { id: 'admin', label: 'Asosiy Admin', needPin: true },
+];
+
+const doesRoleNeedPin = (role) => {
+  const found = ALL_STAFF_ROLES.find(r => r.id === role);
+  return found ? found.needPin : ['cashier', 'senior_cashier', 'manager', 'waiter', 'admin'].includes(role);
+};
+
+const getRoleLabel = (role) => {
+  const found = ALL_STAFF_ROLES.find(r => r.id === role);
+  return found ? found.label : (role || 'Xodim');
+};
 
 export default memo(function Settings() {
   const { t, storeName, setStoreName, currentUser, shopLogo, setShopLogo, receiptLogo, setReceiptLogo, terminalMode, updateTerminalMode, businessType, setBusinessType, lang, fetchGlobalProducts, usdRate, setUsdRate, allowMobileQr, updateAllowMobileQr, allowAttendanceQr, updateAllowAttendanceQr } = useApp();
@@ -53,6 +72,9 @@ export default memo(function Settings() {
   const [revealedWaiters, setRevealedWaiters] = useState({});
 
   const [shopLocation, setShopLocation] = useState(() => localStorage.getItem('shopLocation') || '');
+  const [networkRole, setNetworkRole] = useState('server');
+  const [networkServerIp, setNetworkServerIp] = useState('');
+  const [savingNetwork, setSavingNetwork] = useState(false);
 
   const updateShopLocation = (val) => {
     setShopLocation(val);
@@ -382,6 +404,14 @@ export default memo(function Settings() {
             setLocalIp(ips[0]);
           } else {
             setLocalIp('');
+          }
+        });
+      }
+      if (window.api.getNetworkSettings) {
+        window.api.getNetworkSettings().then(res => {
+          if (res) {
+            setNetworkRole(res.role || 'server');
+            setNetworkServerIp(res.ip || '');
           }
         });
       }
@@ -936,14 +966,16 @@ export default memo(function Settings() {
 
     try {
       const res = await window.api.checkUpdate();
-      if (res && res.success && res.updateInfo) {
-        setUpdateState('available');
-        setUpdateInfo(res.updateInfo);
+      if (res && res.success) {
+        if (res.updateAvailable && res.updateInfo) {
+          setUpdateState('available');
+          setUpdateInfo(res.updateInfo);
+        } else {
+          setUpdateState('not-available');
+        }
       } else {
-        // No update info or dev mode -> latest version
-        setTimeout(() => {
-          setUpdateState(prev => (prev === 'checking' ? 'not-available' : prev));
-        }, 500);
+        setUpdateState('error');
+        setUpdateError(res?.error || "Yangilanishlarni tekshirishda xatolik");
       }
     } catch (err) {
       setUpdateState('not-available');
@@ -979,7 +1011,12 @@ export default memo(function Settings() {
 
   const handleAddCashier = async (e) => {
     e.preventDefault();
-    if (!window.api || cashierPin.length !== 4) return;
+    if (!window.api) return;
+    const needPin = doesRoleNeedPin(cashierRole);
+    if (needPin && cashierPin.length !== 4) {
+      setToastMsg("Ushbu lavozim uchun 4 xonali PIN kod kiritish majburiy!");
+      return;
+    }
     try {
       if (cashierRole === 'waiter') {
         const res = await window.api.addWaiter({
@@ -1005,7 +1042,7 @@ export default memo(function Settings() {
       }
       const res = await window.api.addCashier({
         name: cashierName,
-        pin: cashierPin,
+        pin: needPin ? cashierPin : '',
         role: cashierRole,
         salary: Number(cashierSalary) || 0,
         percentage: Number(cashierPercentage) || 0
@@ -1051,12 +1088,17 @@ export default memo(function Settings() {
   };
 
   const handleUpdateCashier = async (id) => {
-    if (!window.api || editPin.length !== 4) return;
+    if (!window.api) return;
+    const needPin = doesRoleNeedPin(editRole);
+    if (needPin && editPin.length !== 4) {
+      setToastMsg("Ushbu lavozim uchun 4 xonali PIN kod kiritish majburiy!");
+      return;
+    }
     try {
       const res = await window.api.updateCashier({
         id,
         name: editName,
-        pin: editPin,
+        pin: needPin ? editPin : (editPin || ''),
         role: editRole,
         salary: Number(editSalary) || 0,
         percentage: Number(editPercentage) || 0
@@ -2224,13 +2266,12 @@ export default memo(function Settings() {
                 </button>
               </div>
 
-              {/* Masofaviy boshqaruv (Telefon uchun) */}
-              {(isMasterAdmin || allowMobileQr) && (
-                <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
-                    <span className="text-blue-500">📱</span>
-                    Masofaviy boshqaruv (Telefon uchun)
-                  </h4>
+              {/* Masofaviy boshqaruv (Telefon uchun) va Ekran Havolalari */}
+              <div className="mt-6 border-t border-gray-100 dark:border-gray-700 pt-6">
+                <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                  <span className="text-blue-500">📱</span>
+                  Masofaviy boshqaruv va Ekran Havolalari
+                </h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                   Telefon orqali sotuv va skladni boshqarish uchun Ngrok sozlamalarini kiriting.
                 </p>
@@ -2456,71 +2497,69 @@ export default memo(function Settings() {
                         </div>
                       </div>
 
-                      {/* Card 2: Ofitsiant / Mobil Kassa (Faqat ruxsat berilganda) */}
-                      {allowMobileQr && (
-                        <div className="p-4 bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-200/80 dark:border-emerald-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 uppercase tracking-wide">
-                                <Smartphone size={16} className="text-emerald-600 dark:text-emerald-400" />
-                                {businessType === 'restaurant' ? 'Ofitsiant Mobil Ilovasi' : 'Mobil Kassa & Sklad'}
-                              </span>
-                              <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-black px-2 py-0.5 rounded-md">
-                                /mobile
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
-                              {businessType === 'restaurant'
-                                ? 'Ofitsiantlar telefon orqali stollarga buyurtma olishi va oshxonaga yuborishi uchun.'
-                                : 'Telefondan tovarlarni qidirish, skladni tekshirish va savdo qilish uchun.'}
-                            </p>
-                            
-                            <div className="flex items-center gap-3">
-                              <div className="shrink-0 bg-white p-2 rounded-xl border border-emerald-200/60 shadow-sm flex items-center justify-center">
-                                <QRCodeCanvas
-                                  value={`http://${localIp || 'localhost'}:4000/mobile`}
-                                  size={76}
-                                  className="bg-white"
-                                />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
-                                <a
-                                  href={`http://${localIp || 'localhost'}:4000/mobile`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 break-all underline hover:text-emerald-600 block"
-                                >
-                                  {`http://${localIp || 'localhost'}:4000/mobile`}
-                                </a>
-                              </div>
-                            </div>
+                      {/* Card 2: Ofitsiant / Mobil Kassa */}
+                      <div className="p-4 bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-200/80 dark:border-emerald-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 uppercase tracking-wide">
+                              <Smartphone size={16} className="text-emerald-600 dark:text-emerald-400" />
+                              {businessType === 'restaurant' ? 'Ofitsiant Mobil Ilovasi' : 'Mobil Kassa & Sklad'}
+                            </span>
+                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-black px-2 py-0.5 rounded-md">
+                              /mobile
+                            </span>
                           </div>
-
-                          <div className="flex gap-2 pt-2 border-t border-emerald-100 dark:border-emerald-900/30">
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/mobile`, 'loc-mobile')}
-                              className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                            >
-                              {copiedLink === 'loc-mobile' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                              <span>Nusxalash</span>
-                            </button>
-                            <a
-                              href={`http://${localIp || 'localhost'}:4000/mobile`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-                            >
-                              <ExternalLink size={14} />
-                              <span>Ochish</span>
-                            </a>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3">
+                            {businessType === 'restaurant'
+                              ? 'Ofitsiantlar telefon orqali stollarga buyurtma olishi va oshxonaga yuborishi uchun.'
+                              : 'Telefondan tovarlarni qidirish, skladni tekshirish va savdo qilish uchun.'}
+                          </p>
+                          
+                          <div className="flex items-center gap-3">
+                            <div className="shrink-0 bg-white p-2 rounded-xl border border-emerald-200/60 shadow-sm flex items-center justify-center">
+                              <QRCodeCanvas
+                                value={`http://${localIp || 'localhost'}:4000/mobile`}
+                                size={76}
+                                className="bg-white"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] uppercase font-bold text-gray-400">Lokal Havola</p>
+                              <a
+                                href={`http://${localIp || 'localhost'}:4000/mobile`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 break-all underline hover:text-emerald-600 block"
+                              >
+                                {`http://${localIp || 'localhost'}:4000/mobile`}
+                              </a>
+                            </div>
                           </div>
                         </div>
-                      )}
 
-                      {/* Card 3: Oshxona ekrani (KDS) - Faqat Asosiy Admin */}
-                      {isMasterAdmin && businessType === 'restaurant' && (
+                        <div className="flex gap-2 pt-2 border-t border-emerald-100 dark:border-emerald-900/30">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(`http://${localIp || 'localhost'}:4000/mobile`, 'loc-mobile')}
+                            className="flex-1 py-1.5 px-2 bg-white dark:bg-gray-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            {copiedLink === 'loc-mobile' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                            <span>Nusxalash</span>
+                          </button>
+                          <a
+                            href={`http://${localIp || 'localhost'}:4000/mobile`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <ExternalLink size={14} />
+                            <span>Ochish</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Card 3: Oshxona ekrani (KDS) */}
+                      {businessType === 'restaurant' && (
                         <div className="p-4 bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
                           <div>
                             <div className="flex items-center justify-between mb-2">
@@ -2580,8 +2619,8 @@ export default memo(function Settings() {
                         </div>
                       )}
 
-                      {/* Card 4: TV Tablo ekrani - Faqat Asosiy Admin */}
-                      {isMasterAdmin && businessType === 'restaurant' && (
+                      {/* Card 4: TV Tablo ekrani */}
+                      {businessType === 'restaurant' && (
                         <div className="p-4 bg-purple-50/40 dark:bg-purple-950/10 border border-purple-200/80 dark:border-purple-900/40 rounded-2xl flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
                           <div>
                             <div className="flex items-center justify-between mb-2">
@@ -2703,7 +2742,6 @@ export default memo(function Settings() {
                   </div>
                 </div>
               </div>
-            )}
 
               {/* Sun'iy Intellekt Sozlamalari (Gemini) */}
               {(isMasterAdmin || businessType !== 'restaurant') && (
@@ -2756,7 +2794,7 @@ export default memo(function Settings() {
                       className={`flex-1 py-3 px-4 rounded-xl font-bold border-2 transition-all cursor-pointer ${
                         businessType === 'retail' 
                           ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-500' 
-                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
                       }`}
                     >
                       🛍️ Do'kon (Retail)
@@ -2767,7 +2805,7 @@ export default memo(function Settings() {
                       className={`flex-1 py-3 px-4 rounded-xl font-bold border-2 transition-all cursor-pointer ${
                         businessType === 'restaurant' 
                           ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-500' 
-                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                          : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
                       }`}
                     >
                       🍽️ Restoran / Kafe
@@ -2801,6 +2839,119 @@ export default memo(function Settings() {
                       Yordamchi Terminal Rejimini Faollashtirish (Terminal Mode)
                     </span>
                   </label>
+                </div>
+              )}
+
+              {/* Lokal Tarmoq & Kompyuter Roli (Client / Server) */}
+              {isMasterAdmin && (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+                  <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
+                    <span className="text-blue-500">🌐</span>
+                    Lokal Tarmoq & Kompyuter Roli (Server / Client)
+                    <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full font-black">Wi-Fi</span>
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                    Bitta Wi-Fi tarmog'ida bir nechta kompyuter bo'lsa, bitta kompyuter <b>Asosiy Kassa (Server)</b>, qolgan kompyuterlar esa <b>Yordamchi Terminal (Mijoz / Client)</b> sifatida ishlaydi.
+                  </p>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className={`p-4 rounded-xl border-2 flex items-start gap-3 cursor-pointer transition-all ${
+                        networkRole === 'server'
+                          ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="networkRole"
+                          value="server"
+                          checked={networkRole === 'server'}
+                          onChange={() => setNetworkRole('server')}
+                          className="mt-1 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div>
+                          <p className="font-bold text-sm text-gray-900 dark:text-white">Asosiy Kassa (Bosh Server)</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Barcha ma'lumotlar va baza ushbu kompyuterda saqlanadi. Boshqa kompyuterlar ulanishi uchun ushbu kompyuter IP manzili: <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{localIp || 'Aniqlanmoqda...'}</span>
+                          </p>
+                        </div>
+                      </label>
+
+                      <label className={`p-4 rounded-xl border-2 flex items-start gap-3 cursor-pointer transition-all ${
+                        networkRole === 'client'
+                          ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-950/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="networkRole"
+                          value="client"
+                          checked={networkRole === 'client'}
+                          onChange={() => setNetworkRole('client')}
+                          className="mt-1 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                        />
+                        <div>
+                          <p className="font-bold text-sm text-gray-900 dark:text-white">Yordamchi Terminal (Mijoz / Client)</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Bu kompyuter Asosiy Kassa kompyuteridagi bazaga Wi-Fi orqali ulanadi va ofitsiant / yordamchi kassa bo'lib ishlaydi.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+
+                    {networkRole === 'client' && (
+                      <div className="p-4 bg-purple-50 dark:bg-purple-950/30 rounded-xl border border-purple-200 dark:border-purple-900 space-y-3 animate-in fade-in">
+                        <label className="block text-xs font-bold uppercase text-purple-800 dark:text-purple-300">
+                          Asosiy Kassa kompyuterining IP manzili (Lokal IP):
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Masalan: 192.168.1.15"
+                            value={networkServerIp}
+                            onChange={(e) => setNetworkServerIp(e.target.value)}
+                            className="flex-1 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-xl px-4 py-2 text-sm font-mono font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+                        <p className="text-[11px] text-purple-700 dark:text-purple-300">
+                          💡 Asosiy kassa kompyuterida Sozlamalarga kiring, u yerda ko'rsatilgan IP manzilni (masalan: 192.168.1.xxx) shu yerga kiriting.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.api || !window.api.saveNetworkSettings) return;
+                          if (networkRole === 'client' && !networkServerIp.trim()) {
+                            setToastMsg("Asosiy kassa kompyuterining IP manzilini kiriting!");
+                            return;
+                          }
+                          setSavingNetwork(true);
+                          try {
+                            const res = await window.api.saveNetworkSettings({
+                              role: networkRole,
+                              ip: networkServerIp.trim()
+                            });
+                            if (res && res.success) {
+                              setToastMsg("Tarmoq sozlamalari saqlandi! O'zgarishlar to'liq ishlashi uchun dasturni qayta ishga tushiring.");
+                            } else {
+                              setToastMsg("Xatolik: " + (res?.error || "Saqlab bo'lmadi"));
+                            }
+                          } catch (err) {
+                            setToastMsg("Xatolik: " + err.message);
+                          } finally {
+                            setSavingNetwork(false);
+                          }
+                        }}
+                        disabled={savingNetwork}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50"
+                      >
+                        {savingNetwork ? 'Saqlanmoqda...' : 'Tarmoq Sozlamalarini Saqlash'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -3485,51 +3636,53 @@ export default memo(function Settings() {
 
             {currentUser?.role !== 'waiter' && (
               <form onSubmit={handleAddCashier} className="space-y-3 mb-6 border-b border-gray-100 dark:border-gray-700 pb-6">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 items-center">
+                  <select
+                    value={cashierRole}
+                    onChange={e => setCashierRole(e.target.value)}
+                    className="flex-1 min-w-[140px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm font-semibold"
+                  >
+                    {ALL_STAFF_ROLES.map(r => (
+                      <option key={r.id} value={r.id}>
+                        {r.label} {r.needPin ? '(PIN kodli)' : '(PIN shart emas)'}
+                      </option>
+                    ))}
+                  </select>
+
                   <input 
                     type="text" 
-                    placeholder={t('cashierName')}
+                    placeholder="Xodim ismi (F.I.Sh)"
                     required
                     value={cashierName}
                     onChange={e => setCashierName(e.target.value)}
-                    className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                    className="flex-1 min-w-[150px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
                   />
-                  <input 
-                    type="password" 
-                    maxLength={4}
-                    placeholder="PIN"
-                    required
-                    value={cashierPin}
-                    onChange={e => setCashierPin(e.target.value.replace(/\D/g, ''))}
-                    className="w-24 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-center tracking-widest"
-                  />
-                  {businessType !== 'restaurant' && !isMasterAdmin && (
-                    <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center h-10 cursor-pointer shrink-0">
-                      <Plus size={20} />
-                    </button>
-                  )}
-                </div>
-                {(businessType === 'restaurant' || isMasterAdmin) && (
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <select
-                      value={cashierRole}
-                      onChange={e => setCashierRole(e.target.value)}
-                      className="flex-1 min-w-[130px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
-                    >
-                      <option value="cashier">Kassir</option>
-                      <option value="manager">Menejer</option>
-                      <option value="cook">Oshpaz</option>
-                      <option value="waiter">Ofitsiant</option>
-                      <option value="worker">Ishchi</option>
-                      <option value="admin">Asosiy Admin</option>
-                    </select>
-                    <input
-                      type="number"
-                      placeholder="Fiksa oylik (so'm)"
-                      value={cashierSalary}
-                      onChange={e => setCashierSalary(e.target.value)}
-                      className="flex-1 min-w-[120px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+
+                  {doesRoleNeedPin(cashierRole) ? (
+                    <input 
+                      type="password" 
+                      maxLength={4}
+                      placeholder="PIN (4 ta)"
+                      required
+                      value={cashierPin}
+                      onChange={e => setCashierPin(e.target.value.replace(/\D/g, ''))}
+                      className="w-28 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-center tracking-widest font-bold"
                     />
+                  ) : (
+                    <div className="px-3 py-2 bg-gray-150 dark:bg-gray-700/60 text-gray-500 dark:text-gray-400 text-xs rounded-lg font-medium border border-gray-200 dark:border-gray-600 flex items-center justify-center">
+                      PIN shart emas
+                    </div>
+                  )}
+
+                  <input
+                    type="number"
+                    placeholder="Fiksa oylik (so'm)"
+                    value={cashierSalary}
+                    onChange={e => setCashierSalary(e.target.value)}
+                    className="flex-1 min-w-[130px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+                  />
+
+                  {(businessType === 'restaurant' || isMasterAdmin) && (
                     <input
                       type="number"
                       min={0}
@@ -3537,13 +3690,14 @@ export default memo(function Settings() {
                       placeholder="Foiz (%)"
                       value={cashierPercentage}
                       onChange={e => setCashierPercentage(e.target.value)}
-                      className="w-24 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+                      className="w-20 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
                     />
-                    <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center h-10 cursor-pointer font-bold text-sm shrink-0">
-                      Qo'shish <Plus size={16} className="ml-1" />
-                    </button>
-                  </div>
-                )}
+                  )}
+
+                  <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center h-10 cursor-pointer font-bold text-sm shrink-0">
+                    Qo'shish <Plus size={16} className="ml-1" />
+                  </button>
+                </div>
               </form>
             )}
 
@@ -3557,61 +3711,47 @@ export default memo(function Settings() {
                   <div key={c.id}>
                     {editingId === c.id ? (
                       <div className="w-full space-y-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-orange-500/30 mb-2">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2 items-center">
+                          <select
+                            value={editRole}
+                            onChange={e => setEditRole(e.target.value)}
+                            className="flex-1 min-w-[130px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none font-semibold"
+                          >
+                            {ALL_STAFF_ROLES.map(r => (
+                              <option key={r.id} value={r.id}>
+                                {r.label}
+                              </option>
+                            ))}
+                          </select>
                           <input
                             type="text"
                             value={editName}
                             onChange={e => setEditName(e.target.value)}
-                            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                            className="flex-1 min-w-[130px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
                             placeholder="Ism"
                             required
                           />
-                          <input 
-                            type="password"
-                            maxLength={4}
-                            placeholder="PIN"
-                            value={editPin}
-                            onChange={e => setEditPin(e.target.value.replace(/\D/g, ''))}
-                            className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center tracking-widest focus:outline-none"
-                            required
-                          />
-                          {(!isMasterAdmin && businessType !== 'restaurant') && (
-                            <>
-                              <button
-                                onClick={() => handleUpdateCashier(c.id)}
-                                className="px-3 py-1 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 h-8 cursor-pointer shrink-0"
-                              >
-                                Saqlash
-                              </button>
-                              <button
-                                onClick={() => setEditingId(null)}
-                                className="px-2 py-1 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-300 rounded text-sm hover:bg-gray-400 h-8 cursor-pointer shrink-0"
-                              >
-                                X
-                              </button>
-                            </>
-                          )}
-                        </div>
-                        {(businessType === 'restaurant' || isMasterAdmin) && (
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <select
-                              value={editRole}
-                              onChange={e => setEditRole(e.target.value)}
-                              className="flex-1 min-w-[120px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
-                            >
-                              <option value="cashier">Kassir</option>
-                              <option value="manager">Menejer</option>
-                              <option value="cook">Oshpaz</option>
-                              <option value="worker">Ishchi</option>
-                              <option value="admin">Asosiy Admin</option>
-                            </select>
-                            <input
-                              type="number"
-                              value={editSalary}
-                              onChange={e => setEditSalary(e.target.value)}
-                              className="flex-1 min-w-[100px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
-                              placeholder="Oylik"
+                          {doesRoleNeedPin(editRole) ? (
+                            <input 
+                              type="password" 
+                              maxLength={4}
+                              placeholder="PIN"
+                              value={editPin}
+                              onChange={e => setEditPin(e.target.value.replace(/\D/g, ''))}
+                              className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center tracking-widest focus:outline-none font-bold"
+                              required
                             />
+                          ) : (
+                            <span className="text-xs text-gray-400 dark:text-gray-500 italic px-1">PIN shart emas</span>
+                          )}
+                          <input
+                            type="number"
+                            value={editSalary}
+                            onChange={e => setEditSalary(e.target.value)}
+                            className="flex-1 min-w-[100px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                            placeholder="Oylik"
+                          />
+                          {(businessType === 'restaurant' || isMasterAdmin) && (
                             <input
                               type="number"
                               min={0}
@@ -3621,34 +3761,33 @@ export default memo(function Settings() {
                               className="w-20 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none"
                               placeholder="Foiz %"
                             />
-                            <button
-                              onClick={() => handleUpdateCashier(c.id)}
-                              className="px-3 py-1 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 h-8 cursor-pointer"
-                            >
-                              Saqlash
-                            </button>
-                            <button
-                              onClick={() => setEditingId(null)}
-                              className="px-2 py-1 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-300 rounded text-sm hover:bg-gray-400 h-8 cursor-pointer"
-                            >
-                              X
-                            </button>
-                          </div>
-                        )}
+                          )}
+                          <button
+                            onClick={() => handleUpdateCashier(c.id)}
+                            className="px-3 py-1 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 h-8 cursor-pointer"
+                          >
+                            Saqlash
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="px-2 py-1 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-300 rounded text-sm hover:bg-gray-400 h-8 cursor-pointer"
+                          >
+                            X
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50 mb-2">
                         <div className="flex flex-col">
                           <span className="font-semibold text-gray-800 dark:text-gray-200">
-                            {c.name} {(businessType === 'restaurant' || isMasterAdmin) && (
-                              <span className="text-xs font-normal text-orange-500 font-semibold px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/30 border border-orange-100 dark:border-orange-900/30 ml-1.5">
-                                {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : 'Kassir'}
-                              </span>
-                            )}
+                            {c.name}
+                            <span className="text-xs font-normal text-orange-500 font-semibold px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/30 border border-orange-100 dark:border-orange-900/30 ml-1.5">
+                              {getRoleLabel(c.role)}
+                            </span>
                           </span>
                           <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                            <span>PIN: {canReveal ? (isRevealed ? c.pin : '••••') : '••••'}</span>
-                            {(businessType === 'restaurant' || isMasterAdmin) && c.salary > 0 && (
+                            <span>PIN: {doesRoleNeedPin(c.role) ? (canReveal ? (isRevealed ? c.pin : '••••') : '••••') : 'PIN shart emas'}</span>
+                            {c.salary > 0 && (
                               <span>Oylik: {Number(c.salary).toLocaleString()} so'm</span>
                             )}
                             {(businessType === 'restaurant' || isMasterAdmin) && c.percentage > 0 && (
@@ -3658,7 +3797,7 @@ export default memo(function Settings() {
                         </div>
                         
                         <div className="flex items-center gap-2">
-                          {canReveal && (
+                          {canReveal && doesRoleNeedPin(c.role) && (
                             <button 
                               onClick={() => setRevealedCashiers(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
                               className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-md transition-colors"

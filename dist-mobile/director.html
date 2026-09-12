@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="uz" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>xxMpos — Masofaviy Rahbar Kabineti</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#f0fdf4', 500: '#10b981', 600: '#059669', 700: '#047857' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #030712;
+      color: #f3f4f6;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #374151;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased select-none">
+
+  <!-- ── PIN CODE AUTH MODAL OVERLAY ────────────────────────────────────── -->
+  <div id="auth-overlay" class="fixed inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center p-6 transition-all">
+    <div class="max-w-xs w-full text-center space-y-6">
+      <div class="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-2xl shadow-emerald-500/30">
+        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+      </div>
+
+      <div>
+        <h2 class="text-2xl font-black text-white tracking-tight">RAHBAR KABINETI</h2>
+        <p class="text-xs text-gray-400 mt-1 font-medium">Masofaviy monitoring uchun PIN-kodni kiriting</p>
+      </div>
+
+      <div class="space-y-4">
+        <input 
+          type="password" 
+          id="pin-input" 
+          placeholder="Direktor PIN kodi..." 
+          class="w-full text-center text-xl font-mono tracking-widest py-3 px-4 rounded-2xl bg-gray-900 border-2 border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 transition shadow-inner"
+          onkeydown="if(event.key==='Enter') verifyPin()"
+        />
+
+        <button 
+          onclick="verifyPin()" 
+          id="btn-login"
+          class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-600/30 transition cursor-pointer"
+        >
+          Kirish
+        </button>
+        <p id="auth-error" class="text-xs font-bold text-rose-400 hidden"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MAIN DASHBOARD CONTAINER ───────────────────────────────────────── -->
+  <div id="dashboard" class="flex-1 flex flex-col hidden pb-12">
+    <!-- Header -->
+    <header class="sticky top-0 z-40 bg-gray-900/90 backdrop-blur-md border-b border-gray-800 px-4 py-3 flex items-center justify-between shadow-lg">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-black">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base font-black text-white leading-tight" id="director-greeting">Rahbar Kabineti</h1>
+          <p class="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+            Jonli monitoring
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button onclick="loadOverview(true)" class="p-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 active:scale-95 transition" title="Yangilash">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+        <button onclick="logoutDirector()" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 active:scale-95 transition" title="Chiqish">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Nav Tabs -->
+    <div class="px-4 pt-3 bg-gray-900 border-b border-gray-800 flex gap-2 overflow-x-auto custom-scrollbar">
+      <button onclick="setTab('sales')" id="tab-btn-sales" class="tab-btn pb-2.5 px-3 text-xs font-bold text-emerald-400 border-b-2 border-emerald-500 whitespace-nowrap">
+        💰 Savdo & Tushum
+      </button>
+      <button onclick="setTab('kitchen')" id="tab-btn-kitchen" class="tab-btn pb-2.5 px-3 text-xs font-bold text-gray-400 border-b-2 border-transparent hover:text-white whitespace-nowrap">
+        🍳 Oshxona Tezligi
+      </button>
+      <button onclick="setTab('attendance')" id="tab-btn-attendance" class="tab-btn pb-2.5 px-3 text-xs font-bold text-gray-400 border-b-2 border-transparent hover:text-white whitespace-nowrap">
+        📸 Davomat & Selfielar
+      </button>
+      <button onclick="setTab('waiters')" id="tab-btn-waiters" class="tab-btn pb-2.5 px-3 text-xs font-bold text-gray-400 border-b-2 border-transparent hover:text-white whitespace-nowrap">
+        🤵 Ofitsiantlar
+      </button>
+      <button onclick="setTab('stock')" id="tab-btn-stock" class="tab-btn pb-2.5 px-3 text-xs font-bold text-gray-400 border-b-2 border-transparent hover:text-white whitespace-nowrap">
+        📦 Ombor & Kam qolganlar
+      </button>
+    </div>
+
+    <!-- Content Sections -->
+    <main class="p-4 max-w-4xl w-full mx-auto space-y-6">
+
+      <!-- ── TAB 1: SALES & PROFIT ──────────────────────────────────────── -->
+      <section id="tab-content-sales" class="tab-content space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800 shadow-md">
+            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Bugungi Savdo</span>
+            <div class="text-xl font-black text-emerald-400 mt-1" id="stat-revenue">0 UZS</div>
+            <span class="text-[10px] text-gray-500" id="stat-receipts">0 ta chek</span>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800 shadow-md">
+            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Sof Foyda (Taxminiy)</span>
+            <div class="text-xl font-black text-blue-400 mt-1" id="stat-profit">0 UZS</div>
+            <span class="text-[10px] text-gray-500">Tannarx chegirilganda</span>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800 space-y-3">
+          <h3 class="text-xs font-black text-gray-300 uppercase tracking-wider">To'lov turlari bo'yicha</h3>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between items-center py-1 border-b border-gray-800">
+              <span class="text-gray-400 flex items-center gap-1.5">💵 Naqd pul</span>
+              <span class="font-bold text-white" id="stat-cash">0 UZS</span>
+            </div>
+            <div class="flex justify-between items-center py-1 border-b border-gray-800">
+              <span class="text-gray-400 flex items-center gap-1.5">💳 Plastik karta</span>
+              <span class="font-bold text-white" id="stat-card">0 UZS</span>
+            </div>
+            <div class="flex justify-between items-center py-1">
+              <span class="text-gray-400 flex items-center gap-1.5">📝 Nasiya (Qarz)</span>
+              <span class="font-bold text-amber-400" id="stat-debt">0 UZS</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TAB 2: KITCHEN SPEED ───────────────────────────────────────── -->
+      <section id="tab-content-kitchen" class="tab-content hidden space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800">
+            <span class="text-[11px] font-bold text-gray-400 uppercase">O'rtacha Vaqt</span>
+            <div class="text-2xl font-black text-amber-400 mt-1" id="kitchen-avg-time">0 daq</div>
+            <span class="text-[10px] text-gray-500" id="kitchen-completed-count">0 ta zakaz</span>
+          </div>
+          <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800">
+            <span class="text-[11px] font-bold text-gray-400 uppercase">O'z Vaqtida</span>
+            <div class="text-2xl font-black text-emerald-400 mt-1" id="kitchen-ontime-pct">0%</div>
+            <span class="text-[10px] text-gray-500" id="kitchen-delayed-count">Kechikkan: 0 ta</span>
+          </div>
+        </div>
+
+        <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800">
+          <h3 class="text-xs font-black text-gray-300 uppercase tracking-wider mb-3">Top Taomlar va Standart Vaqtlari</h3>
+          <div id="kitchen-dish-list" class="space-y-2 text-xs">
+            <div class="text-gray-500 text-center py-4">Ma'lumot mavjud emas</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TAB 3: ATTENDANCE & SELFIES ────────────────────────────────── -->
+      <section id="tab-content-attendance" class="tab-content hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-black text-white">Bugungi xodimlar davomati</h3>
+          <span class="text-xs text-gray-400" id="attendance-count">0 nafar</span>
+        </div>
+
+        <div id="attendance-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="text-gray-500 text-center py-8 col-span-2">Bugun davomat qayd etilmagan</div>
+        </div>
+      </section>
+
+      <!-- ── TAB 4: WAITERS ─────────────────────────────────────────────── -->
+      <section id="tab-content-waiters" class="tab-content hidden space-y-4">
+        <h3 class="text-sm font-black text-white">Ofitsiantlar Savdosi va Foizlari</h3>
+        <div id="waiters-list" class="space-y-2.5">
+          <div class="text-gray-500 text-center py-8">Ofitsiantlar buyurtmalari mavjud emas</div>
+        </div>
+      </section>
+
+      <!-- ── TAB 5: STOCK & LOGS ────────────────────────────────────────── -->
+      <section id="tab-content-stock" class="tab-content hidden space-y-4">
+        <h3 class="text-sm font-black text-amber-400 flex items-center gap-1.5">
+          ⚠️ Kam Qolgan Mahsulotlar (Zaxira tugamoqda)
+        </h3>
+        <div id="stock-warning-list" class="space-y-2">
+          <div class="text-gray-500 text-center py-8">Kam qolgan mahsulotlar yo'q</div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── PHOTO LIGHTBOX MODAL ──────────────────────────────────────────── -->
+  <div id="photo-modal" class="fixed inset-0 z-50 bg-black/90 hidden flex flex-col items-center justify-center p-4" onclick="closePhotoModal()">
+    <img id="photo-modal-img" src="" class="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl border border-gray-800"/>
+    <p class="text-xs text-gray-400 mt-3 font-medium">Yopish uchun bosing</p>
+  </div>
+
+  <script>
+    let currentPin = sessionStorage.getItem('director_pin') || '';
+    let currentData = null;
+
+    function formatMoney(num) {
+      return (num || 0).toLocaleString('ru-RU') + ' UZS';
+    }
+
+    async function verifyPin() {
+      const pin = document.getElementById('pin-input').value.trim();
+      const errElem = document.getElementById('auth-error');
+      if (!pin) {
+        errElem.innerText = 'PIN kodni kiriting!';
+        errElem.classList.remove('hidden');
+        return;
+      }
+
+      errElem.classList.add('hidden');
+      document.getElementById('btn-login').innerText = 'Tekshirilmoqda...';
+
+      try {
+        const res = await fetch(`/api/director/overview?pin=${encodeURIComponent(pin)}`);
+        const json = await res.json();
+        if (json && json.success) {
+          currentPin = pin;
+          sessionStorage.setItem('director_pin', pin);
+          document.getElementById('auth-overlay').classList.add('hidden');
+          document.getElementById('dashboard').classList.remove('hidden');
+          renderDashboard(json.data);
+        } else {
+          errElem.innerText = json.error || "Noto'g'ri PIN kod!";
+          errElem.classList.remove('hidden');
+        }
+      } catch (err) {
+        errElem.innerText = "Serverga ulanib bo'lmadi: " + err.message;
+        errElem.classList.remove('hidden');
+      } finally {
+        document.getElementById('btn-login').innerText = 'Kirish';
+      }
+    }
+
+    async function loadOverview(silent = false) {
+      if (!currentPin) return;
+      try {
+        const res = await fetch(`/api/director/overview?pin=${encodeURIComponent(currentPin)}`);
+        const json = await res.json();
+        if (json && json.success) {
+          renderDashboard(json.data);
+        } else {
+          if (!silent) logoutDirector();
+        }
+      } catch (err) {
+        console.error("loadOverview error:", err);
+      }
+    }
+
+    function renderDashboard(data) {
+      currentData = data;
+      if (data.directorName) {
+        document.getElementById('director-greeting').innerText = data.directorName;
+      }
+
+      // Sales & Profit
+      const s = data.todaySales || {};
+      document.getElementById('stat-revenue').innerText = formatMoney(s.total_revenue);
+      document.getElementById('stat-receipts').innerText = `${s.total_receipts || 0} ta chek`;
+      document.getElementById('stat-cash').innerText = formatMoney(s.cash_revenue);
+      document.getElementById('stat-card').innerText = formatMoney(s.card_revenue);
+      document.getElementById('stat-debt').innerText = formatMoney(s.debt_revenue);
+
+      const p = data.profitData || {};
+      document.getElementById('stat-profit').innerText = formatMoney(p.estimated_profit);
+
+      // Kitchen
+      const k = data.kitchenPerformance || {};
+      document.getElementById('kitchen-avg-time').innerText = `${k.avgPrepMinutes || 0} daq`;
+      document.getElementById('kitchen-completed-count').innerText = `${k.completedOrders || 0} ta tayyorlandi`;
+      document.getElementById('kitchen-ontime-pct').innerText = `${k.onTimePercentage || 0}%`;
+      document.getElementById('kitchen-delayed-count').innerText = `Kechikkan: ${k.delayedOrdersCount || 0} ta`;
+
+      const dishList = document.getElementById('kitchen-dish-list');
+      if (k.dishStats && k.dishStats.length > 0) {
+        dishList.innerHTML = k.dishStats.map((d, i) => `
+          <div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+            <span class="font-bold text-gray-200">${i + 1}. ${d.name}</span>
+            <div class="text-right">
+              <span class="font-black text-emerald-400">${d.total_qty} ta</span>
+              <span class="text-[10px] text-gray-500 ml-1.5">⏱️ ${d.target_time} daq</span>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        dishList.innerHTML = '<div class="text-gray-500 text-center py-3">Taomlar tayyorlanmagan</div>';
+      }
+
+      // Attendance
+      const attGrid = document.getElementById('attendance-grid');
+      const attRecords = data.attendanceRecords || [];
+      document.getElementById('attendance-count').innerText = `${attRecords.length} nafar`;
+
+      if (attRecords.length > 0) {
+        attGrid.innerHTML = attRecords.map(a => {
+          const photoUrl = a.photo_url || (a.photo_path ? `/uploads/attendance/${a.photo_path.split(/[\\\/]/).pop()}` : '');
+          return `
+            <div class="bg-gray-900 p-3 rounded-2xl border border-gray-800 flex items-center gap-3">
+              ${photoUrl ? `
+                <img src="${photoUrl}" onclick="openPhoto('${photoUrl}')" class="w-14 h-14 rounded-xl object-cover border border-emerald-500/40 cursor-pointer shadow-md active:scale-95 transition" onerror="this.style.display='none'"/>
+              ` : `
+                <div class="w-14 h-14 rounded-xl bg-gray-800 flex items-center justify-center text-gray-600 font-black">Yo'q</div>
+              `}
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-black text-white truncate">${a.name || 'Xodim'}</div>
+                <div class="text-[10px] text-gray-400 capitalize">${a.role || a.employee_type}</div>
+                <div class="text-[10px] font-mono text-emerald-400 mt-1 flex items-center gap-2">
+                  <span>🟢 Keldi: ${a.check_in_time ? a.check_in_time.slice(0, 5) : '—'}</span>
+                  ${a.check_out_time ? `<span>🔴 Ketdi: ${a.check_out_time.slice(0, 5)}</span>` : ''}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        attGrid.innerHTML = '<div class="text-gray-500 text-center py-8 col-span-2">Bugun davomat qayd etilmagan</div>';
+      }
+
+      // Waiters
+      const wList = document.getElementById('waiters-list');
+      const wRecords = data.waitersReport || [];
+      if (wRecords.length > 0) {
+        wList.innerHTML = wRecords.map(w => `
+          <div class="bg-gray-900 p-3.5 rounded-2xl border border-gray-800 flex items-center justify-between">
+            <div>
+              <div class="text-sm font-black text-white">${w.name}</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">${w.orders_count || 0} ta buyurtma yopilgan</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs font-black text-emerald-400">${formatMoney(w.total_sales)}</div>
+              <div class="text-[10px] font-bold text-blue-400">Foizi: ${formatMoney(w.total_commission)}</div>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        wList.innerHTML = '<div class="text-gray-500 text-center py-8">Ofitsiantlar faoliyati mavjud emas</div>';
+      }
+
+      // Low Stock
+      const stockList = document.getElementById('stock-warning-list');
+      const lowItems = data.lowStock || [];
+      if (lowItems.length > 0) {
+        stockList.innerHTML = lowItems.map(item => `
+          <div class="bg-gray-900 p-3 rounded-2xl border border-rose-500/20 flex items-center justify-between text-xs">
+            <div>
+              <span class="font-bold text-white">${item.name}</span>
+              <span class="text-[10px] text-gray-400 ml-2">(${item.category || 'Ombor'})</span>
+            </div>
+            <span class="px-2.5 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 font-black border border-rose-500/30">
+              ${item.stock} ${item.unit || 'dona'}
+            </span>
+          </div>
+        `).join('');
+      } else {
+        stockList.innerHTML = '<div class="text-gray-500 text-center py-8">Barcha mahsulotlar zaxirasi yetarli</div>';
+      }
+    }
+
+    function setTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('text-emerald-400', 'border-emerald-500');
+        b.classList.add('text-gray-400', 'border-transparent');
+      });
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+      const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+      const activeContent = document.getElementById(`tab-content-${tabName}`);
+      if (activeBtn) {
+        activeBtn.classList.add('text-emerald-400', 'border-emerald-500');
+        activeBtn.classList.remove('text-gray-400', 'border-transparent');
+      }
+      if (activeContent) {
+        activeContent.classList.remove('hidden');
+      }
+    }
+
+    function openPhoto(url) {
+      document.getElementById('photo-modal-img').src = url;
+      document.getElementById('photo-modal').classList.remove('hidden');
+    }
+
+    function closePhotoModal() {
+      document.getElementById('photo-modal').classList.add('hidden');
+    }
+
+    function logoutDirector() {
+      sessionStorage.removeItem('director_pin');
+      currentPin = '';
+      document.getElementById('auth-overlay').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+      document.getElementById('pin-input').value = '';
+    }
+
+    // Auto-login if session pin exists
+    if (currentPin) {
+      document.getElementById('pin-input').value = currentPin;
+      verifyPin();
+    }
+
+    // Auto-refresh data every 10 seconds
+    setInterval(() => {
+      if (currentPin) {
+        loadOverview(true);
+      }
+    }, 10000);
+  </script>
+</body>
+</html>

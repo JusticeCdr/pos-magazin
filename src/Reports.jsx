@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { 
   Banknote, CreditCard, Clock, TrendingUp, Package, Calendar, AlertCircle, AlertTriangle, 
   X, Plus, Users, ArrowLeft, ChevronRight, DollarSign, Percent, Camera, UserCheck, 
-  Settings as SettingsIcon, Edit2, Trash2, Image, CheckCircle2, UserX, RefreshCw
+  Settings as SettingsIcon, Edit2, Trash2, Image, CheckCircle2, UserX, RefreshCw, ClipboardCheck, ChefHat
 } from 'lucide-react';
 
 import { useApp } from './context/AppContext';
-import { formatCurrency, parseSQLiteDate, getAttendancePhotoUrl } from './utils';
+import { formatCurrency, parseSQLiteDate, getAttendancePhotoUrl, formatQuantity } from './utils';
 import { ConfirmModal, AlertModal } from './components/Modals';
+import PaySalaryModal from './components/PaySalaryModal';
 
 // Helper to convert JS Date to SQLite compatible local string (YYYY-MM-DD HH:mm:ss)
 const toSQLiteLocal = (date) => {
@@ -50,9 +51,60 @@ export default memo(function Reports({ isActive }) {
   const [selectedWaiterId, setSelectedWaiterId] = useState(null);
   
   // Staff report states
+  const [paySalaryEmployee, setPaySalaryEmployee] = useState(null);
   const [expenseModal, setExpenseModal] = useState({ isOpen: false, reason: '', amount: '' });
   const [expenseToDelete, setExpenseToDelete] = useState(null);
   const [unsoldDaysLimit, setUnsoldDaysLimit] = useState(10);
+
+  // Write-offs report states
+  const [writeOffHistoryList, setWriteOffHistoryList] = useState([]);
+  const [writeOffLoading, setWriteOffLoading] = useState(false);
+
+  const fetchWriteOffsData = async () => {
+    if (!window.api || !window.api.getWriteOffs) return;
+    setWriteOffLoading(true);
+    try {
+      const dates = getDates(filter);
+      const res = await window.api.getWriteOffs({
+        startDate: dates.start,
+        endDate: dates.end
+      });
+      if (res && res.success) {
+        setWriteOffHistoryList(res.data || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setWriteOffLoading(false);
+    }
+  };
+
+  // Kitchen performance report states
+  const [kitchenStats, setKitchenStats] = useState(null);
+  const [kitchenLoading, setKitchenLoading] = useState(false);
+
+  const fetchKitchenData = async () => {
+    setKitchenLoading(true);
+    try {
+      const dates = getDates(filter);
+      const sDate = dates.start ? dates.start.slice(0, 10) : null;
+      const eDate = dates.end ? dates.end.slice(0, 10) : null;
+      let res;
+      if (window.api && window.api.getKitchenPerformanceReport) {
+        res = await window.api.getKitchenPerformanceReport({ startDate: sDate, endDate: eDate });
+      } else {
+        const r = await fetch(`/api/kitchen/performance?startDate=${sDate || ''}&endDate=${eDate || ''}`);
+        res = await r.json();
+      }
+      if (res && res.success) {
+        setKitchenStats(res.data);
+      }
+    } catch (err) {
+      console.error("fetchKitchenData error:", err);
+    } finally {
+      setKitchenLoading(false);
+    }
+  };
 
   // Attendance report states
   const [attendanceList, setAttendanceList] = useState([]);
@@ -370,6 +422,9 @@ export default memo(function Reports({ isActive }) {
     if (reportSubTab === 'attendance') {
       fetchAttendanceData(true);
     }
+    if (reportSubTab === 'kitchen' && businessType === 'restaurant') {
+      fetchKitchenData();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, filterKey, businessType, selectedWaiterId, reportSubTab]);
 
@@ -381,6 +436,8 @@ export default memo(function Reports({ isActive }) {
       }
     } else if (reportSubTab === 'attendance') {
       fetchAttendanceData(true);
+    } else if (reportSubTab === 'kitchen' && businessType === 'restaurant') {
+      fetchKitchenData();
     }
   }, [reportSubTab, selectedWaiterId, filterKey, businessType]);
 
@@ -394,6 +451,9 @@ export default memo(function Reports({ isActive }) {
         if (reportSubTab === 'attendance') {
           fetchAttendanceData(false);
         }
+        if (reportSubTab === 'kitchen' && businessType === 'restaurant') {
+          fetchKitchenData();
+        }
       }
     };
     const handleAttendanceUpdate = () => {
@@ -404,10 +464,12 @@ export default memo(function Reports({ isActive }) {
     window.addEventListener('sales-updated', handleUpdate);
     window.addEventListener('debts-updated', handleUpdate);
     window.addEventListener('attendance-updated', handleAttendanceUpdate);
+    window.addEventListener('kitchen-updated', handleUpdate);
     return () => {
       window.removeEventListener('sales-updated', handleUpdate);
       window.removeEventListener('debts-updated', handleUpdate);
       window.removeEventListener('attendance-updated', handleAttendanceUpdate);
+      window.removeEventListener('kitchen-updated', handleUpdate);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, filterKey, reportSubTab]);
@@ -577,13 +639,14 @@ export default memo(function Reports({ isActive }) {
                 <th className="px-4 py-3 text-right">Asosiy oylik</th>
                 <th className="px-4 py-3 text-right">Hisoblangan oylik</th>
                 {businessType === 'restaurant' && <th className="px-4 py-3 text-right">Komissiya</th>}
-                <th className="px-4 py-3 text-right rounded-r-lg">Jami oylik</th>
+                <th className="px-4 py-3 text-right">Jami oylik</th>
+                <th className="px-4 py-3 text-right rounded-r-lg">Amal</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {(data.cashiersList || []).length === 0 && (data.waitersList || []).length === 0 ? (
                 <tr>
-                  <td colSpan={businessType === 'restaurant' ? 6 : 5} className="text-center py-8 text-gray-400">
+                  <td colSpan={businessType === 'restaurant' ? 7 : 6} className="text-center py-8 text-gray-400">
                     Ma'lumotlar mavjud emas.
                   </td>
                 </tr>
@@ -593,7 +656,7 @@ export default memo(function Reports({ isActive }) {
                     <tr key={`cashier_${c.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                       <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{c.name}</td>
                       <td className="px-4 py-3 text-xs uppercase text-gray-500">
-                        {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : 'Kassir'}
+                        {c.role === 'admin' ? 'Admin' : c.role === 'manager' ? 'Menejer' : c.role === 'cook' ? 'Oshpaz' : c.role === 'worker' ? 'Ishchi' : c.role === 'senior_cashier' ? 'Katta kassir' : 'Kassir'}
                       </td>
                       <td className="px-4 py-3 text-right">{formatCurrency(c.salary, lang)}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
@@ -606,6 +669,16 @@ export default memo(function Reports({ isActive }) {
                       )}
                       <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(c.total_earned || 0, lang)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setPaySalaryEmployee({ ...c, role: c.role || 'Kassir' })}
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-bold transition-all border border-emerald-200 dark:border-emerald-800 cursor-pointer inline-flex items-center gap-1 active:scale-95"
+                        >
+                          <Banknote size={14} />
+                          <span>Maosh to'lash</span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -624,6 +697,16 @@ export default memo(function Reports({ isActive }) {
                       )}
                       <td className="px-4 py-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(w.total_earned || 0, lang)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setPaySalaryEmployee({ ...w, role: 'Ofitsiant' })}
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-bold transition-all border border-emerald-200 dark:border-emerald-800 cursor-pointer inline-flex items-center gap-1 active:scale-95"
+                        >
+                          <Banknote size={14} />
+                          <span>Maosh to'lash</span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -884,7 +967,15 @@ export default memo(function Reports({ isActive }) {
                       <td className="px-4 py-3.5 text-right font-black text-blue-600 dark:text-blue-400">
                         {formatCurrency((w.total_commission || 0) + (w.salary || 0), lang)}
                       </td>
-                      <td className="px-4 py-3.5 text-right">
+                      <td className="px-4 py-3.5 text-right flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPaySalaryEmployee({ ...w, role: 'Ofitsiant' })}
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1 active:scale-95 border border-emerald-200 dark:border-emerald-800"
+                        >
+                          <Banknote size={14} />
+                          Maosh
+                        </button>
                         <button
                           onClick={() => fetchSingleWaiterReport(w.id)}
                           className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1 active:scale-95"
@@ -1319,6 +1410,238 @@ export default memo(function Reports({ isActive }) {
     );
   };
 
+  const renderWriteOffsReportView = () => {
+    const totalLossSum = writeOffHistoryList.reduce((acc, item) => acc + (item.total_loss_amount || 0), 0);
+    return (
+      <div className="space-y-6">
+        <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 p-4 rounded-2xl flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-purple-900 dark:text-purple-300">
+              Hisobdan chiqarilgan mahsulotlar jami zarari (Spisaniya)
+            </h3>
+            <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+              Tanlangan davr bo'yicha brak qilingan yoki yo'qotilgan tovarlar qiymati
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="text-2xl font-black text-purple-700 dark:text-purple-300">
+              {formatCurrency(totalLossSum, lang)}
+            </span>
+          </div>
+        </div>
+
+        {writeOffHistoryList.length === 0 ? (
+          <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-2xl border border-gray-150 dark:border-gray-700 text-gray-400 font-medium">
+            Tanlangan davr uchun hisobdan chiqarilgan mahsulotlar topilmadi.
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-150 dark:border-gray-700 overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+              <thead className="bg-gray-50 dark:bg-gray-700/60 text-xs uppercase font-bold text-gray-700 dark:text-gray-300 border-b border-gray-150 dark:border-gray-700">
+                <tr>
+                  <th className="px-4 py-3">Sana / Vaqt</th>
+                  <th className="px-4 py-3">Mahsulot</th>
+                  <th className="px-4 py-3 text-center">Miqdor</th>
+                  <th className="px-4 py-3">Sabab / Izoh</th>
+                  <th className="px-4 py-3 text-right">Zarar summasi</th>
+                  <th className="px-4 py-3">Mas'ul xodim</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {writeOffHistoryList.map(w => (
+                  <tr key={w.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {parseSQLiteDate(w.created_at).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">
+                      {w.product_name}
+                    </td>
+                    <td className="px-4 py-3 text-center font-bold text-purple-600 dark:text-purple-400">
+                      {formatQuantity(w.quantity)} {w.unit || 'dona'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                        {w.reason || 'Brak'}
+                      </span>
+                      {w.note && <p className="text-[11px] text-gray-400 mt-0.5">{w.note}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-red-600 dark:text-red-400">
+                      {formatCurrency(w.total_loss_amount || 0, lang)}
+                    </td>
+                    <td className="px-4 py-3 text-xs font-medium text-gray-600 dark:text-gray-400">
+                      {w.user_name || 'Admin'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderKitchenPerformanceView = () => {
+    if (kitchenLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+          <RefreshCw size={32} className="animate-spin mb-3 text-blue-500" />
+          <p className="text-sm font-bold">Oshxona statistikasi yuklanmoqda...</p>
+        </div>
+      );
+    }
+
+    if (!kitchenStats) {
+      return (
+        <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-2xl border border-gray-150 dark:border-gray-700 text-gray-400 font-medium">
+          Ma'lumotlar topilmadi
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Average Prep Time */}
+          <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-150 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">O'rtacha tayyorlanish</p>
+              <h4 className="text-2xl font-black text-gray-900 dark:text-white mt-1">
+                {kitchenStats.avgPrepMinutes} <span className="text-sm font-semibold text-gray-400">daqiqa</span>
+              </h4>
+              <p className="text-[11px] text-gray-400 mt-0.5">({kitchenStats.completedOrders} ta yakunlangan)</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <Clock size={24} />
+            </div>
+          </div>
+
+          {/* Card 2: On-time percentage */}
+          <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-150 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">O'z vaqtida</p>
+              <h4 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                {kitchenStats.onTimePercentage}%
+              </h4>
+              <p className="text-[11px] text-emerald-500 font-bold mt-0.5">{kitchenStats.onTimeOrdersCount} ta buyurtma</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 size={24} />
+            </div>
+          </div>
+
+          {/* Card 3: Delayed percentage */}
+          <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-150 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Kechikkan buyurtmalar</p>
+              <h4 className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">
+                {kitchenStats.delayPercentage}%
+              </h4>
+              <p className="text-[11px] text-rose-500 font-bold mt-0.5">{kitchenStats.delayedOrdersCount} ta buyurtma</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <AlertTriangle size={24} />
+            </div>
+          </div>
+
+          {/* Card 4: Average delay time */}
+          <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-150 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">O'rtacha kechikish</p>
+              <h4 className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
+                +{kitchenStats.avgDelayMinutes} <span className="text-sm font-semibold text-gray-400">daqiqa</span>
+              </h4>
+              <p className="text-[11px] text-amber-500 font-bold mt-0.5">Normadan ortiq vaqt</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <TrendingUp size={24} />
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Bar of Kitchen Speed */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-150 dark:border-gray-700 shadow-sm">
+          <div className="flex justify-between items-center mb-2.5">
+            <span className="text-sm font-bold text-gray-800 dark:text-gray-200">
+              Oshxona tezligi sifati (SLA ko'rsatkichi)
+            </span>
+            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+              {kitchenStats.onTimePercentage}% o'z vaqtida
+            </span>
+          </div>
+          <div className="w-full h-4 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex">
+            <div
+              style={{ width: `${kitchenStats.onTimePercentage}%` }}
+              className="bg-emerald-500 h-full transition-all duration-500"
+              title={`O'z vaqtida: ${kitchenStats.onTimePercentage}%`}
+            />
+            <div
+              style={{ width: `${kitchenStats.delayPercentage}%` }}
+              className="bg-rose-500 h-full transition-all duration-500"
+              title={`Kechikkan: ${kitchenStats.delayPercentage}%`}
+            />
+          </div>
+          <div className="flex justify-between items-center text-xs text-gray-400 mt-2 font-medium">
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> O'z vaqtida: {kitchenStats.onTimeOrdersCount} ta
+            </span>
+            <span className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" /> Kechikkan: {kitchenStats.delayedOrdersCount} ta
+            </span>
+          </div>
+        </div>
+
+        {/* Dishes Breakdown Table */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-150 dark:border-gray-700 overflow-hidden shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-150 dark:border-gray-700 flex items-center justify-between">
+            <h4 className="font-bold text-sm text-gray-900 dark:text-white">
+              Eng ko'p tayyorlangan taomlar va standart vaqti
+            </h4>
+            <span className="text-xs text-gray-400 font-medium">Top 10 taom</span>
+          </div>
+          {(!kitchenStats.dishStats || kitchenStats.dishStats.length === 0) ? (
+            <div className="text-center py-10 text-gray-400 font-medium">
+              Bu davrda tayyorlangan taomlar mavjud emas
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+              <thead className="bg-gray-50 dark:bg-gray-700/60 text-xs uppercase font-bold text-gray-700 dark:text-gray-300 border-b border-gray-150 dark:border-gray-700">
+                <tr>
+                  <th className="px-5 py-3">Taom nomi</th>
+                  <th className="px-5 py-3 text-center">Buyurtmalar soni</th>
+                  <th className="px-5 py-3 text-center">Jami porsiya</th>
+                  <th className="px-5 py-3 text-right">Standart tayyorlash vaqti</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {kitchenStats.dishStats.map((dish, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                    <td className="px-5 py-3.5 font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-500">
+                        {idx + 1}
+                      </span>
+                      {dish.name}
+                    </td>
+                    <td className="px-5 py-3.5 text-center font-semibold text-gray-700 dark:text-gray-300">
+                      {dish.count} marta
+                    </td>
+                    <td className="px-5 py-3.5 text-center font-black text-blue-600 dark:text-blue-400">
+                      {dish.total_qty} ta
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
+                      ⏱️ {dish.target_time} daqiqa
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6 transition-colors pb-6">
       {/* Header & Filter */}
@@ -1422,6 +1745,19 @@ export default memo(function Reports({ isActive }) {
             Xodimlar maoshi
           </button>
         )}
+        {businessType === 'restaurant' && (
+          <button
+            onClick={() => { setReportSubTab('kitchen'); setSelectedWaiterId(null); setSelectedWaitersReport(null); }}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              reportSubTab === 'kitchen'
+                ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
+            }`}
+          >
+            <ChefHat size={16} />
+            Oshxona tezligi
+          </button>
+        )}
         <button
           onClick={() => { setReportSubTab('attendance'); setSelectedWaiterId(null); setSelectedWaitersReport(null); }}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -1433,11 +1769,26 @@ export default memo(function Reports({ isActive }) {
           <UserCheck size={16} />
           Xodimlar davomati
         </button>
+        <button
+          onClick={() => { setReportSubTab('writeoffs'); setSelectedWaiterId(null); setSelectedWaitersReport(null); }}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            reportSubTab === 'writeoffs'
+              ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
+          }`}
+        >
+          <ClipboardCheck size={16} />
+          Chiqitlar tarixi
+        </button>
       </div>
 
       {/* Dashboard Content (Fades during loading) */}
-      <div className={`transition-all duration-200 space-y-6 ${(loading || (reportSubTab === 'attendance' && attendanceLoading)) ? 'opacity-50 pointer-events-none' : ''}`}>
-        {reportSubTab === 'attendance' ? (
+      <div className={`transition-all duration-200 space-y-6 ${(loading || (reportSubTab === 'attendance' && attendanceLoading) || (reportSubTab === 'writeoffs' && writeOffLoading) || (reportSubTab === 'kitchen' && kitchenLoading)) ? 'opacity-50 pointer-events-none' : ''}`}>
+        {reportSubTab === 'kitchen' ? (
+          renderKitchenPerformanceView()
+        ) : reportSubTab === 'writeoffs' ? (
+          renderWriteOffsReportView()
+        ) : reportSubTab === 'attendance' ? (
           renderAttendanceReportView()
         ) : businessType === 'restaurant' && reportSubTab === 'staff' ? (
           renderStaffReportView()
@@ -2171,6 +2522,20 @@ export default memo(function Reports({ isActive }) {
         message={alertState.message}
         onConfirm={() => setAlertState({ ...alertState, isOpen: false })}
       />
+
+      {paySalaryEmployee && (
+        <PaySalaryModal
+          isOpen={!!paySalaryEmployee}
+          employee={paySalaryEmployee}
+          onClose={() => setPaySalaryEmployee(null)}
+          onSuccess={(msg) => {
+            setAlertState({ isOpen: true, title: "Muvaffaqiyatli", message: msg });
+            fetchAttendanceData(true);
+          }}
+          currentUser={currentUser}
+          lang={lang}
+        />
+      )}
     </div>
   );
 });

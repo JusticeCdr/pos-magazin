@@ -44,6 +44,9 @@ export function AlertModal({ isOpen, title, message, onConfirm, type = 'error', 
   if (!isOpen) return null;
 
   const isError = type === 'error';
+  const displayTitle = (title === 'Xatolik' && !isError)
+    ? 'Muvaffaqiyatli'
+    : (title || (isError ? 'Xatolik' : 'Muvaffaqiyatli'));
 
   return (
     <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -56,7 +59,7 @@ export function AlertModal({ isOpen, title, message, onConfirm, type = 'error', 
           }`}>
             {isError ? <AlertCircle size={32} /> : <CheckCircle2 size={32} />}
           </div>
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{title}</h3>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{displayTitle}</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{message}</p>
         </div>
         <div className="px-6 pb-6 pt-2 flex gap-3">

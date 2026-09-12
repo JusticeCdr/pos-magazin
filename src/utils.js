@@ -32,6 +32,14 @@ export function formatThousands(val) {
   return parts.join('.');
 }
 
+export function formatQuantity(val) {
+  if (val === undefined || val === null || val === '') return '0';
+  const num = Number(val);
+  if (isNaN(num)) return '0';
+  // Round to max 3 decimal places and drop trailing zeroes, e.g. 8.7000000000001 -> 8.7
+  return Number(Math.round(num * 1000) / 1000).toString();
+}
+
 export function getProductImageUrl(imageName) {
   if (!imageName) return null;
   if (imageName.startsWith('http://') || imageName.startsWith('https://') || imageName.startsWith('data:')) {
@@ -50,5 +58,10 @@ export function getAttendancePhotoUrl(imageName) {
   const host = window.location.hostname || 'localhost';
   const port = 4000;
   return `http://${host}:${port}/attendance-photos/${imageName}`;
+}
+
+export function formatPriceInput(val) {
+  if (val === undefined || val === null || val === '') return '';
+  return String(val).replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 

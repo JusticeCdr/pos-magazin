@@ -50,44 +50,92 @@ function playTvChime() {
   }
 }
 
-// Web Speech API Voice Announcement in Russian (Natural & Smooth)
+// Uzbek number and ordinal helper for crystal-clear voice announcements
+function numberToUzbekWords(n) {
+  n = parseInt(n, 10);
+  if (isNaN(n) || n <= 0) return '';
+  const units = ['', 'bir', 'ikki', 'uch', "to'rt", 'besh', 'olti', 'yetti', 'sakkiz', "to'qqiz"];
+  const tens = ['', "o'n", 'yigirma', "o'ttiz", 'qirq', 'ellik', 'oltmish', 'yetmish', 'sakson', "to'qson"];
+  
+  if (n < 10) return units[n];
+  if (n < 100) {
+    const t = Math.floor(n / 10);
+    const u = n % 10;
+    return (tens[t] + (u ? ' ' + units[u] : '')).trim();
+  }
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const rem = n % 100;
+    const hStr = (h === 1 ? 'bir yuz' : units[h] + ' yuz');
+    return (hStr + (rem ? ' ' + numberToUzbekWords(rem) : '')).trim();
+  }
+  const th = Math.floor(n / 1000);
+  const remTh = n % 1000;
+  return (numberToUzbekWords(th) + ' ming' + (remTh ? ' ' + numberToUzbekWords(remTh) : '')).trim();
+}
+
+function getUzbekOrdinal(n) {
+  const words = numberToUzbekWords(n);
+  if (!words) return `${n}-chi`;
+  const lastChar = words.slice(-1).toLowerCase();
+  const vowels = ['a', 'e', 'i', 'o', 'u'];
+  if (vowels.includes(lastChar)) {
+    return `${words}nchi`;
+  } else {
+    return `${words}inchi`;
+  }
+}
+
+// Web Speech API Voice Announcement in Uzbek (e.g. "Uchinchi buyurtma tayyor! Marhamat, olib ketishingiz mumkin")
 function speakOrderReady(orderNumber) {
   try {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel(); // Stop any pending speech
 
-    // Clean order number: extract ONLY digits so speech never pronounces '#' or extra characters
+    // Clean order number: extract ONLY digits
     const cleanNum = String(orderNumber).replace(/\D/g, '') || String(orderNumber).replace('#', '').trim();
     if (!cleanNum) return;
 
-    // Natural Russian Announcement text: "Заказ номер X готов!"
-    const text = `Заказ номер ${cleanNum} готов!`;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ru-RU';
-    
-    // Select best natural Russian voice available on system (Google, Natural, Irina, Pavel, or any ru-RU voice)
-    const voices = window.speechSynthesis.getVoices();
-    const ruVoice = voices.find(v => (v.lang.includes('ru') || v.lang.includes('RU')) && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Irina') || v.name.includes('Tatyana') || v.name.includes('Pavel'))) ||
-                    voices.find(v => v.lang.startsWith('ru') || v.lang.includes('ru') || v.lang.includes('RU')) ||
-                    voices[0];
-    
-    if (ruVoice) {
-      utterance.voice = ruVoice;
+    const numInt = parseInt(cleanNum, 10);
+    let ordinal = '';
+    if (!isNaN(numInt) && numInt > 0) {
+      ordinal = getUzbekOrdinal(numInt);
+      ordinal = ordinal.charAt(0).toUpperCase() + ordinal.slice(1);
+    } else {
+      ordinal = `${cleanNum}-raqamli`;
     }
-    
-    // Natural speech parameters
-    utterance.rate = 0.88;  // Slightly relaxed speed for clear public announcement
-    utterance.pitch = 1.0;  // Natural pitch
+
+    // Exact requested format in pure Uzbek: "Uchinchi buyurtma tayyor! Marhamat, olib ketishingiz mumkin."
+    const text = `${ordinal} buyurtma tayyor! Marhamat, olib ketishingiz mumkin.`;
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    // Look for best voice: Uzbek if installed, Turkish (virtually identical phonetics for Latin text), or fallback
+    const voices = window.speechSynthesis.getVoices();
+    const uzVoice = voices.find(v => v.lang.startsWith('uz') || v.lang.includes('uz-UZ')) ||
+                    voices.find(v => v.lang.startsWith('tr') || v.lang.includes('tr-TR')) ||
+                    voices.find(v => v.lang.startsWith('az') || v.lang.includes('az-AZ')) ||
+                    voices.find(v => v.lang.startsWith('ru') || v.lang.includes('ru-RU')) ||
+                    voices[0];
+
+    if (uzVoice) {
+      utterance.voice = uzVoice;
+      utterance.lang = uzVoice.lang;
+    } else {
+      utterance.lang = 'tr-TR';
+    }
+
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
-    // Speak right after chime
+    // Speak after chime
     setTimeout(() => {
       try {
         window.speechSynthesis.speak(utterance);
       } catch (err) {
         console.error("Speech speak error:", err);
       }
-    }, 600);
+    }, 700);
   } catch (e) {
     console.error("Speech synthesis error:", e);
   }
@@ -327,53 +375,53 @@ export default function TvQueueDisplay({ onBack }) {
       </header>
 
       {/* ── Main Two-Column Split Queue ────────────────────────────────────── */}
-      <main className="flex-1 min-h-0 grid grid-cols-2 gap-5 p-5 overflow-hidden">
+      <main className="flex-1 min-h-0 grid grid-cols-2 gap-4 p-4 overflow-hidden">
         {/* LEFT COLUMN: TAYYORLANMOQDA (AMBER) */}
-        <div className="flex flex-col h-full min-h-0 rounded-3xl bg-gray-900/90 border-2 border-amber-500/40 shadow-2xl overflow-hidden">
+        <div className="flex flex-col h-full min-h-0 rounded-3xl bg-gray-900/95 border-2 border-amber-500/40 shadow-2xl overflow-hidden">
           {/* Header Banner */}
-          <div className="shrink-0 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 px-5 py-3.5 text-gray-950 flex items-center justify-between shadow-lg">
+          <div className="shrink-0 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 px-5 py-3 text-gray-950 flex items-center justify-between shadow-lg">
             <div className="flex items-center gap-3">
-              <ChefHat size={28} className="stroke-[2.5]" />
+              <ChefHat size={26} className="stroke-[2.5]" />
               <div>
-                <h2 className="text-xl lg:text-2xl font-black tracking-wider uppercase">
+                <h2 className="text-lg lg:text-xl font-black tracking-wider uppercase">
                   TAYYORLANMOQDA
                 </h2>
-                <p className="text-[10px] font-bold text-gray-900/80 uppercase tracking-widest">Готовится / In Progress</p>
+                <p className="text-[9px] font-bold text-gray-900/80 uppercase tracking-widest">Oshxonada pishmoqda</p>
               </div>
             </div>
-            <span className="px-3.5 py-1 rounded-xl bg-black/30 text-white font-black text-lg backdrop-blur-sm">
+            <span className="px-3 py-0.5 rounded-xl bg-black/30 text-white font-black text-base backdrop-blur-sm">
               {tvData.preparing.length}
             </span>
           </div>
 
-          {/* Preparing Numbers Grid - Absolutely no scrollbars */}
-          <div className="flex-1 min-h-0 p-5 overflow-y-auto no-scrollbar">
+          {/* Preparing Numbers Grid - Strictly no scrollbars, compact responsive cards */}
+          <div className="flex-1 min-h-0 p-4 overflow-hidden flex flex-col justify-start">
             {tvData.preparing.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center py-16 text-gray-600">
-                <ChefHat size={48} className="mb-2 opacity-40" />
-                <p className="text-base font-bold text-gray-500">Tayyorlanayotgan buyurtmalar yo'q</p>
+              <div className="h-full flex flex-col items-center justify-center text-center py-10 text-gray-600">
+                <ChefHat size={44} className="mb-2 opacity-40 text-amber-500/50" />
+                <p className="text-sm font-bold text-gray-400">Hozirda barcha buyurtmalar tayyor</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-                {tvData.preparing.map(order => {
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr h-full">
+                {tvData.preparing.slice(0, 6).map(order => {
                   const isTakeaway = order.order_type === 'takeaway' || order.table_zone === 'Dostavka';
                   return (
                     <div
                       key={order.id}
-                      className="p-4 rounded-2xl bg-gray-800/80 border-2 border-amber-500/30 hover:border-amber-400 flex flex-col items-center justify-center gap-1 shadow-lg transition-all"
+                      className="p-3 rounded-2xl bg-gray-800/85 border border-amber-500/30 hover:border-amber-400 flex flex-col items-center justify-center gap-1 shadow-md transition-all"
                     >
-                      <span className="text-3xl lg:text-4xl font-black text-amber-400 tracking-tight font-mono">
+                      <span className="text-2xl lg:text-3xl font-black text-amber-400 tracking-tight font-mono">
                         #{order.order_number || order.id}
                       </span>
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-gray-400 mt-1">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-gray-300">
                         {isTakeaway ? (
                           <span className="text-amber-300/90 flex items-center gap-1">
-                            <ShoppingBag size={12} />
+                            <ShoppingBag size={11} />
                             Olib ketish
                           </span>
                         ) : (
-                          <span className="text-gray-300 flex items-center gap-1">
-                            <Utensils size={12} />
+                          <span className="text-gray-300 flex items-center gap-1 truncate max-w-[120px]">
+                            <Utensils size={11} />
                             {order.table_name || `Stol #${order.table_id}`}
                           </span>
                         )}
@@ -384,36 +432,46 @@ export default function TvQueueDisplay({ onBack }) {
               </div>
             )}
           </div>
+
+          {/* Extra queue banner if > 6 orders */}
+          {tvData.preparing.length > 6 && (
+            <div className="shrink-0 mx-4 mb-3 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-200">Navbatda kutilmoqda:</span>
+              <span className="text-xs font-black text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-500/40 animate-pulse">
+                +{tvData.preparing.length - 6} ta buyurtma
+              </span>
+            </div>
+          )}
         </div>
 
         {/* RIGHT COLUMN: TAYYOR BO'LDI (EMERALD GLOW) */}
-        <div className="flex flex-col h-full min-h-0 rounded-3xl bg-gray-900/90 border-2 border-emerald-500/70 shadow-[0_0_50px_rgba(16,185,129,0.15)] overflow-hidden">
+        <div className="flex flex-col h-full min-h-0 rounded-3xl bg-gray-900/95 border-2 border-emerald-500/70 shadow-[0_0_40px_rgba(16,185,129,0.15)] overflow-hidden">
           {/* Header Banner */}
-          <div className="shrink-0 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-600 px-5 py-3.5 text-gray-950 flex items-center justify-between shadow-lg">
+          <div className="shrink-0 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-600 px-5 py-3 text-gray-950 flex items-center justify-between shadow-lg">
             <div className="flex items-center gap-3">
-              <CheckCircle2 size={28} className="stroke-[2.5]" />
+              <CheckCircle2 size={26} className="stroke-[2.5]" />
               <div>
-                <h2 className="text-xl lg:text-2xl font-black tracking-wider uppercase">
+                <h2 className="text-lg lg:text-xl font-black tracking-wider uppercase">
                   TAYYOR BO'LDI
                 </h2>
-                <p className="text-[10px] font-bold text-gray-900/80 uppercase tracking-widest">Готово к выдаче / Ready</p>
+                <p className="text-[9px] font-bold text-gray-900/80 uppercase tracking-widest">Olib ketishga tayyor</p>
               </div>
             </div>
-            <span className="px-3.5 py-1 rounded-xl bg-black/30 text-white font-black text-lg backdrop-blur-sm">
+            <span className="px-3 py-0.5 rounded-xl bg-black/30 text-white font-black text-base backdrop-blur-sm">
               {tvData.ready.length}
             </span>
           </div>
 
-          {/* Ready Numbers Grid with Glow & Pulse - Absolutely no scrollbars */}
-          <div className="flex-1 min-h-0 p-5 overflow-y-auto no-scrollbar">
+          {/* Ready Numbers Grid with Glow & Pulse - Strictly no scrollbars */}
+          <div className="flex-1 min-h-0 p-4 overflow-hidden flex flex-col justify-start">
             {tvData.ready.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center py-16 text-gray-600">
-                <CheckCircle2 size={48} className="mb-2 opacity-40" />
-                <p className="text-base font-bold text-gray-500">Tayyor buyurtmalar kutilmoqda</p>
+              <div className="h-full flex flex-col items-center justify-center text-center py-10 text-gray-600">
+                <CheckCircle2 size={44} className="mb-2 opacity-40 text-emerald-500/50" />
+                <p className="text-sm font-bold text-gray-400">Hozircha tayyor buyurtmalar kutilmoqda</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-                {tvData.ready.map(order => {
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr h-full">
+                {tvData.ready.slice(0, 6).map(order => {
                   const isTakeaway = order.order_type === 'takeaway' || order.table_zone === 'Dostavka';
                   const orderNum = order.order_number || order.id;
                   const isRecentlyAnnounced = lastReadyAnnounced === orderNum;
@@ -421,22 +479,22 @@ export default function TvQueueDisplay({ onBack }) {
                   return (
                     <div
                       key={order.id}
-                      className={`p-4 rounded-2xl bg-emerald-950/40 border-2 border-emerald-400 flex flex-col items-center justify-center gap-1 shadow-[0_0_30px_rgba(52,211,153,0.3)] transition-all ${
-                        isRecentlyAnnounced ? 'animate-bounce border-emerald-300 shadow-[0_0_50px_rgba(52,211,153,0.6)]' : 'animate-pulse'
+                      className={`p-3 rounded-2xl bg-emerald-950/40 border-2 border-emerald-400 flex flex-col items-center justify-center gap-1 shadow-[0_0_20px_rgba(52,211,153,0.25)] transition-all ${
+                        isRecentlyAnnounced ? 'animate-bounce border-emerald-300 shadow-[0_0_40px_rgba(52,211,153,0.6)]' : 'animate-pulse'
                       }`}
                     >
-                      <span className="text-4xl lg:text-5xl font-black text-emerald-300 tracking-tight font-mono drop-shadow-[0_0_15px_rgba(16,185,129,0.8)]">
+                      <span className="text-3xl lg:text-4xl font-black text-emerald-300 tracking-tight font-mono drop-shadow-[0_0_12px_rgba(16,185,129,0.8)]">
                         #{orderNum}
                       </span>
-                      <div className="flex items-center gap-1 text-[11px] font-black text-emerald-400 mt-1">
+                      <div className="flex items-center gap-1 text-[10px] font-black text-emerald-400">
                         {isTakeaway ? (
                           <span className="flex items-center gap-1 bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/30">
-                            <ShoppingBag size={12} />
+                            <ShoppingBag size={11} />
                             Olib ketish
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/30">
-                            <Utensils size={12} />
+                          <span className="flex items-center gap-1 bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/30 truncate max-w-[120px]">
+                            <Utensils size={11} />
                             {order.table_name || `Stol #${order.table_id}`}
                           </span>
                         )}
@@ -447,6 +505,16 @@ export default function TvQueueDisplay({ onBack }) {
               </div>
             )}
           </div>
+
+          {/* Extra queue banner if > 6 ready orders */}
+          {tvData.ready.length > 6 && (
+            <div className="shrink-0 mx-4 mb-3 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-200">Kutilayotgan tayyorlar:</span>
+              <span className="text-xs font-black text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded-full border border-emerald-500/40 animate-pulse">
+                +{tvData.ready.length - 6} ta buyurtma
+              </span>
+            </div>
+          )}
         </div>
       </main>
 

@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   loadInitialBase: (type)  => ipcRenderer.invoke('load-initial-base', type),
   getRestaurantTables: ()  => ipcRenderer.invoke('get-restaurant-tables'),
   getActiveOrderForTable: (tableId) => ipcRenderer.invoke('get-active-order-for-table', tableId),
-  saveRestaurantOrder: (tableId, waiterId, items) => ipcRenderer.invoke('save-restaurant-order', tableId, waiterId, items),
+  saveRestaurantOrder: (tableId, waiterId, items, skipKitchenPrint = false) => ipcRenderer.invoke('save-restaurant-order', tableId, waiterId, items, skipKitchenPrint),
   closeRestaurantOrder: (data) => ipcRenderer.invoke('close-restaurant-order', data),
   closeRestaurantOrderOnly: (tableId) => ipcRenderer.invoke('close-restaurant-order-only', tableId),
   getWaiters:   ()        => ipcRenderer.invoke('get-waiters'),
@@ -82,7 +82,9 @@ contextBridge.exposeInMainWorld('api', {
     return ipcRenderer.invoke('add-cashier', data);
   },
   deleteCashier: (id)      => ipcRenderer.invoke('delete-cashier', id),
+  updateCashier: (data)    => ipcRenderer.invoke('update-cashier', data),
   updateCashierPin: (data) => ipcRenderer.invoke('update-cashier-pin', data),
+  payStaffSalary: (data)   => ipcRenderer.invoke('pay-staff-salary', data),
   exportDB:      (name)    => ipcRenderer.invoke('export-db', name),
   importDB:      ()        => ipcRenderer.invoke('import-db'),
   optimizeDatabase: ()     => ipcRenderer.invoke('optimize-database'),
@@ -106,10 +108,14 @@ contextBridge.exposeInMainWorld('api', {
   installUpdate: ()        => ipcRenderer.invoke('install-update'),
   onUpdateStatus:(callback) => {
     const channels = ['checking-for-update', 'update-available', 'update-not-available', 'download-progress', 'update-downloaded', 'update-error'];
-    channels.forEach(ch => {
-      ipcRenderer.removeAllListeners(ch);
-      ipcRenderer.on(ch, (_, data) => callback(ch, data));
+    const listeners = channels.map(ch => {
+      const handler = (_, data) => callback(ch, data);
+      ipcRenderer.on(ch, handler);
+      return { ch, handler };
     });
+    return () => {
+      listeners.forEach(({ ch, handler }) => ipcRenderer.removeListener(ch, handler));
+    };
   },
   onMobileSalePrinted: (callback) => {
     ipcRenderer.removeAllListeners('mobile-sale-printed');
@@ -146,7 +152,13 @@ contextBridge.exposeInMainWorld('api', {
   updateCashier: (data) => ipcRenderer.invoke('update-cashier', data),
   updateWaiter: (data) => ipcRenderer.invoke('update-waiter', data),
   getKitchenOrders: () => ipcRenderer.invoke('get-kitchen-orders'),
+  getKitchenHistory: (limit) => ipcRenderer.invoke('get-kitchen-history', limit),
   setOrderStatus: (data) => ipcRenderer.invoke('set-order-status', data),
+  setOrderItemStatus: (data) => ipcRenderer.invoke('set-order-item-status', data),
+  setOrderServed: (data) => ipcRenderer.invoke('set-order-served', data),
+  revertKitchenOrderStatus: (orderId) => ipcRenderer.invoke('revert-kitchen-order', orderId),
+  getKitchenPerformanceReport: (params) => ipcRenderer.invoke('get-kitchen-performance', params),
+  getDirectorOverview: (pin) => ipcRenderer.invoke('get-director-overview', pin),
   setOrderStatusByTable: (data) => ipcRenderer.invoke('set-order-status-by-table', data),
   getTvOrders: () => ipcRenderer.invoke('get-tv-orders'),
   onKitchenUpdated: (callback) => {

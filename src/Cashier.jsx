@@ -322,11 +322,20 @@ export default memo(function Cashier({ isActive }) {
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearchQuery.trim()) return [];
-    const q = customerSearchQuery.toLowerCase();
-    return customers.filter(c => 
-      c.name.toLowerCase().includes(q) || 
-      (c.phone && c.phone.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
-    );
+    const q = customerSearchQuery.toLowerCase().trim();
+    const qDigits = q.replace(/\D/g, '');
+    const cleanStr = (s) => (s || '').toLowerCase().replace(/[`'ʻʼ’]/g, "'");
+    const stripApostrophes = (s) => cleanStr(s).replace(/'/g, '');
+    const cleanQ = cleanStr(q);
+    const strippedQ = stripApostrophes(cleanQ);
+
+    return customers.filter(c => {
+      const name = cleanStr(c.name);
+      const nameMatch = name.includes(cleanQ) || (strippedQ.length > 0 && stripApostrophes(name).includes(strippedQ));
+      const phoneDigits = (c.phone || '').replace(/\D/g, '');
+      const phoneMatch = qDigits.length > 0 && phoneDigits.includes(qDigits);
+      return nameMatch || phoneMatch;
+    });
   }, [customerSearchQuery, customers]);
 
   const handleQueryChange = (e) => setQuery(e.target.value);
@@ -825,16 +834,6 @@ export default memo(function Cashier({ isActive }) {
               </button>
             )}
           </div>
-          {(allowMobileQr || allowAttendanceQr || attendanceUnlocked || currentUser?.pin === 'xxMpos7532.' || true) && (
-            <button
-              type="button"
-              onClick={() => setShowNetworkModal(true)}
-              title="Terminal ulanish sozlamalari (QR kod)"
-              className="px-5 bg-white dark:bg-gray-805 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-200 dark:border-gray-700 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95 hover:scale-[1.02]"
-            >
-              <Wifi size={24} />
-            </button>
-          )}
         </div>
 
         <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
@@ -1291,7 +1290,7 @@ export default memo(function Cashier({ isActive }) {
       {/* Alert Modal */}
       <AlertModal 
         isOpen={!!alertModal}
-        title={alertModal?.title || "Xatolik"}
+        title={alertModal?.title || (alertModal?.type === 'success' ? "Muvaffaqiyatli" : "Xatolik")}
         message={alertModal?.message || ''}
         type={alertModal?.type || 'error'}
         onConfirm={() => setAlertModal(null)}

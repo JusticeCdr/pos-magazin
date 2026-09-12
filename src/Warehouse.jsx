@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { Search, Plus, Trash2, Edit, AlertTriangle, AlertCircle, CheckCircle2, XCircle, MinusCircle, Printer, X, Package, UtensilsCrossed, Ban, Play, Sparkles, ChefHat, Image as ImageIcon, Upload, ClipboardCheck, Truck, FileText, DollarSign, UserPlus } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, AlertTriangle, AlertCircle, CheckCircle2, XCircle, MinusCircle, Printer, X, Package, UtensilsCrossed, Ban, Play, Sparkles, ChefHat, Image as ImageIcon, Upload, ClipboardCheck, Truck, FileText, DollarSign, UserPlus, Banknote, TrendingUp, Tag } from 'lucide-react';
 import { useApp } from './context/AppContext';
-import { formatCurrency, formatThousands, getProductImageUrl, parseSQLiteDate } from './utils';
+import { formatCurrency, formatThousands, formatQuantity, getProductImageUrl, parseSQLiteDate } from './utils';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 import JsBarcode from 'jsbarcode';
 import { logoBase64 } from './logoBase64';
@@ -55,7 +55,7 @@ const EMPTY_FORM = {
   image: null,
 };
 
-export default memo(function Warehouse({ isActive, onOpenAudit }) {
+export default memo(function Warehouse({ isActive, onOpenAudit, warehouseModal, onClearWarehouseModal }) {
   const { 
     t, lang, globalProducts, fetchGlobalProducts, productsLoaded, currentUser, storeName, shopLogo, businessType, usdRate, setUsdRate
   } = useApp();
@@ -88,6 +88,55 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
   });
   const [writeOffHistory, setWriteOffHistory] = useState([]);
   const [showWriteOffHistory, setShowWriteOffHistory] = useState(false);
+  const [writeOffSearch, setWriteOffSearch] = useState('');
+  const [writeOffDropdownOpen, setWriteOffDropdownOpen] = useState(false);
+
+  // ── Custom Warehouse Categories ──
+  const [customCategories, setCustomCategories] = useState(() => {
+    try {
+      const saved = localStorage.getItem('custom_warehouse_categories');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+
+  const handleSaveNewCategory = (e) => {
+    e?.preventDefault();
+    const trimmed = newCategoryInput.trim();
+    if (!trimmed) return;
+    if (!customCategories.includes(trimmed)) {
+      const updated = [...customCategories, trimmed];
+      setCustomCategories(updated);
+      try {
+        localStorage.setItem('custom_warehouse_categories', JSON.stringify(updated));
+      } catch {}
+    }
+    setFormData(prev => ({ ...prev, category: trimmed }));
+    setNewCategoryInput('');
+    setShowNewCategoryModal(false);
+    showToast(`"${trimmed}" kategoriyasi qo'shildi va tanlandi!`);
+  };
+
+  // ── Recipe Ingredient Search ──
+  const [ingredientSearch, setIngredientSearch] = useState('');
+
+  const selectedWriteOffProduct = useMemo(() => {
+    return (globalProducts || []).find(p => p.id === Number(writeOffForm.productId)) || null;
+  }, [globalProducts, writeOffForm.productId]);
+
+  const filteredWriteOffProducts = useMemo(() => {
+    const list = globalProducts || [];
+    if (!writeOffSearch.trim()) return list.slice(0, 100);
+    const q = writeOffSearch.toLowerCase();
+    return list.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.barcode && p.barcode.includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q))
+    ).slice(0, 100);
+  }, [globalProducts, writeOffSearch]);
 
   const handleSaveWriteOff = async (e) => {
     e.preventDefault();
@@ -95,6 +144,11 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
     const qty = parseFloat(writeOffForm.quantity);
     if (isNaN(qty) || qty <= 0) {
       setStatus({ type: 'error', message: 'Noto\'g\'ri miqdor kiritildi!' });
+      return;
+    }
+    const selProd = (globalProducts || []).find(p => p.id === Number(writeOffForm.productId));
+    if (selProd && qty > selProd.stock) {
+      setStatus({ type: 'error', message: `Omborda faqat ${formatQuantity(selProd.stock)} ${selProd.unit || 'dona'} mavjud!` });
       return;
     }
 
@@ -111,6 +165,8 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
       if (res && res.success) {
         setStatus({ type: 'success', message: 'Mahsulot ombordan hisobdan chiqarildi!' });
         setShowWriteOffModal(false);
+        setWriteOffDropdownOpen(false);
+        setWriteOffSearch('');
         setWriteOffForm({ productId: '', quantity: '', reason: 'Brak / Yaroqsiz', note: '' });
         await fetchGlobalProducts();
       } else {
@@ -320,6 +376,19 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
       showToast(err.message, 'error');
     }
   };
+
+  useEffect(() => {
+    if (!warehouseModal) return;
+    if (warehouseModal === 'suppliers') {
+      fetchSuppliers();
+      setShowSuppliersModal(true);
+    } else if (warehouseModal === 'spisanie') {
+      setShowWriteOffModal(true);
+    } else if (warehouseModal === 'transfer' && businessType === 'restaurant') {
+      fetchSubWarehouses();
+      setShowTransferModal(true);
+    }
+  }, [warehouseModal, businessType]);
 
   const handleAddTransferItem = () => {
     if (!transferSelectedProductId || !transferSelectedQty) return;
@@ -990,6 +1059,17 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
       let isReadyWithRecipe = false;
       let finalSellPrice = parseInt(String(formData.sell_price).replace(/\D/g, '')) || 0;
       let finalStock = parseFloat(formData.stock) || 0;
+
+      // Mandatory note when adjusting/adding stock to an existing product
+      if (editingId && formData.stock && parseFloat(formData.stock) !== 0 && (!formData.note || !formData.note.trim())) {
+        setStatus({
+          type: 'error',
+          message: "Ombor qoldig'ini o'zgartirganda yoki qo'shganda Izoh yozish majburiy! (Masalan: Bozor/ta'minotchidan olib kelindi)"
+        });
+        setLoading(false);
+        return;
+      }
+
       let finalCategory = formData.category ? formData.category.trim() : (restaurantTab === 'raw_materials' ? 'Sabzavotlar' : 'Milliy taomlar');
       let finalDest = formData.printer_destination || 'none';
       const isUnlimited = (businessType === 'restaurant' && dishMode === 'piece' && formData.is_unlimited) ? 1 : 0;
@@ -1341,6 +1421,33 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
     );
   }, [globalProducts, search, businessType, restaurantTab]);
 
+  const warehouseStats = useMemo(() => {
+    let totalCost = 0;
+    let totalSell = 0;
+    const list = filteredProducts || [];
+
+    list.forEach(p => {
+      const stock = parseFloat(p.stock) || 0;
+      const buyPrice = parseFloat(p.buy_price) || 0;
+      const sellPrice = parseFloat(p.sell_price) || 0;
+
+      if (stock > 0) {
+        // In restaurant mode, recipe dishes do not have physical purchase cost in warehouse (accounted in raw materials)
+        if (!(businessType === 'restaurant' && p.has_recipe)) {
+          totalCost += stock * buyPrice;
+        }
+        if (sellPrice > 0) {
+          totalSell += stock * sellPrice;
+        }
+      } else if (p.has_recipe && p.recipe_available_portions > 0 && sellPrice > 0) {
+        totalSell += p.recipe_available_portions * sellPrice;
+      }
+    });
+
+    const expectedProfit = Math.max(0, totalSell - totalCost);
+    return { totalCost, totalSell, expectedProfit, totalItems: list.length };
+  }, [filteredProducts, businessType]);
+
   // Shared input class with Dark Mode support
   const inputCls =
     'w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100';
@@ -1574,129 +1681,45 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('warehouseSubtitle')}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {businessType === 'restaurant' && onOpenAudit && (
+        {businessType === 'restaurant' && (
+          <div className="flex flex-wrap items-center gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner">
             <button
               type="button"
-              onClick={onOpenAudit}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-md shadow-indigo-500/20 transition-all cursor-pointer hover:scale-105 active:scale-95"
+              onClick={() => { setRestaurantTab('raw_materials'); handleCancelEdit(); }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                restaurantTab === 'raw_materials'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60'
+              }`}
             >
-              <ClipboardCheck size={16} />
-              <span>{t('audit') || 'Inventarizatsiya (Reviziya)'}</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => { fetchSuppliers(); setShowSuppliersModal(true); }}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-600/30 active:scale-95"
-          >
-            <Truck size={15} />
-            <span>Yetkazib Beruvchilar (Postavshiklar)</span>
-            {suppliersList.filter(s => (s.balance || 0) > 0).length > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-500 text-white font-black animate-pulse">
-                {suppliersList.filter(s => (s.balance || 0) > 0).length} qarz
+              <Package size={15} />
+              <span>1-Ombor: Xom-ashyo & Polufabrikati</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                restaurantTab === 'raw_materials' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}>
+                {rawMaterialsCount}
               </span>
-            )}
-          </button>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => { fetchSuppliers(); setShowInvoiceModal(true); }}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 active:scale-95"
-          >
-            <FileText size={15} />
-            <span>Kirim Fakturasi (Prikhod)</span>
-          </button>
-
-          {businessType === 'restaurant' && (
-            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-gray-100 dark:bg-gray-800/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner">
-              <button
-                type="button"
-                onClick={() => { setRestaurantTab('raw_materials'); handleCancelEdit(); }}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                  restaurantTab === 'raw_materials'
-                    ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60'
-                }`}
-              >
-                <Package size={15} />
-                <span>1-Ombor: Xom-ashyo & Polufabrikati</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] ${
-                  restaurantTab === 'raw_materials' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}>
-                  {rawMaterialsCount}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setRestaurantTab('dishes'); handleCancelEdit(); }}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                  restaurantTab === 'dishes'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60'
-                }`}
-              >
-                <UtensilsCrossed size={15} />
-                <span>2-Ombor: Sotiladigan Taomlar & Tovarlar</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] ${
-                  restaurantTab === 'dishes' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}>
-                  {dishesCount}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setRestaurantTab('stop_list'); handleCancelEdit(); setShowStopListModal(true); }}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                  restaurantTab === 'stop_list'
-                    ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-white/60 dark:hover:bg-gray-700/60'
-                }`}
-              >
-                <Ban size={15} />
-                <span>Stop-List</span>
-                {stoppedCount > 0 && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    restaurantTab === 'stop_list' ? 'bg-white text-red-700' : 'bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300 animate-pulse'
-                  }`}>
-                    {stoppedCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowWriteOffModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-600/30 active:scale-95 ml-1"
-              >
-                <Trash2 size={15} />
-                <span>Hisobdan chiqarish (Spisanie)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleFetchWriteOffHistory}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 active:scale-95"
-                title="Hisobdan chiqarilganlar tarixi"
-              >
-                <ClipboardCheck size={15} />
-                <span>Chiqitlar tarixi</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { fetchSubWarehouses(); setShowTransferModal(true); }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/30 active:scale-95"
-              >
-                <Truck size={15} />
-                <span>Omborlararo Ko'chirish</span>
-              </button>
-            </div>
-          )}
-        </div>
+            <button
+              type="button"
+              onClick={() => { setRestaurantTab('dishes'); handleCancelEdit(); }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                restaurantTab === 'dishes'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60'
+              }`}
+            >
+              <UtensilsCrossed size={15} />
+              <span>2-Ombor: Sotiladigan Taomlar & Tovarlar</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                restaurantTab === 'dishes' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}>
+                {dishesCount}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Add/Edit product card ── */}
@@ -1872,44 +1895,44 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
             {/* Kategoriya */}
             {businessType === 'restaurant' && (
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                  {lang === 'uz' ? 'Kategoriya' : 'Категория'} <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    required={businessType === 'restaurant'}
-                    name="category"
-                    list="restaurant-category-list"
-                    value={formData.category}
-                    onChange={handleInputChange}
-                    type="text" 
-                    placeholder={restaurantTab === 'raw_materials' ? "Masalan: Sabzavotlar, Go'shtlar..." : "Masalan: Salatlar, Milliy taomlar, Ichimliklar..."} 
-                    className={inputCls}
-                  />
-                  <datalist id="restaurant-category-list">
-                    {(restaurantTab === 'raw_materials' ? RESTAURANT_RAW_CATEGORIES : RESTAURANT_DISH_CATEGORIES).map(c => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                    {lang === 'uz' ? 'Kategoriya' : 'Категория'} <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewCategoryModal(true)}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Plus size={12} />
+                    <span>+ Yangi kategoriya</span>
+                  </button>
                 </div>
-
-                {/* Quick selection pills */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar pt-1">
-                  {(restaurantTab === 'raw_materials' ? RESTAURANT_RAW_CATEGORIES : RESTAURANT_DISH_CATEGORIES).map(catName => (
-                    <button
-                      key={catName}
-                      type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, category: catName }))}
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
-                        formData.category === catName
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                          : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {catName}
-                    </button>
+                <select
+                  required={businessType === 'restaurant'}
+                  name="category"
+                  value={formData.category}
+                  onChange={(e) => {
+                    if (e.target.value === '__add_new__') {
+                      setShowNewCategoryModal(true);
+                    } else {
+                      handleInputChange(e);
+                    }
+                  }}
+                  className={inputCls + ' cursor-pointer font-medium'}
+                >
+                  <option value="">Kategoriyani tanlang...</option>
+                  {Array.from(new Set([
+                    ...(restaurantTab === 'raw_materials' ? RESTAURANT_RAW_CATEGORIES : RESTAURANT_DISH_CATEGORIES),
+                    ...customCategories,
+                    ...(globalProducts || []).map(p => p.category).filter(Boolean)
+                  ])).map(c => (
+                    <option key={c} value={c}>{c}</option>
                   ))}
-                </div>
+                  <option value="__add_new__" className="font-bold text-blue-600">
+                    + Yangi kategoriya qo'shish...
+                  </option>
+                </select>
               </div>
             )}
 
@@ -2192,10 +2215,31 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                 
                 {/* Add ingredient row */}
                 <div className="flex flex-col sm:flex-row gap-3 items-end bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                  <div className="flex-1 w-full">
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                      Xom-ashyo yoki Polufabrikatni tanlang
-                    </label>
+                  <div className="flex-1 w-full space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                        Xom-ashyo yoki Polufabrikatni tanlang
+                      </label>
+                      {ingredientSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setIngredientSearch('')}
+                          className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                        >
+                          Tozalash
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={ingredientSearch}
+                        onChange={(e) => setIngredientSearch(e.target.value)}
+                        placeholder="Masalliq qidirish (masalan: go'sht, piyoz)..."
+                        className="w-full pl-8 pr-3 py-1.5 mb-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-xs bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
                     <select
                       value={selectedIngId}
                       onChange={(e) => setSelectedIngId(e.target.value)}
@@ -2204,9 +2248,10 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                       <option value="">-- Masalliqni tanlang --</option>
                       {rawMaterials
                         .filter(rm => rm.id !== editingId)
+                        .filter(rm => !ingredientSearch.trim() || rm.name.toLowerCase().includes(ingredientSearch.toLowerCase().trim()))
                         .map(rm => (
                           <option key={rm.id} value={rm.id}>
-                            {rm.type === 'semi_finished' ? '👨‍🍳 [Polufabrikat] ' : ''}{rm.name} (Qoldiq: {rm.stock} {rm.unit || 'dona'}) - {formatCurrency(rm.buy_price, lang)}
+                            {rm.type === 'semi_finished' ? '👨‍🍳 [Polufabrikat] ' : ''}{rm.name} (Qoldiq: {formatQuantity(rm.stock)} {rm.unit || 'dona'}) - {formatCurrency(rm.buy_price, lang)}
                           </option>
                         ))}
                     </select>
@@ -2376,6 +2421,65 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
           </form>
         </div>
       )}
+
+      {/* ── Warehouse Valuation & Stats Cards ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 shrink-0">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-3.5 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <Package size={22} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider truncate">
+              {businessType === 'restaurant' ? (restaurantTab === 'raw_materials' ? 'Xom-ashyolar' : 'Taom va Tovar') : 'Jami tovarlar'}
+            </p>
+            <p className="text-lg font-black text-gray-900 dark:text-white truncate">
+              {warehouseStats.totalItems} <span className="text-xs font-normal text-gray-400">ta</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-3.5 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Banknote size={22} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider truncate">
+              Ombor Tannarxi
+            </p>
+            <p className="text-lg font-black text-amber-600 dark:text-amber-400 truncate">
+              {formatThousands(Math.round(warehouseStats.totalCost))} <span className="text-xs font-normal text-gray-400">so'm</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-3.5 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <TrendingUp size={22} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider truncate">
+              Sotish Qiymati
+            </p>
+            <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 truncate">
+              {formatThousands(Math.round(warehouseStats.totalSell))} <span className="text-xs font-normal text-gray-400">so'm</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-3.5 transition-colors">
+          <div className="w-11 h-11 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+            <DollarSign size={22} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider truncate">
+              Kutilayotgan Foyda
+            </p>
+            <p className="text-lg font-black text-purple-600 dark:text-purple-400 truncate">
+              {formatThousands(Math.round(warehouseStats.expectedProfit))} <span className="text-xs font-normal text-gray-400">so'm</span>
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Products table ── */}
       <div className="flex flex-col bg-white dark:bg-gray-800 shadow-sm rounded-xl border border-gray-200 dark:border-gray-700 min-h-[500px] transition-colors">
@@ -2579,7 +2683,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                             </span>
                           ) : businessType === 'restaurant' && product.stop_limit !== null && product.stop_limit !== undefined ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-                              Limit: {product.stop_limit} {unitLabel}
+                              Limit: {formatQuantity(product.stop_limit)} {unitLabel}
                             </span>
                           ) : (
                             <span
@@ -2593,7 +2697,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                             >
                               {product.stock <= 0 && <AlertCircle size={11} />}
                               {lowStock && product.stock > 0 && <AlertTriangle size={11} />}
-                              {product.stock} {unitLabel}
+                              {formatQuantity(product.stock)} {unitLabel}
                             </span>
                           )}
                         </td>
@@ -2767,45 +2871,144 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                 <Trash2 className="text-purple-600 dark:text-purple-400" size={20} />
                 Spisanie — Ombordan hisobdan chiqarish
               </h3>
-              <button onClick={() => setShowWriteOffModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+              <button
+                onClick={() => {
+                  setShowWriteOffModal(false);
+                  setWriteOffDropdownOpen(false);
+                  setWriteOffSearch('');
+                  if (onClearWarehouseModal) onClearWarehouseModal();
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleSaveWriteOff} className="p-6 space-y-4">
-              <div>
+              {/* Product Search & Select */}
+              <div className="relative">
                 <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5 uppercase tracking-wider">
                   Mahsulot / Xom-ashyo <span className="text-red-500">*</span>
                 </label>
-                <select
-                  required
-                  value={writeOffForm.productId}
-                  onChange={(e) => setWriteOffForm({ ...writeOffForm, productId: e.target.value })}
-                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="">-- Mahsulotni tanlang --</option>
-                  {globalProducts.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.stock} {p.unit || 'dona'} qolgan)
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required={!writeOffForm.productId}
+                    placeholder="Mahsulot nomini qidiring yoki tanlang..."
+                    value={writeOffDropdownOpen ? writeOffSearch : (selectedWriteOffProduct ? `${selectedWriteOffProduct.name} (${formatQuantity(selectedWriteOffProduct.stock)} ${selectedWriteOffProduct.unit || 'dona'})` : '')}
+                    onFocus={() => setWriteOffDropdownOpen(true)}
+                    onChange={(e) => {
+                      setWriteOffSearch(e.target.value);
+                      if (!writeOffDropdownOpen) setWriteOffDropdownOpen(true);
+                    }}
+                    className="w-full bg-gray-50 dark:bg-gray-700/80 border border-gray-300 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                    {selectedWriteOffProduct && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWriteOffForm({ ...writeOffForm, productId: '' });
+                          setWriteOffSearch('');
+                        }}
+                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5"
+                        title="Tanlovni tozalash"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setWriteOffDropdownOpen(!writeOffDropdownOpen)}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      <Search size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dropdown Options */}
+                {writeOffDropdownOpen && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl custom-scrollbar py-1">
+                    {filteredWriteOffProducts.length === 0 ? (
+                      <div className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 text-center font-medium">
+                        Mahsulot topilmadi
+                      </div>
+                    ) : (
+                      filteredWriteOffProducts.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setWriteOffForm({ ...writeOffForm, productId: p.id });
+                            setWriteOffDropdownOpen(false);
+                            setWriteOffSearch('');
+                          }}
+                          className={`w-full text-left px-3.5 py-2.5 hover:bg-purple-50 dark:hover:bg-purple-900/40 flex items-center justify-between transition-colors border-b border-gray-100 dark:border-gray-700/50 last:border-0 ${
+                            Number(writeOffForm.productId) === p.id ? 'bg-purple-50 dark:bg-purple-900/30' : ''
+                          }`}
+                        >
+                          <div>
+                            <span className="text-sm font-bold text-gray-900 dark:text-gray-100 block">
+                              {p.name}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {p.category || 'Asosiy'} {p.barcode ? `· ${p.barcode}` : ''}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                              {formatQuantity(p.stock)} {p.unit || 'dona'}
+                            </span>
+                            {(p.buy_price || p.cost_price) > 0 && (
+                              <span className="block text-[10px] text-gray-400 mt-0.5">
+                                @ {formatThousands(p.buy_price || p.cost_price)} so'm
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
+              {/* Chiqariladigan Miqdor with live formatted spacing */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5 uppercase tracking-wider">
-                  Chiqariladigan Miqdor <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Chiqariladigan Miqdor <span className="text-red-500">*</span>
+                  </label>
+                  {selectedWriteOffProduct && (
+                    <span className="text-xs font-semibold text-purple-600 dark:text-purple-400">
+                      Omborda: {formatQuantity(selectedWriteOffProduct.stock)} {selectedWriteOffProduct.unit || 'dona'}
+                    </span>
+                  )}
+                </div>
                 <input
-                  type="number"
-                  step="any"
-                  min="0.001"
+                  type="text"
+                  inputMode="decimal"
                   required
-                  placeholder="0.00"
-                  value={writeOffForm.quantity}
-                  onChange={(e) => setWriteOffForm({ ...writeOffForm, quantity: e.target.value })}
-                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="0"
+                  value={formatThousands(writeOffForm.quantity)}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/\s/g, '');
+                    if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                      setWriteOffForm({ ...writeOffForm, quantity: raw });
+                    }
+                  }}
+                  className="w-full bg-gray-50 dark:bg-gray-700/80 border border-gray-300 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-base font-extrabold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
+
+                {/* Live loss calculation formatted with space separators */}
+                {selectedWriteOffProduct && writeOffForm.quantity && (
+                  <div className="mt-2 flex items-center justify-between text-xs font-bold text-gray-600 dark:text-gray-300 bg-purple-50 dark:bg-purple-950/30 px-3 py-2 rounded-xl border border-purple-100 dark:border-purple-900/40">
+                    <span>Hisobdan chiqish summasi (Zarar):</span>
+                    <span className="text-red-600 dark:text-red-400 text-sm font-black">
+                      {formatThousands(Math.round((parseFloat(writeOffForm.quantity) || 0) * (selectedWriteOffProduct.buy_price || selectedWriteOffProduct.cost_price || 0)))} so'm
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -2815,12 +3018,12 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                 <select
                   value={writeOffForm.reason}
                   onChange={(e) => setWriteOffForm({ ...writeOffForm, reason: e.target.value })}
-                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full bg-gray-50 dark:bg-gray-700/80 border border-gray-300 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="Brak / Yaroqsiz">Brak / Yaroqsiz (Buzilgan/Chiqit)</option>
-                  <option value="Xodimlar tushligi">Xodimlar tushligi (Питание)</option>
-                  <option value="Siylov / Mehmon">Siylov / Mehmon uchun (Угощение)</option>
-                  <option value="Boshqa">Boshqa sabab</option>
+                  <option value="Brak / Yaroqsiz" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Brak / Yaroqsiz (Buzilgan/Chiqit)</option>
+                  <option value="Xodimlar tushligi" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Xodimlar tushligi (Питание)</option>
+                  <option value="Siylov / Mehmon" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Siylov / Mehmon uchun (Угощение)</option>
+                  <option value="Boshqa" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Boshqa sabab</option>
                 </select>
               </div>
 
@@ -2833,14 +3036,19 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                   placeholder="Masalan: Muddati o'tgan, singan..."
                   value={writeOffForm.note}
                   onChange={(e) => setWriteOffForm({ ...writeOffForm, note: e.target.value })}
-                  className="w-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full bg-gray-50 dark:bg-gray-700/80 border border-gray-300 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
 
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowWriteOffModal(false)}
+                  onClick={() => {
+                    setShowWriteOffModal(false);
+                    setWriteOffDropdownOpen(false);
+                    setWriteOffSearch('');
+                    if (onClearWarehouseModal) onClearWarehouseModal();
+                  }}
                   className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl font-bold text-sm transition-all"
                 >
                   Bekor qilish
@@ -2934,6 +3142,13 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
               </h3>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => { setShowInvoiceModal(true); }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <FileText size={15} />
+                  <span>+ Kirim Fakturasi (Prikhod)</span>
+                </button>
+                <button
                   onClick={() => {
                     setSupplierForm({ id: null, name: '', phone: '', company: '', note: '' });
                     setShowAddSupplierForm(prev => !prev);
@@ -2943,7 +3158,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                   <UserPlus size={15} />
                   <span>{showAddSupplierForm ? 'Yopish' : 'Yangi Postavshik'}</span>
                 </button>
-                <button onClick={() => setShowSuppliersModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <button onClick={() => { setShowSuppliersModal(false); if (onClearWarehouseModal) onClearWarehouseModal(); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                   <X size={20} />
                 </button>
               </div>
@@ -2996,7 +3211,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
 
             {/* Suppliers List */}
             <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-              {suppliersList.length === 0 ? (
+              {(suppliersList || []).length === 0 ? (
                 <div className="text-center py-12 text-gray-400 font-medium">
                   Hozircha yetkazib beruvchilar kiritilmagan.
                 </div>
@@ -3011,7 +3226,7 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                    {suppliersList.map(s => (
+                    {(suppliersList || []).map(s => (
                       <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
                         <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">
                           {s.name}
@@ -3148,11 +3363,13 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
                       className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     >
                       <option value="">-- Mahsulot tanlang --</option>
-                      {globalProducts.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.stock} {p.unit || 'dona'})
-                        </option>
-                      ))}
+                      {globalProducts
+                        .filter(p => businessType !== 'restaurant' || !p.has_recipe)
+                        .map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.stock} {p.unit || 'dona'}) {businessType === 'restaurant' && p.type === 'raw_material' ? '📦 [Xom-ashyo]' : ''}
+                          </option>
+                        ))}
                     </select>
                   </div>
                   <div className="md:col-span-3">
@@ -3374,35 +3591,93 @@ export default memo(function Warehouse({ isActive, onOpenAudit }) {
         </div>
       )}
 
-      <StockTransferModal
-        isOpen={showTransferModal}
-        onClose={() => setShowTransferModal(false)}
-        subWarehouses={subWarehouses}
-        transferForm={transferForm}
-        setTransferForm={setTransferForm}
-        transferItems={transferItems}
-        setTransferItems={setTransferItems}
-        transferSelectedProductId={transferSelectedProductId}
-        setTransferSelectedProductId={setTransferSelectedProductId}
-        transferSelectedQty={transferSelectedQty}
-        setTransferSelectedQty={setTransferSelectedQty}
-        onAddTransferItem={handleAddTransferItem}
-        onRemoveTransferItem={handleRemoveTransferItem}
-        onSaveTransfer={handleSaveTransfer}
-        onFetchHistory={handleFetchTransferHistory}
-        products={globalProducts}
-        lang={lang}
-        loading={loading}
-      />
-      <StockTransferHistoryModal
-        isOpen={showTransferHistory}
-        onClose={() => setShowTransferHistory(false)}
-        transfers={transferHistoryList}
-        lang={lang}
-      />
-      <ProduceSemiFinishedModal modal={produceModal} setModal={setProduceModal} onConfirm={handleConfirmProduce} lang={lang} />
+      {businessType === 'restaurant' && (
+        <>
+          <StockTransferModal
+            isOpen={showTransferModal}
+            onClose={() => { setShowTransferModal(false); if (onClearWarehouseModal) onClearWarehouseModal(); }}
+            subWarehouses={subWarehouses}
+            transferForm={transferForm}
+            setTransferForm={setTransferForm}
+            transferItems={transferItems}
+            setTransferItems={setTransferItems}
+            transferSelectedProductId={transferSelectedProductId}
+            setTransferSelectedProductId={setTransferSelectedProductId}
+            transferSelectedQty={transferSelectedQty}
+            setTransferSelectedQty={setTransferSelectedQty}
+            onAddTransferItem={handleAddTransferItem}
+            onRemoveTransferItem={handleRemoveTransferItem}
+            onSaveTransfer={handleSaveTransfer}
+            onFetchHistory={handleFetchTransferHistory}
+            products={globalProducts}
+            lang={lang}
+            loading={loading}
+          />
+          <StockTransferHistoryModal
+            isOpen={showTransferHistory}
+            onClose={() => setShowTransferHistory(false)}
+            transfers={transferHistoryList}
+            lang={lang}
+          />
+        </>
+      )}
+      {businessType === 'restaurant' && (
+        <ProduceSemiFinishedModal modal={produceModal} setModal={setProduceModal} onConfirm={handleConfirmProduce} lang={lang} />
+      )}
       {businessType === 'restaurant' && (
         <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
+      )}
+
+      {/* ── New Category Modal ── */}
+      {showNewCategoryModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-150 dark:border-gray-700 overflow-hidden animate-in zoom-in-95">
+            <div className="p-4 border-b border-gray-150 dark:border-gray-700 flex items-center justify-between bg-blue-50/50 dark:bg-blue-950/20">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Tag size={18} className="text-blue-600 dark:text-blue-400" />
+                Yangi kategoriya qo'shish
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setShowNewCategoryModal(false); setNewCategoryInput(''); }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveNewCategory} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase mb-1.5">
+                  Kategoriya nomi <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={newCategoryInput}
+                  onChange={(e) => setNewCategoryInput(e.target.value)}
+                  placeholder="Masalan: Ichimliklar, Gazaklar..."
+                  className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowNewCategoryModal(false); setNewCategoryInput(''); }}
+                  className="flex-1 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl font-bold text-xs transition"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/30 transition active:scale-95"
+                >
+                  Saqlash
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -3414,6 +3689,15 @@ function ProduceSemiFinishedModal({ modal, setModal, onConfirm, lang }) {
 
   const qty = parseFloat(modal.qty) || 0;
   const recipe = modal.recipe || [];
+
+  // Calculate maximum producible quantity based on current raw material stocks
+  const safeMaxQty = recipe.length > 0
+    ? Math.max(0, Math.floor(Math.min(...recipe.map(ing => {
+        const wastePct = parseFloat(ing.waste_percentage) || 0;
+        const eff = (parseFloat(ing.quantity) || 0) * (1 + wastePct / 100);
+        return eff > 0 ? (parseFloat(ing.stock) || 0) / eff : 999999;
+      })) * 1000) / 1000)
+    : 0;
 
   // Check if all ingredients have enough stock
   const evaluatedIngredients = recipe.map(ing => {
@@ -3468,20 +3752,57 @@ function ProduceSemiFinishedModal({ modal, setModal, onConfirm, lang }) {
             </div>
           )}
 
+          {recipe.length > 0 && safeMaxQty <= 0 && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>⚠️ Ombordagi xom-ashyolar yetarli emas! Hozirda ishlab chiqarish mumkin bo'lgan maksimal miqdor: 0.</span>
+            </div>
+          )}
+
           {/* Quantity to produce */}
           <div>
-            <label className="block text-xs font-extrabold text-gray-700 dark:text-gray-300 uppercase mb-1.5">
-              Tayyorlanadigan miqdor ({modal.product.unit || 'kg'}) <span className="text-red-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-extrabold text-gray-700 dark:text-gray-300 uppercase">
+                Tayyorlanadigan miqdor ({modal.product.unit || 'kg'}) <span className="text-red-500">*</span>
+              </label>
+              {recipe.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                    Mavjud xom-ashyodan max: <span className="text-purple-600 dark:text-purple-400 font-extrabold">{safeMaxQty}</span> {modal.product.unit || 'kg'}
+                  </span>
+                  {safeMaxQty > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setModal(prev => ({ ...prev, qty: safeMaxQty.toString(), error: null }))}
+                      className="px-2 py-0.5 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/50 dark:hover:bg-purple-800 text-purple-700 dark:text-purple-300 rounded text-[11px] font-extrabold cursor-pointer transition"
+                    >
+                      Maksimal
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <input
               type="number"
               step="0.001"
               min="0.001"
+              max={safeMaxQty > 0 ? safeMaxQty : undefined}
               required
               autoFocus
               value={modal.qty}
-              onChange={e => setModal(prev => ({ ...prev, qty: e.target.value, error: null }))}
-              placeholder="Masalan: 5"
+              onChange={e => {
+                const val = parseFloat(e.target.value);
+                if (safeMaxQty > 0 && val > safeMaxQty) {
+                  setModal(prev => ({
+                    ...prev,
+                    qty: safeMaxQty.toString(),
+                    error: `Mavjud xom-ashyodan faqat ${safeMaxQty} ${modal.product.unit || 'kg'} tayyorlash mumkin! Ziyod kiritish taqiqlanadi.`
+                  }));
+                } else {
+                  setModal(prev => ({ ...prev, qty: e.target.value, error: null }));
+                }
+              }}
+              placeholder={`0 (max: ${safeMaxQty})`}
               className="w-full border-2 border-purple-300 dark:border-purple-600 rounded-xl px-4 py-2.5 text-base font-extrabold bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
@@ -3551,7 +3872,7 @@ function ProduceSemiFinishedModal({ modal, setModal, onConfirm, lang }) {
             </button>
             <button
               type="submit"
-              disabled={modal.loading || recipe.length === 0 || hasStockError || qty <= 0}
+              disabled={modal.loading || recipe.length === 0 || hasStockError || qty <= 0 || (safeMaxQty > 0 && qty > safeMaxQty)}
               className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl font-black shadow-lg shadow-purple-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
             >
               {modal.loading ? (
@@ -3639,7 +3960,7 @@ function StockTransferModal({
                 onChange={e => setTransferForm({ ...transferForm, sourceWarehouse: e.target.value })}
                 className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold text-gray-900 dark:text-white"
               >
-                {subWarehouses.map(sw => (
+                {(subWarehouses || []).map(sw => (
                   <option key={sw.id} value={sw.name}>{sw.name}</option>
                 ))}
               </select>
@@ -3663,7 +3984,7 @@ function StockTransferModal({
                 onChange={e => setTransferForm({ ...transferForm, targetWarehouse: e.target.value })}
                 className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold text-gray-900 dark:text-white"
               >
-                {subWarehouses.map(sw => (
+                {(subWarehouses || []).map(sw => (
                   <option key={sw.id} value={sw.name}>{sw.name}</option>
                 ))}
               </select>
@@ -3700,9 +4021,9 @@ function StockTransferModal({
                 className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="">-- Tovar / Xom-ashyoni tanlang --</option>
-                {products.map(p => (
+                {(products || []).map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.name} (Omborda: {p.stock} {p.unit || 'dona'})
+                    {p.name} (Omborda: {formatQuantity(p.stock)} {p.unit || 'dona'})
                   </option>
                 ))}
               </select>

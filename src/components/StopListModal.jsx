@@ -3,7 +3,7 @@ import { X, Search, Ban, AlertTriangle, ChefHat, Package, Play, RefreshCw } from
 import { useApp } from '../context/AppContext';
 import { formatCurrency } from '../utils';
 
-export default function StopListModal({ isOpen, onClose }) {
+export default function StopListModal({ isOpen, onClose, isPage = false }) {
   const { globalProducts, fetchGlobalProducts, currentUser, lang } = useApp();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -130,40 +130,45 @@ export default function StopListModal({ isOpen, onClose }) {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isPage) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
-        
-        {/* Header */}
-        <div className="p-5 border-b border-gray-100 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/40 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 flex items-center justify-center font-black shadow-inner">
-              <Ban size={24} />
-            </div>
-            <div>
-              <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-                Stop-List Boshqaruvi
-                {stoppedCount > 0 && (
-                  <span className="text-xs bg-red-600 text-white font-black px-2 py-0.5 rounded-full animate-pulse">
-                    {stoppedCount} ta to'xtatilgan
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Taomlarni to'liq to'xtatish yoki donabay mahsulotlar uchun qolgan porsiya limitini belgilash
-              </p>
-            </div>
+  const content = (
+    <div className={`w-full flex flex-col overflow-hidden ${isPage ? 'h-full bg-white dark:bg-gray-800' : 'bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 max-w-4xl max-h-[92vh]'}`}>
+      
+      {/* Header */}
+      <div className="p-5 border-b border-gray-100 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/40 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 flex items-center justify-center font-black shadow-inner">
+            <Ban size={24} />
           </div>
+          <div>
+            <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
+              Stop-List Boshqaruvi
+              {stoppedCount > 0 && (
+                <span className="text-xs bg-red-600 text-white font-black px-2 py-0.5 rounded-full animate-pulse">
+                  {stoppedCount} ta to'xtatilgan
+                </span>
+              )}
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Taomlarni to'liq to'xtatish yoki donabay mahsulotlar uchun qolgan porsiya limitini belgilash
+            </p>
+          </div>
+        </div>
 
+        {onClose && (
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
           >
-            <X size={20} />
+            {isPage ? (
+              <span>← Kassaga qaytish</span>
+            ) : (
+              <X size={20} />
+            )}
           </button>
-        </div>
+        )}
+      </div>
 
         {/* Toast Alert */}
         {toast && (
@@ -188,13 +193,14 @@ export default function StopListModal({ isOpen, onClose }) {
           </div>
 
           {/* Category Badges */}
-          <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+          <div className="flex gap-2.5 overflow-x-auto py-1 custom-scrollbar">
             <button
+              type="button"
               onClick={() => setSelectedCategory('All')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl text-xs sm:text-sm font-extrabold whitespace-nowrap transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 ${
                 selectedCategory === 'All'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  ? 'bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-500/40'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200/60 dark:border-gray-600/60'
               }`}
             >
               Hammasi ({restaurantItems.length})
@@ -203,12 +209,13 @@ export default function StopListModal({ isOpen, onClose }) {
               const count = restaurantItems.filter(p => p.category === cat).length;
               return (
                 <button
+                  type="button"
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  className={`px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl text-xs sm:text-sm font-extrabold whitespace-nowrap transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 ${
                     selectedCategory === cat
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      ? 'bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-500/40'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200/60 dark:border-gray-600/60'
                   }`}
                 >
                   {cat} ({count})
@@ -379,15 +386,30 @@ export default function StopListModal({ isOpen, onClose }) {
         {/* Footer */}
         <div className="p-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex justify-between items-center text-xs text-gray-400 shrink-0">
           <span>* Barcha to'xtatishlar Harakatlar jurnaliga qayd etiladi.</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 font-bold rounded-xl text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
-          >
-            Yopish
-          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 font-bold rounded-xl text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+            >
+              {isPage ? "Kassaga qaytish" : "Yopish"}
+            </button>
+          )}
         </div>
 
       </div>
+  );
+
+  if (isPage) {
+    return (
+      <div className="h-full flex flex-col min-h-0 flex-1 overflow-hidden">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in">
+      {content}
     </div>
   );
 }

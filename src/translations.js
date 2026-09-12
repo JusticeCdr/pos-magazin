@@ -148,7 +148,7 @@ export const TRANSLATIONS = {
     clearDataTitle: 'Savdo tarixini tozalash',
     clearDataDesc: "Barcha sotuvlarni o'chiradi va qarzlarni nollaydi. Tovarlar, kassirlar va sozlamalar saqlanadi.",
     clearDataBtn: "Savdo tarixini tozalash (Reset)",
-    version: 'Versiya 1.0.0',
+    version: 'Versiya 1.5.3',
     darkMode: "Qorong'i rejim",
     lightMode: 'Yorug\' rejim',
     // Cashier / Cart

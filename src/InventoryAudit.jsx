@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   ClipboardCheck, Search, Filter, Zap, RefreshCw, AlertTriangle, 
   CheckCircle2, ArrowDownRight, ArrowUpRight, Scale, History, 
-  FileText, Calendar, User, Eye, X, Printer, Sparkles, Check, ChevronRight
+  FileText, Calendar, User, Eye, X, Printer, Sparkles, Check, ChevronRight,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useApp } from './context/AppContext';
-import { formatCurrency, formatThousands } from './utils';
+import { formatCurrency, formatThousands, formatQuantity } from './utils';
 
 export default function InventoryAudit({ isActive }) {
   const { t, lang, currentUser, fetchGlobalProducts, businessType } = useApp();
@@ -132,7 +134,7 @@ export default function InventoryAudit({ isActive }) {
   const handleAutoFillExpected = () => {
     setItems(prev => prev.map(it => ({
       ...it,
-      actual_qty: String(it.expected_qty)
+      actual_qty: formatQuantity(it.expected_qty)
     })));
     showToast('Barcha tovarlar dasturdagi qoldiq bilan to\'ldirildi. Farqli pozitsiyalarni o\'zgartiring.');
   };
@@ -148,9 +150,19 @@ export default function InventoryAudit({ isActive }) {
 
   // ── Update individual item quantity ───────────────────────────────────────
   const handleActualQtyChange = (itemId, val) => {
+    let formattedVal = val;
+    if (val && (val.includes('.') || val.includes(','))) {
+      const cleanVal = val.replace(',', '.');
+      const parts = cleanVal.split('.');
+      if (parts[1] && parts[1].length > 3) {
+        formattedVal = parts[0] + '.' + parts[1].slice(0, 3);
+      } else {
+        formattedVal = cleanVal;
+      }
+    }
     setItems(prev => prev.map(it => {
       if (it.item_id === itemId) {
-        return { ...it, actual_qty: val };
+        return { ...it, actual_qty: formattedVal };
       }
       return it;
     }));
@@ -360,9 +372,9 @@ export default function InventoryAudit({ isActive }) {
                   <td>${idx + 1}</td>
                   <td><strong>${it.item_name}</strong></td>
                   <td>${it.unit}</td>
-                  <td class="num">${it.expected_qty}</td>
-                  <td class="num">${it.actual_qty}</td>
-                  <td class="num ${diffClass}">${diff > 0 ? '+' : ''}${diff}</td>
+                  <td class="num">${formatQuantity(it.expected_qty)}</td>
+                  <td class="num">${formatQuantity(it.actual_qty)}</td>
+                  <td class="num ${diffClass}">${diff > 0 ? '+' : ''}${formatQuantity(diff)}</td>
                   <td class="num">${Number(it.cost_price).toLocaleString()} so'm</td>
                   <td class="num ${diffClass}">${diffCost > 0 ? '+' : ''}${Number(diffCost).toLocaleString()} so'm</td>
                 </tr>
@@ -391,6 +403,69 @@ export default function InventoryAudit({ isActive }) {
 
     printWindow.document.write(html);
     printWindow.document.close();
+  };
+
+  // ── Excel Export Audit Summary ──────────────────────────────────────────
+  const handleExportExcel = (audit, auditItems) => {
+    try {
+      const wb = XLSX.utils.book_new();
+
+      const shortageSum = Number(audit.total_shortage_sum || 0);
+      const surplusSum = Number(audit.total_surplus_sum || 0);
+      const netSum = Number(audit.net_difference_sum || 0);
+
+      const rows = [
+        ["REVIZIYA DALOLATNOMASI #" + (audit.id || audit.audit_id || '')],
+        ["Sana:", audit.audit_date || new Date().toLocaleDateString(), "Mas'ul xodim:", audit.created_by || 'Admin'],
+        ["Kamomad summasi:", shortageSum.toLocaleString() + " so'm"],
+        ["Ortiqchalik summasi:", "+" + surplusSum.toLocaleString() + " so'm"],
+        ["Sof balans:", (netSum > 0 ? "+" : "") + netSum.toLocaleString() + " so'm"],
+        audit.notes ? ["Izoh:", audit.notes] : [],
+        [],
+        ["#", "Tovar / Xomashyo nomi", "Turi", "Birlik", "Kutilgan qoldiq", "Haqiqiy qoldiq", "Farq", "Tannarx (so'm)", "Farq summasi (so'm)"]
+      ];
+
+      (auditItems || []).forEach((it, idx) => {
+        const diff = it.diff_qty !== undefined ? Number(it.diff_qty) : ((parseFloat(it.actual_qty) || 0) - (parseFloat(it.expected_qty) || 0));
+        const costPrice = Number(it.cost_price) || 0;
+        const diffCost = it.total_cost_diff !== undefined ? Number(it.total_cost_diff) : Math.round(diff * costPrice);
+
+        rows.push([
+          idx + 1,
+          it.item_name || it.name || '',
+          it.item_type === 'ingredient' ? "Xomashyo" : "Tayyor taom / Mahsulot",
+          it.unit || 'dona',
+          parseFloat(it.expected_qty) || 0,
+          parseFloat(it.actual_qty) || 0,
+          diff,
+          costPrice,
+          diffCost
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      ws['!cols'] = [
+        { wch: 6 },
+        { wch: 32 },
+        { wch: 24 },
+        { wch: 10 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 20 }
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "Reviziya_" + (audit.id || audit.audit_id || ''));
+
+      const dateStr = (audit.audit_date || '').replace(/[^0-9-]/g, '_');
+      const fileName = `Reviziya_${audit.id || audit.audit_id || 'hisobot'}_${dateStr || 'fayl'}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (err) {
+      console.error("handleExportExcel error:", err);
+      alert("Excel faylini yuklashda xatolik yuz berdi: " + err.message);
+    }
   };
 
   return (
@@ -611,9 +686,9 @@ export default function InventoryAudit({ isActive }) {
                         const isSurplus = diff !== null && diff > 0.0001;
                         const isMatch = diff !== null && Math.abs(diff) <= 0.0001;
 
-                        let rowBg = 'hover:bg-gray-50/80 dark:hover:bg-gray-750/50';
-                        if (isShortage) rowBg = 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50 dark:hover:bg-rose-950/30';
-                        else if (isSurplus) rowBg = 'bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/30';
+                        let rowBg = 'hover:bg-gray-100/70 dark:hover:bg-gray-700/50';
+                        if (isShortage) rowBg = 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-900/40';
+                        else if (isSurplus) rowBg = 'bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-900/40';
 
                         return (
                           <tr key={it.item_id} className={`transition-colors ${rowBg}`}>
@@ -645,7 +720,7 @@ export default function InventoryAudit({ isActive }) {
                             </td>
 
                             <td className="py-2.5 px-4 text-right font-mono font-bold text-gray-700 dark:text-gray-300">
-                              {Number(expectedNum).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+                              {formatQuantity(expectedNum)}
                             </td>
 
                             {/* Active Input: Actual Qty */}
@@ -657,7 +732,7 @@ export default function InventoryAudit({ isActive }) {
                                   min="0"
                                   value={it.actual_qty}
                                   onChange={e => handleActualQtyChange(it.item_id, e.target.value)}
-                                  placeholder={String(expectedNum)}
+                                  placeholder={formatQuantity(expectedNum)}
                                   className={`w-36 text-center font-mono font-black text-sm px-3 py-1.5 rounded-xl border transition-all focus:outline-none focus:ring-2 ${
                                     isShortage
                                       ? 'border-rose-300 dark:border-rose-800 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 focus:ring-rose-500'
@@ -683,7 +758,7 @@ export default function InventoryAudit({ isActive }) {
                                 }`}>
                                   {isShortage && <ArrowDownRight size={13} />}
                                   {isSurplus && <ArrowUpRight size={13} />}
-                                  {diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)} {it.unit}
+                                  {diff > 0 ? `+${formatQuantity(diff)}` : formatQuantity(diff)} {it.unit}
                                 </span>
                               ) : (
                                 <span className="text-gray-400">-</span>
@@ -867,7 +942,7 @@ export default function InventoryAudit({ isActive }) {
                       return (a.notes || '').toLowerCase().includes(q) || (a.created_by || '').toLowerCase().includes(q);
                     })
                     .map((a, idx) => (
-                      <tr key={a.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-750/50 transition-colors">
+                      <tr key={a.id} className="hover:bg-gray-100/70 dark:hover:bg-gray-700/50 transition-colors">
                         <td className="py-3 px-4 text-center text-gray-400 font-mono font-bold">
                           {a.id}
                         </td>
@@ -1036,7 +1111,7 @@ export default function InventoryAudit({ isActive }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white dark:bg-gray-800 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             {/* Modal Header */}
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0 bg-gray-50/50 dark:bg-gray-750/50">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-800">
               <div>
                 <h3 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
                   <FileText size={20} className="text-blue-500" />
@@ -1048,6 +1123,15 @@ export default function InventoryAudit({ isActive }) {
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportExcel(selectedAuditDetails.audit, selectedAuditDetails.items)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                  title="Excel formatida yuklab olish"
+                >
+                  <FileSpreadsheet size={15} />
+                  <span>Excelda yuklab olish</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handlePrintAudit(selectedAuditDetails.audit, selectedAuditDetails.items)}
@@ -1069,28 +1153,28 @@ export default function InventoryAudit({ isActive }) {
             {/* Modal Content Table */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40">
-                  <div className="text-[11px] font-bold text-rose-600 uppercase">Kamomad summasi</div>
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50">
+                  <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase">Kamomad summasi</div>
                   <div className="text-base font-black font-mono text-rose-700 dark:text-rose-300 mt-1">
                     {Number(selectedAuditDetails.audit.total_shortage_sum).toLocaleString()} so'm
                   </div>
                 </div>
-                <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40">
-                  <div className="text-[11px] font-bold text-blue-600 uppercase">Ortiqchalik summasi</div>
+                <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50">
+                  <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase">Ortiqchalik summasi</div>
                   <div className="text-base font-black font-mono text-blue-700 dark:text-blue-300 mt-1">
                     +{Number(selectedAuditDetails.audit.total_surplus_sum).toLocaleString()} so'm
                   </div>
                 </div>
-                <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
-                  <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Sof balans</div>
-                  <div className={`text-base font-black font-mono mt-1 ${selectedAuditDetails.audit.net_difference_sum < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
+                  <div className="text-[11px] font-bold text-gray-500 dark:text-gray-300 uppercase">Sof balans</div>
+                  <div className={`text-base font-black font-mono mt-1 ${selectedAuditDetails.audit.net_difference_sum < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                     {selectedAuditDetails.audit.net_difference_sum > 0 ? `+${Number(selectedAuditDetails.audit.net_difference_sum).toLocaleString()}` : Number(selectedAuditDetails.audit.net_difference_sum).toLocaleString()} so'm
                   </div>
                 </div>
               </div>
 
               {selectedAuditDetails.audit.notes && (
-                <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl text-xs text-gray-600 dark:text-gray-300 border border-gray-150 dark:border-gray-700">
+                <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl text-xs text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
                   <strong>Izoh:</strong> {selectedAuditDetails.audit.notes}
                 </div>
               )}
@@ -1098,15 +1182,15 @@ export default function InventoryAudit({ isActive }) {
               <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="bg-gray-100/75 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold uppercase tracking-wider">
-                      <th className="py-2.5 px-3 w-10 text-center">#</th>
-                      <th className="py-2.5 px-4">Tovar / Xomashyo</th>
-                      <th className="py-2.5 px-3 text-center">Birlik</th>
-                      <th className="py-2.5 px-3 text-right">Kutilgan</th>
-                      <th className="py-2.5 px-3 text-right">Haqiqiy</th>
-                      <th className="py-2.5 px-3 text-right">Farq</th>
-                      <th className="py-2.5 px-3 text-right">Tannarx</th>
-                      <th className="py-2.5 px-4 text-right">Farq summasi</th>
+                    <tr className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 font-bold uppercase tracking-wider">
+                      <th className="py-2.5 px-3 w-10 text-center text-gray-500 dark:text-gray-400">#</th>
+                      <th className="py-2.5 px-4 text-gray-800 dark:text-gray-200">Tovar / Xomashyo</th>
+                      <th className="py-2.5 px-3 text-center text-gray-800 dark:text-gray-200">Birlik</th>
+                      <th className="py-2.5 px-3 text-right text-gray-800 dark:text-gray-200">Kutilgan</th>
+                      <th className="py-2.5 px-3 text-right text-gray-800 dark:text-gray-200">Haqiqiy</th>
+                      <th className="py-2.5 px-3 text-right text-gray-800 dark:text-gray-200">Farq</th>
+                      <th className="py-2.5 px-3 text-right text-gray-800 dark:text-gray-200">Tannarx</th>
+                      <th className="py-2.5 px-4 text-right text-gray-800 dark:text-gray-200">Farq summasi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60 font-medium">
@@ -1114,28 +1198,30 @@ export default function InventoryAudit({ isActive }) {
                       const isShortage = it.diff_qty < -0.0001;
                       const isSurplus = it.diff_qty > 0.0001;
                       return (
-                        <tr key={it.id} className={isShortage ? 'bg-rose-50/30 dark:bg-rose-950/20' : (isSurplus ? 'bg-amber-50/30 dark:bg-amber-950/20' : '')}>
-                          <td className="py-2 px-3 text-center text-gray-400 font-mono">{idx + 1}</td>
-                          <td className="py-2 px-4 font-bold text-gray-900 dark:text-white">
+                        <tr key={it.id} className={isShortage ? 'bg-rose-50/40 dark:bg-rose-950/30 hover:bg-rose-100/60 dark:hover:bg-rose-900/40' : (isSurplus ? 'bg-blue-50/40 dark:bg-blue-950/30 hover:bg-blue-100/60 dark:hover:bg-blue-900/40' : 'hover:bg-gray-100/70 dark:hover:bg-gray-700/50')}>
+                          <td className="py-2.5 px-3 text-center text-gray-400 dark:text-gray-400 font-mono">{idx + 1}</td>
+                          <td className="py-2.5 px-4 font-bold text-gray-900 dark:text-white">
                             {it.item_name}
                             {it.item_type === 'ingredient' && (
-                              <span className="ml-2 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                              <span className="ml-2 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
                                 (Xomashyo)
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-center text-gray-500">{it.unit}</td>
-                          <td className="py-2 px-3 text-right font-mono">{it.expected_qty}</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold">{it.actual_qty}</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold">
-                            <span className={isShortage ? 'text-rose-600' : (isSurplus ? 'text-blue-600' : 'text-gray-400')}>
-                              {it.diff_qty > 0 ? `+${it.diff_qty}` : it.diff_qty} {it.unit}
+                          <td className="py-2.5 px-3 text-center text-gray-600 dark:text-gray-300 font-medium">{it.unit}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-gray-700 dark:text-gray-300">{formatQuantity(it.expected_qty)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 dark:text-white">{formatQuantity(it.actual_qty)}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold">
+                            <span className={isShortage ? 'text-rose-600 dark:text-rose-400' : (isSurplus ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500')}>
+                              {it.diff_qty > 0 ? `+${formatQuantity(it.diff_qty)}` : formatQuantity(it.diff_qty)} {it.unit}
                             </span>
                           </td>
-                          <td className="py-2 px-3 text-right font-mono text-gray-500">{Number(it.cost_price).toLocaleString()} so'm</td>
-                          <td className="py-2 px-4 text-right font-mono font-black">
-                            <span className={isShortage ? 'text-rose-600' : (isSurplus ? 'text-blue-600' : 'text-gray-400')}>
-                              {it.total_cost_diff > 0 ? `+${Number(it.total_cost_diff).toLocaleString()}` : Number(it.total_cost_diff).toLocaleString()} so'm
+                          <td className="py-2.5 px-3 text-right font-mono text-gray-700 dark:text-gray-300">
+                            {Number(it.cost_price || 0).toLocaleString()} so'm
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono font-bold">
+                            <span className={isShortage ? 'text-rose-600 dark:text-rose-400' : (isSurplus ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500')}>
+                              {it.diff_cost > 0 ? `+${Number(it.diff_cost).toLocaleString()}` : Number(it.diff_cost).toLocaleString()} so'm
                             </span>
                           </td>
                         </tr>
@@ -1147,7 +1233,7 @@ export default function InventoryAudit({ isActive }) {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-750/50 flex justify-end">
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-end">
               <button
                 type="button"
                 onClick={() => setSelectedAuditDetails(null)}

@@ -18,8 +18,9 @@ import AttendanceCheck from './AttendanceCheck';
 import DirectorDashboard from './DirectorDashboard';
 import StopListModal from './components/StopListModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles, ClipboardCheck } from 'lucide-react';
+import { Settings as SettingsIcon, History, Lock, ClipboardList, Sparkles, ClipboardCheck, Truck, Trash2, Repeat } from 'lucide-react';
 import InventoryAudit from './InventoryAudit';
+import UpdateNotification from './components/UpdateNotification';
 import { logoBase64 } from './logoBase64';
 import { parseSQLiteDate } from './utils';
 
@@ -187,6 +188,7 @@ function App() {
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [successToast, setSuccessToast] = useState('');
   const [showStopListModal, setShowStopListModal] = useState(false);
+  const [warehouseModal, setWarehouseModal] = useState(null);
   const { theme, toggleTheme, lang, toggleLang, t, currentUser, setCurrentUser, storeName, shopLogo, terminalMode, businessType, globalProducts } = useApp();
   
   const stoppedCount = useMemo(() => {
@@ -379,13 +381,22 @@ function App() {
 
   // ── Render: Login screen (activated but no shift open) ───────────────────
   if (!currentUser) {
-    return <Login />;
+    return (
+      <>
+        <Login />
+        <UpdateNotification />
+      </>
+    );
   }
 
   // ── Tab definitions ──────────────────────────────────────────────────────
   const allTabs = [
     { id: 'cashier',   icon: ShoppingCart, label: t('cashier') },
     { id: 'warehouse', icon: PackageSearch, label: t('warehouse') },
+    ...(businessType === 'restaurant' ? [{ id: 'stoplist', icon: Ban, label: 'Stop-List' }] : []),
+    { id: 'spisanie',  icon: Trash2,        label: 'Hisobdan chiqarish' },
+    ...(businessType === 'restaurant' ? [{ id: 'transfer', icon: Repeat, label: "Omborlararo ko'chirish" }] : []),
+    { id: 'suppliers', icon: Truck,         label: 'Yetkazib beruvchilar' },
     ...(businessType === 'restaurant' ? [{ id: 'audit', icon: ClipboardCheck, label: t('audit') || 'Inventarizatsiya' }] : []),
     { id: 'debts',     icon: Users,         label: t('debts') },
     { id: 'history',   icon: History,       label: 'Sotuv tarixi' },
@@ -396,6 +407,16 @@ function App() {
   ];
 
   const tabs = allTabs.filter(tab => tab.id !== 'settings' || showSettings);
+
+  const handleSelectSidebarTab = (id) => {
+    if (id === 'spisanie' || id === 'transfer' || id === 'suppliers') {
+      setActiveTab('warehouse');
+      setWarehouseModal(id);
+      return;
+    }
+    setWarehouseModal(null);
+    setActiveTab(id);
+  };
 
   // ── Render: Main application ─────────────────────────────────────────────
   return (
@@ -450,11 +471,11 @@ function App() {
 
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
             {tabs.map(({ id, label, icon: Icon }) => {
-              const active = activeTab === id;
+              const active = activeTab === id || (['spisanie', 'transfer', 'suppliers'].includes(id) && activeTab === 'warehouse' && warehouseModal === id);
               return (
                 <button
                   key={id}
-                  onClick={() => setActiveTab(id)}
+                  onClick={() => handleSelectSidebarTab(id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-200 ${
                     active
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shadow-sm'
@@ -528,7 +549,7 @@ function App() {
         <div style={{ display: activeTab === 'cashier' ? 'flex' : 'none' }} className="h-full flex-col">
           <ErrorBoundary name="Cashier">
             {businessType === 'restaurant' ? (
-              <RestaurantCashier isActive={activeTab === 'cashier'} />
+              <RestaurantCashier isActive={activeTab === 'cashier'} onOpenStopList={() => setActiveTab('stoplist')} />
             ) : (
               <Cashier isActive={activeTab === 'cashier'} />
             )}
@@ -539,7 +560,7 @@ function App() {
         <div
           style={{ display: activeTab !== 'cashier' ? 'block' : 'none' }}
           className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-150 dark:border-gray-700 p-6 h-full transition-colors duration-300 ${
-            ['warehouse', 'debts', 'history', 'invlog', 'audit'].includes(activeTab)
+            ['warehouse', 'debts', 'history', 'invlog', 'audit', 'stoplist'].includes(activeTab)
               ? 'flex flex-col overflow-hidden'
               : 'overflow-auto'
           }`}
@@ -549,9 +570,27 @@ function App() {
             className="h-full flex-col min-h-0 flex-1"
           >
             <ErrorBoundary name="Warehouse">
-              <Warehouse isActive={activeTab === 'warehouse'} onOpenAudit={businessType === 'restaurant' ? () => setActiveTab('audit') : undefined} />
+              <Warehouse 
+                isActive={activeTab === 'warehouse'} 
+                onOpenAudit={businessType === 'restaurant' ? () => setActiveTab('audit') : undefined} 
+                warehouseModal={warehouseModal}
+                onClearWarehouseModal={() => setWarehouseModal(null)}
+              />
             </ErrorBoundary>
           </div>
+          {businessType === 'restaurant' && (
+            <div 
+              style={{ display: activeTab === 'stoplist' ? 'flex' : 'none' }} 
+              className="h-full flex-col min-h-0 flex-1"
+            >
+              <ErrorBoundary name="StopList">
+                <StopListModal 
+                  isPage={true} 
+                  onClose={() => setActiveTab('cashier')} 
+                />
+              </ErrorBoundary>
+            </div>
+          )}
           {businessType === 'restaurant' && (
             <div 
               style={{ display: activeTab === 'audit' ? 'flex' : 'none' }} 
@@ -743,8 +782,13 @@ function App() {
         </div>
       )}
 
+      {/* Automatic Update Notification */}
+      <UpdateNotification />
+
       {/* Stop-List Modal for Restaurant */}
-      <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
+      {businessType === 'restaurant' && (
+        <StopListModal isOpen={showStopListModal} onClose={() => setShowStopListModal(false)} />
+      )}
     </div>
   );
 }

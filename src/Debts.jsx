@@ -111,6 +111,7 @@ export default memo(function Debts({ isActive }) {
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [manualDebtAmount, setManualDebtAmount] = useState('');
   const [manualDebtComment, setManualDebtComment] = useState('');
+  const [manualCustomerSearch, setManualCustomerSearch] = useState('');
 
   useEffect(() => {
     if (startDate && endDate && startDate.length === 10 && endDate.length === 10) {
@@ -179,14 +180,41 @@ export default memo(function Debts({ isActive }) {
   const totalDebtsSum = customers.reduce((sum, c) => sum + (c.total_debt || 0), 0);
   const totalDebtorsCount = customers.filter(c => c.total_debt > 0).length;
 
+  const filteredManualCustomers = useMemo(() => {
+    if (!manualCustomerSearch.trim()) return customers;
+    const q = manualCustomerSearch.toLowerCase().trim();
+    const qDigits = q.replace(/\D/g, '');
+    const cleanStr = (s) => (s || '').toLowerCase().replace(/[`'ʻʼ’]/g, "'");
+    const stripApostrophes = (s) => cleanStr(s).replace(/'/g, '');
+    const cleanQ = cleanStr(q);
+    const strippedQ = stripApostrophes(cleanQ);
+
+    return customers.filter(c => {
+      const name = cleanStr(c.name);
+      const nameMatch = name.includes(cleanQ) || (strippedQ.length > 0 && stripApostrophes(name).includes(strippedQ));
+      const phoneDigits = (c.phone || '').replace(/\D/g, '');
+      const phoneMatch = qDigits.length > 0 && phoneDigits.includes(qDigits);
+      return nameMatch || phoneMatch;
+    });
+  }, [customers, manualCustomerSearch]);
+
   let debtors = [...customers];
 
-  if (search) {
-    const term = search.toLowerCase();
-    debtors = debtors.filter(c => 
-      c.name.toLowerCase().includes(term) || 
-      (c.phone && c.phone.replace(/\D/g, '').includes(term.replace(/\D/g, '')))
-    );
+  if (search && search.trim()) {
+    const q = search.toLowerCase().trim();
+    const qDigits = q.replace(/\D/g, '');
+    const cleanStr = (s) => (s || '').toLowerCase().replace(/[`'ʻʼ’]/g, "'");
+    const stripApostrophes = (s) => cleanStr(s).replace(/'/g, '');
+    const cleanQ = cleanStr(q);
+    const strippedQ = stripApostrophes(cleanQ);
+
+    debtors = debtors.filter(c => {
+      const name = cleanStr(c.name);
+      const nameMatch = name.includes(cleanQ) || (strippedQ.length > 0 && stripApostrophes(name).includes(strippedQ));
+      const phoneDigits = (c.phone || '').replace(/\D/g, '');
+      const phoneMatch = qDigits.length > 0 && phoneDigits.includes(qDigits);
+      return nameMatch || phoneMatch;
+    });
   }
 
   if (minAmount) {
@@ -317,6 +345,7 @@ export default memo(function Debts({ isActive }) {
         setNewCustomerPhone('');
         setManualDebtAmount('');
         setManualDebtComment('');
+        setManualCustomerSearch('');
         fetchCustomers();
         setAlertModal({ message: "Qarz muvaffaqiyatli qo'shildi!", type: 'success' });
       } else {
@@ -1043,14 +1072,24 @@ export default memo(function Debts({ isActive }) {
                   <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1.5">
                     Mijozni tanlang <span className="text-red-500">*</span>
                   </label>
+                  <div className="relative mb-2">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Mijoz ismi yoki telefoni bo'yicha qidirish..."
+                      value={manualCustomerSearch}
+                      onChange={(e) => setManualCustomerSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-xl text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                   <select
                     required
                     value={selectedCustomerId}
                     onChange={(e) => setSelectedCustomerId(e.target.value)}
                     className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">-- Mijozni tanlang --</option>
-                    {customers.map(cust => (
+                    <option value="">-- Mijozni tanlang ({filteredManualCustomers.length} ta) --</option>
+                    {filteredManualCustomers.map(cust => (
                       <option key={cust.id} value={cust.id}>
                         {cust.name} {cust.phone ? `(${cust.phone})` : ''} - Joriy qarz: {formatCurrency(cust.total_debt, lang)} so'm
                       </option>
@@ -1220,7 +1259,7 @@ export default memo(function Debts({ isActive }) {
       {/* Alert Modal */}
       <AlertModal 
         isOpen={!!alertModal}
-        title="Xatolik"
+        title={alertModal?.title || (alertModal?.type === 'success' ? "Muvaffaqiyatli" : "Xatolik")}
         message={alertModal?.message || ''}
         type={alertModal?.type || 'error'}
         onConfirm={() => setAlertModal(null)}

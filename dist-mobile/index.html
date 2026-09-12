@@ -740,6 +740,10 @@
                 </svg>
                 Ko'chirish
               </button>
+              <!-- BERILDI BUTTON FOR WAITER -->
+              <button id="btn-mark-served-waiter" onclick="markOrderServedByWaiter()" class="hidden px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white active:scale-95 transition-all flex items-center justify-center gap-1 text-xs font-black shrink-0 shadow-md">
+                🍽️ Berildi
+              </button>
             </div>
           </div>
         </div>
@@ -2236,6 +2240,7 @@
       waiter: null,
       waiterTables: [],
       waiterActiveTableId: null,
+      waiterActiveOrderId: null,
       waiterActiveTableName: '',
       waiterProducts: [],
       waiterMenuQuery: '',
@@ -2893,6 +2898,23 @@
     }
 
     // ================= WAITER TABLES MAP =================
+    // Auto-refresh tables every 3.5s for real-time kitchen status updates
+    setInterval(() => {
+      if (state.waiter && (!state.currentWaiterScreen || state.currentWaiterScreen === 'tables')) {
+        fetch(`${API_URL}/api/waiter/tables`, {
+          headers: { 'Authorization': state.waiterPin || localStorage.getItem('waiter_pin') }
+        })
+        .then(r => r.ok ? r.json() : null)
+        .then(result => {
+          if (result && result.data) {
+            state.waiterTables = result.data;
+            renderWaiterTables();
+          }
+        })
+        .catch(() => {});
+      }
+    }, 3500);
+
     async function loadWaiterTables() {
       try {
         const res = await fetch(`${API_URL}/api/waiter/tables`, {
@@ -3008,6 +3030,8 @@
             kitchenStatusHtml = `<span class="text-[9px] block bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-black mt-1 animate-pulse shadow-sm shadow-emerald-500/30">🟢 TAYYOR ${table.order_number ? '#' + table.order_number : ''}</span>`;
           } else if (table.kitchen_status === 'preparing') {
             kitchenStatusHtml = `<span class="text-[9px] block bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold mt-1">⏳ Oshxonada ${table.order_number ? '#' + table.order_number : ''}</span>`;
+          } else if (table.kitchen_status === 'served') {
+            kitchenStatusHtml = `<span class="text-[9px] block bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-bold mt-1">🍽️ Berildi ${table.order_number ? '#' + table.order_number : ''}</span>`;
           }
         }
 
@@ -3126,29 +3150,42 @@
         });
         if (res.ok) {
           const result = await res.json();
-          if (result.success && result.data) {
+          if (result.success && result.data && result.data.order) {
+            state.waiterActiveOrderId = result.data.order.id;
             state.waiterActiveOrderOwnerId = result.data.order.waiter_id;
             // Populate waiter cart with existing items
             state.waiterCart = result.data.items.map(item => ({
               id: item.id,
+              item_id: item.item_id || item.id,
               name: item.name,
               qty: item.qty,
               price: item.price,
-              unit: item.unit || 'dona'
+              unit: item.unit || 'dona',
+              item_status: item.item_status || 'preparing'
             }));
             
             const kStatus = result.data.order.kitchen_status;
             const ordNum = result.data.order.order_number ? `#${result.data.order.order_number}` : '';
+            const btnServed = document.getElementById('btn-mark-served-waiter');
             if (kStatus === 'ready') {
               document.getElementById('waiter-order-subtitle').innerText = `🟢 TAYYOR ${ordNum} (Tahrirlash)`;
+              if (btnServed) btnServed.classList.remove('hidden');
             } else if (kStatus === 'preparing') {
               document.getElementById('waiter-order-subtitle').innerText = `⏳ Oshxonada ${ordNum} (Tahrirlash)`;
+              if (btnServed) btnServed.classList.add('hidden');
+            } else if (kStatus === 'served') {
+              document.getElementById('waiter-order-subtitle').innerText = `🍽️ Barcha taomlar berilgan ${ordNum}`;
+              if (btnServed) btnServed.classList.add('hidden');
             } else {
               document.getElementById('waiter-order-subtitle').innerText = 'Tahrirlash rejimi';
+              if (btnServed) btnServed.classList.add('hidden');
             }
           } else {
+            state.waiterActiveOrderId = null;
             state.waiterActiveOrderOwnerId = null;
             document.getElementById('waiter-order-subtitle').innerText = 'Yangi buyurtma';
+            const btnServed = document.getElementById('btn-mark-served-waiter');
+            if (btnServed) btnServed.classList.add('hidden');
           }
         }
       } catch (err) {
@@ -3424,6 +3461,30 @@
         btn.classList.remove('hidden');
       } else {
         btn.classList.add('hidden');
+      }
+    }
+
+    async function markOrderServedByWaiter() {
+      if (!state.waiterActiveOrderId) return;
+      if (!confirm("Barcha taomlar mijozga yetkazildimi (Berildi)?")) return;
+      try {
+        const res = await fetch(`${API_URL}/api/kitchen/orders/${state.waiterActiveOrderId}/set-served`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: state.waiter ? state.waiter.name : 'Ofitsiant' })
+        });
+        const data = await res.json();
+        if (data && data.success) {
+          showToast("Taomlar mijozga berildi!", "success");
+          const btn = document.getElementById('btn-mark-served-waiter');
+          if (btn) btn.classList.add('hidden');
+          document.getElementById('waiter-order-subtitle').innerText = '🍽️ Barcha taomlar berilgan';
+          loadWaiterTables();
+        } else {
+          showToast(data.error || "Xatolik yuz berdi", "error");
+        }
+      } catch (err) {
+        showToast(err.message, "error");
       }
     }
 

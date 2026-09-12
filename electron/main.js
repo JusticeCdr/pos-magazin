@@ -400,7 +400,13 @@ const {
   toggleProductStop,
   setProductStopWithLimit,
   getKitchenOrders,
+  getKitchenHistory,
   setOrderStatus,
+  setOrderItemStatus,
+  setOrderServed,
+  revertKitchenOrderStatus,
+  getKitchenPerformanceReport,
+  getDirectorOverview,
   setOrderStatusByTable,
   getTvOrders,
   deleteProductImageFile,
@@ -424,7 +430,8 @@ const {
   addSubWarehouse,
   createStockTransfer,
   getStockTransfers,
-  getDirectorDashboardStats
+  getDirectorDashboardStats,
+  payStaffSalary
 } = require('./database');
 
 const { generateA4InvoiceHTML, generateExcelInvoice } = require('./excelA4Helper');
@@ -663,9 +670,13 @@ async function printSingleDepartmentRunner(tableName, waiterName, items, printer
     let itemsHtml = '';
     for (const it of items) {
       const priceStr = it.price ? Math.round(it.price).toLocaleString('ru-RU') : '0';
+      const commentHtml = it.comment ? `<div style="font-size: 13px; font-weight: bold; color: #000; margin-top: 3px;">* ${it.comment}</div>` : '';
       itemsHtml += `
         <tr style="border-bottom: 1px dashed #000; font-size: 15px;">
-          <td style="padding: 8px 0; font-weight: bold;">${it.name}</td>
+          <td style="padding: 8px 0; font-weight: bold;">
+            ${it.name}
+            ${commentHtml}
+          </td>
           <td style="padding: 8px 0; text-align: center; font-size: 18px; font-weight: bold;">x${it.qty}</td>
           <td style="padding: 8px 0; text-align: right; font-size: 15px;">${priceStr}</td>
         </tr>
@@ -961,6 +972,84 @@ async function startExpressServer() {
     expressApp.get('/api/kitchen/orders', (req, res) => {
       const result = getKitchenOrders();
       res.json(result);
+    });
+
+    expressApp.get('/api/kitchen/history', (req, res) => {
+      const limit = parseInt(req.query.limit || 40, 10);
+      const result = getKitchenHistory(limit);
+      res.json(result);
+    });
+
+    expressApp.post('/api/kitchen/items/:id/set-status', (req, res) => {
+      const { status, userName } = req.body;
+      const itemId = parseInt(req.params.id, 10);
+      const result = setOrderItemStatus(itemId, status, userName);
+      if (result && result.success) {
+        if (io) {
+          io.emit('kitchen-updated', result);
+          io.emit('sales-updated');
+        }
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('kitchen-updated', result);
+          mainWindow.webContents.send('sales-updated');
+        }
+      }
+      res.json(result);
+    });
+
+    expressApp.post('/api/kitchen/orders/:id/set-served', (req, res) => {
+      const { source } = req.body || {};
+      const orderId = parseInt(req.params.id, 10);
+      const result = setOrderServed(orderId, source);
+      if (result && result.success) {
+        if (io) {
+          io.emit('kitchen-updated', { orderId, status: 'completed' });
+          io.emit('sales-updated');
+        }
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('kitchen-updated', { orderId, status: 'completed' });
+          mainWindow.webContents.send('sales-updated');
+        }
+      }
+      res.json(result);
+    });
+
+    expressApp.post('/api/kitchen/orders/:id/revert', (req, res) => {
+      const orderId = parseInt(req.params.id, 10);
+      const result = revertKitchenOrderStatus(orderId);
+      if (result && result.success) {
+        if (io) {
+          io.emit('kitchen-updated', { orderId, status: 'preparing' });
+          io.emit('sales-updated');
+        }
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('kitchen-updated', { orderId, status: 'preparing' });
+          mainWindow.webContents.send('sales-updated');
+        }
+      }
+      res.json(result);
+    });
+
+    expressApp.get('/api/kitchen/performance', (req, res) => {
+      const { startDate, endDate } = req.query || {};
+      const result = getKitchenPerformanceReport(startDate, endDate);
+      res.json(result);
+    });
+
+    expressApp.all('/api/director/overview', (req, res) => {
+      const pin = req.query.pin || req.body?.pin || req.headers['authorization'];
+      const result = getDirectorOverview(pin);
+      res.json(result);
+    });
+
+    // SPA route for Director Remote Dashboard
+    expressApp.get('/director', (req, res) => {
+      const directorPath = path.join(__dirname, '../dist-mobile/director.html');
+      if (fs.existsSync(directorPath)) {
+        res.sendFile(directorPath);
+      } else {
+        res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
+      }
     });
 
     expressApp.post('/api/orders/:id/set-status', (req, res) => {
@@ -1483,16 +1572,14 @@ async function startExpressServer() {
       // Save order
       const saveResult = saveRestaurantOrder(table_id, waiterId, cart_items);
       if (saveResult.success) {
-        // Find table name to print
-        const tablesRes = getRestaurantTables();
-        let tableName = `Stol ${table_id}`;
-        if (tablesRes.success && tablesRes.data) {
-          const tRecord = tablesRes.data.find(t => t.id === parseInt(table_id));
-          if (tRecord) tableName = tRecord.name;
-        }
+        const targetTableName = saveResult.tableName || `Stol ${table_id}`;
+        const targetWaiterName = saveResult.waiterName || waiterName;
         
-        // Print kitchen runner
-        const printResult = await printKitchenRunner(tableName, waiterName, cart_items);
+        // Print kitchen runner ONLY for new/delta items
+        let printResult = null;
+        if (saveResult.newItems && saveResult.newItems.length > 0) {
+          printResult = await printKitchenRunner(targetTableName, targetWaiterName, saveResult.newItems);
+        }
         
         // Notify desktop and KDS via Socket.io if initialized
         if (io) {
@@ -2653,8 +2740,12 @@ async function startExpressServer() {
     expressApp.get(/^\/mobile(\/.*)?$/, (req, res) => {
       res.sendFile(path.join(__dirname, '../dist-mobile/index.html'));
     });
-    // Standalone autonomous screens: attendance, davomat, kitchen display, tv queue, director dashboard
-    expressApp.get(/^\/(attendance|davomat|kitchen|tv|director|direktor)(\/.*)?$/, (req, res) => {
+    // Dedicated lightweight Director portal for mobile and remote access
+    expressApp.get(/^\/(director|direktor)(\/.*)?$/, (req, res) => {
+      res.sendFile(path.join(__dirname, '../dist-mobile/director.html'));
+    });
+    // Standalone autonomous screens: attendance, davomat, kitchen display, tv queue
+    expressApp.get(/^\/(attendance|davomat|kitchen|tv)(\/.*)?$/, (req, res) => {
       res.sendFile(path.join(__dirname, '../dist/index.html'));
     });
     expressApp.get(/.*/, (req, res) => {
@@ -2763,10 +2854,20 @@ function createWindow() {
       mainWindow.loadURL('http://localhost:4000');
     }
   }
-  // Open DevTools only in development mode
-  // if (process.env.VITE_DEV_SERVER_URL) {
-  //   mainWindow.webContents.openDevTools();
-  // }
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    // Startup auto-check for updates after 5 seconds in production
+    setTimeout(async () => {
+      try {
+        if (app.isPackaged) {
+          logError("Checking for updates in background on app startup...");
+          await autoUpdater.checkForUpdates();
+        }
+      } catch (err) {
+        logError("Startup auto-update check error: " + (err ? err.message : 'unknown'));
+      }
+    }, 5000);
+  });
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -2970,15 +3071,20 @@ if (!gotTheLock) {
       if (!app.isPackaged) {
         // In dev mode, emit update-not-available immediately so UI doesn't spin endlessly
         sendUpdateStatus('update-not-available');
-        return { success: true, updateInfo: null };
+        return { success: true, updateAvailable: false, updateInfo: null };
       }
       const result = await autoUpdater.checkForUpdates();
-      if (!result || !result.updateInfo) {
+      const currentVer = (app.getVersion() || '').replace(/^v/, '').trim();
+      const latestVer = (result?.updateInfo?.version || '').replace(/^v/, '').trim();
+      const isAvailable = Boolean(result && result.updateInfo && latestVer && latestVer !== currentVer);
+
+      if (!isAvailable) {
         sendUpdateStatus('update-not-available');
       }
-      return { success: true, updateInfo: result ? result.updateInfo : null };
+
+      return { success: true, updateAvailable: isAvailable, updateInfo: result ? result.updateInfo : null };
     } catch (err) {
-      sendUpdateStatus('update-not-available');
+      sendUpdateStatus('update-error', err ? err.message : 'Yangilanishlarni tekshirishda xatolik');
       return { success: false, error: err.message };
     }
   });
@@ -3294,13 +3400,23 @@ if (!gotTheLock) {
   });
   ipcMain.handle('update-cashier', (_, { id, name, pin, role, salary, percentage }) => updateCashier(id, name, pin, role, salary, percentage));
   ipcMain.handle('update-waiter', (_, { id, name, pinCode, percentage, salary }) => updateWaiter(id, name, pinCode, percentage, salary));
+  ipcMain.handle('pay-staff-salary', (_, data) => payStaffSalary(data));
 
   // ── Restaurant IPC Handlers ────────────────────────────────────────────────
   ipcMain.handle('get-restaurant-tables', () => getRestaurantTables());
   ipcMain.handle('get-active-order-for-table', (_, tableId) => getActiveOrderForTable(tableId));
-  ipcMain.handle('save-restaurant-order', (_, tableId, waiterId, items) => {
+  ipcMain.handle('save-restaurant-order', async (_, tableId, waiterId, items, skipKitchenPrint = false) => {
     const res = saveRestaurantOrder(tableId, waiterId, items);
     if (res && res.success) {
+      if (!skipKitchenPrint && res.newItems && res.newItems.length > 0) {
+        const tableName = res.tableName || `Stol ${tableId}`;
+        const waiterName = res.waiterName || 'Kassir';
+        try {
+          await printKitchenRunner(tableName, waiterName, res.newItems);
+        } catch (err) {
+          console.error('Error printing kitchen runner from desktop save:', err);
+        }
+      }
       if (io) {
         io.emit('kitchen-updated');
         io.emit('sales-updated');
@@ -3415,6 +3531,7 @@ if (!gotTheLock) {
   ipcMain.handle('unlock-table', (_, tableId, userName) => unlockTable(tableId, userName));
   ipcMain.handle('set-table-pre-printed', (_, tableId, isPrinted) => setTablePrePrinted(tableId, isPrinted));
   ipcMain.handle('get-kitchen-orders', () => getKitchenOrders());
+  ipcMain.handle('get-kitchen-history', (_, limit) => getKitchenHistory(limit));
   ipcMain.handle('set-order-status', (_, { orderId, status }) => {
     const res = setOrderStatus(orderId, status);
     if (res && res.success) {
@@ -3429,6 +3546,53 @@ if (!gotTheLock) {
     }
     return res;
   });
+  ipcMain.handle('set-order-item-status', (_, { itemId, status, userName }) => {
+    const res = setOrderItemStatus(itemId, status, userName);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated', res);
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated', res);
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('set-order-served', (_, { orderId, source }) => {
+    const res = setOrderServed(orderId, source);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated', { orderId, status: 'completed' });
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated', { orderId, status: 'completed' });
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('revert-kitchen-order', (_, orderId) => {
+    const res = revertKitchenOrderStatus(orderId);
+    if (res && res.success) {
+      if (io) {
+        io.emit('kitchen-updated', { orderId, status: 'preparing' });
+        io.emit('sales-updated');
+      }
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('kitchen-updated', { orderId, status: 'preparing' });
+        mainWindow.webContents.send('sales-updated');
+      }
+    }
+    return res;
+  });
+  ipcMain.handle('get-kitchen-performance', (_, params) => {
+    const { startDate, endDate } = params || {};
+    return getKitchenPerformanceReport(startDate, endDate);
+  });
+  ipcMain.handle('get-director-overview', (_, pin) => getDirectorOverview(pin));
   ipcMain.handle('set-order-status-by-table', (_, { tableId, status }) => {
     const res = setOrderStatusByTable(tableId, status);
     if (res && res.success) {
