@@ -11,10 +11,25 @@ import { generateReceiptHTML } from './ReceiptTemplate';
 
 const ALL_STAFF_ROLES = [
   { id: 'cashier', label: 'Kassir', needPin: true },
+  { id: 'staff', label: 'Xodim', needPin: false },
   { id: 'senior_cashier', label: 'Katta kassir', needPin: true },
   { id: 'manager', label: 'Menejer', needPin: true },
   { id: 'waiter', label: 'Ofitsiant', needPin: true },
+  { id: 'cook', label: 'Oshpaz', needPin: false },
   { id: 'admin', label: 'Asosiy Admin', needPin: true },
+];
+
+const RETAIL_STAFF_ROLES = [
+  { id: 'cashier', label: 'Kassir', needPin: true },
+  { id: 'staff', label: 'Xodim', needPin: false },
+];
+
+const RESTAURANT_STAFF_ROLES = [
+  { id: 'cashier', label: 'Kassir', needPin: true },
+  { id: 'manager', label: 'Menejer', needPin: true },
+  { id: 'waiter', label: 'Ofitsiant', needPin: true },
+  { id: 'cook', label: 'Oshpaz', needPin: false },
+  { id: 'staff', label: 'Xodim', needPin: false },
 ];
 
 const doesRoleNeedPin = (role) => {
@@ -39,6 +54,7 @@ export default memo(function Settings() {
 
   const isMasterAdmin = currentUser?.pin === 'xxMpos7532.' || isMasterUnlocked;
   const isAdmin = currentUser?.pin === 'xxMpos7532.' || isMasterAdmin;
+  const staffRoleOptions = businessType === 'restaurant' ? RESTAURANT_STAFF_ROLES : RETAIL_STAFF_ROLES;
 
   useEffect(() => {
     setIsMasterUnlocked(false);
@@ -1755,7 +1771,7 @@ export default memo(function Settings() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{t('settingsSubtitle')}</p>
         </div>
 
-        {isMasterAdmin ? (
+        {isMasterAdmin && (
           <div className="flex items-center gap-2">
             <div className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-2 shadow-sm">
               <span>👑</span>
@@ -1775,19 +1791,6 @@ export default memo(function Settings() {
               </button>
             )}
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setShowMasterUnlockModal(true);
-              setMasterPinInput('');
-              setMasterPinError('');
-            }}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
-          >
-            <span>🔐</span>
-            <span>Asosiy Admin PIN (xxMpos7532.)</span>
-          </button>
         )}
       </div>
 
@@ -3754,7 +3757,7 @@ export default memo(function Settings() {
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
             <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
               <Users className="text-orange-500" size={20} />
-              {t('cashiersManagement')}
+              {businessType === 'restaurant' ? 'Kassirlar va Xodimlar' : 'Xodimlar va Kassirlar'}
             </h3>
 
             {currentUser?.role !== 'waiter' && (
@@ -3765,9 +3768,9 @@ export default memo(function Settings() {
                     onChange={e => setCashierRole(e.target.value)}
                     className="flex-1 min-w-[140px] border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm font-semibold"
                   >
-                    {ALL_STAFF_ROLES.map(r => (
+                    {staffRoleOptions.map(r => (
                       <option key={r.id} value={r.id}>
-                        {r.label} {r.needPin ? '(PIN kodli)' : '(PIN shart emas)'}
+                        {r.label} {r.needPin ? '(PIN kodli)' : '(PIN ixtiyoriy)'}
                       </option>
                     ))}
                   </select>
@@ -3792,9 +3795,14 @@ export default memo(function Settings() {
                       className="w-28 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-center tracking-widest font-bold"
                     />
                   ) : (
-                    <div className="px-3 py-2 bg-gray-150 dark:bg-gray-700/60 text-gray-500 dark:text-gray-400 text-xs rounded-lg font-medium border border-gray-200 dark:border-gray-600 flex items-center justify-center">
-                      PIN shart emas
-                    </div>
+                    <input 
+                      type="password" 
+                      maxLength={4}
+                      placeholder="PIN (ixtiyoriy)"
+                      value={cashierPin}
+                      onChange={e => setCashierPin(e.target.value.replace(/\D/g, ''))}
+                      className="w-28 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:outline-none text-center tracking-widest font-bold placeholder:text-[11px]"
+                    />
                   )}
 
                   <input
@@ -3840,7 +3848,7 @@ export default memo(function Settings() {
                             onChange={e => setEditRole(e.target.value)}
                             className="flex-1 min-w-[130px] border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none font-semibold"
                           >
-                            {ALL_STAFF_ROLES.map(r => (
+                            {staffRoleOptions.map(r => (
                               <option key={r.id} value={r.id}>
                                 {r.label}
                               </option>
@@ -3865,7 +3873,14 @@ export default memo(function Settings() {
                               required
                             />
                           ) : (
-                            <span className="text-xs text-gray-400 dark:text-gray-500 italic px-1">PIN shart emas</span>
+                            <input 
+                              type="password" 
+                              maxLength={4}
+                              placeholder="PIN (ixtiyoriy)"
+                              value={editPin}
+                              onChange={e => setEditPin(e.target.value.replace(/\D/g, ''))}
+                              className="w-24 border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center tracking-widest focus:outline-none font-bold placeholder:text-[10px]"
+                            />
                           )}
                           <input
                             type="number"
@@ -3909,7 +3924,7 @@ export default memo(function Settings() {
                             </span>
                           </span>
                           <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                            <span>PIN: {doesRoleNeedPin(c.role) ? (canReveal ? (isRevealed ? c.pin : '••••') : '••••') : 'PIN shart emas'}</span>
+                            <span>PIN: {c.pin ? (canReveal && isRevealed ? c.pin : '••••') : 'PIN yo\'q'}</span>
                             {c.salary > 0 && (
                               <span>Oylik: {Number(c.salary).toLocaleString()} so'm</span>
                             )}
